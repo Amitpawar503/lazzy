@@ -58,6 +58,42 @@ export interface InstitutionalActivity {
   removed: HoldingChange[];
 }
 
+export interface AlgoVote {
+  algo: string;
+  signal: number; // +1 / 0 / -1
+  strength: number;
+  detail: string;
+}
+export interface StockSignal {
+  symbol: string;
+  total_algos: number;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  net_score: number;
+  verdict: string;
+  algos: AlgoVote[];
+}
+export interface ScorecardRow {
+  symbol: string;
+  name: string;
+  sector: string;
+  cap_class: string;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  total_algos: number;
+  net_score: number;
+  verdict: string;
+}
+export interface Scorecard {
+  algos: string[];
+  count: number;
+  rows: ScorecardRow[];
+}
+export type SignalView = "all" | "bullish" | "bearish";
+export type SignalSort = "score" | "bullish" | "bearish";
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${res.status} ${path}`);
@@ -72,4 +108,10 @@ export const api = {
   flows: () => get<FlowSummary>(`/api/fiidii/flows`),
   activity: (topN: number) =>
     get<InstitutionalActivity>(`/api/fiidii/activity?top_n=${topN}`),
+  scorecard: (topN: number, view: SignalView, sort: SignalSort) =>
+    get<Scorecard>(
+      `/api/signals/scorecard?top_n=${topN}&view=${view}&sort=${sort}`
+    ),
+  stockSignal: (symbol: string) =>
+    get<StockSignal>(`/api/signals/${encodeURIComponent(symbol)}`),
 };

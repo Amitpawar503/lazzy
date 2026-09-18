@@ -2,13 +2,15 @@ import { useState } from "react";
 import Heatmap360 from "./components/Heatmap360";
 import SectorHeatmap from "./components/SectorHeatmap";
 import FiiDiiActivity from "./components/FiiDiiActivity";
+import SignalScorecard from "./components/SignalScorecard";
 
-type Tab = "360" | "sectors" | "fiidii";
+type Tab = "360" | "sectors" | "fiidii" | "signals";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "360", label: "360° Market" },
   { id: "sectors", label: "Sector Heatmap" },
   { id: "fiidii", label: "FII / DII Activity" },
+  { id: "signals", label: "Algo Signals" },
 ];
 
 export default function App() {
@@ -37,6 +39,7 @@ export default function App() {
         {tab === "360" && <Heatmap360 />}
         {tab === "sectors" && <SectorHeatmap />}
         {tab === "fiidii" && <FiiDiiActivity />}
+        {tab === "signals" && <SignalScorecard />}
       </main>
 
       <footer className="foot">

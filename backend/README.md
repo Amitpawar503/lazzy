@@ -24,6 +24,8 @@ Open http://localhost:8000/docs for interactive API docs.
 | GET | `/api/heatmap/sectors` | `timeframe` | Market-cap-weighted sector heatmap |
 | GET | `/api/fiidii/flows` | — | FII/DII net cash-flow series + cumulative |
 | GET | `/api/fiidii/activity` | `top_n=1..100` | Stocks institutions added / removed |
+| GET | `/api/signals/scorecard` | `top_n`, `view=all\|bullish\|bearish`, `sort=score\|bullish\|bearish` | Multi-algo consensus per stock (+ve/−ve counts + net score) |
+| GET | `/api/signals/{symbol}` | — | Per-algorithm breakdown for one stock |
 | GET | `/meta` | — | Universe size, sectors, timeframes |
 | GET | `/health` | — | Liveness |
 
