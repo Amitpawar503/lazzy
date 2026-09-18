@@ -23,3 +23,18 @@
 /dist/
 /nbdist/
 /.nb-gradle/
+### Python ###
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+
+### Node / Frontend ###
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+frontend/tsconfig.tsbuildinfo

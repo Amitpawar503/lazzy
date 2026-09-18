@@ -1,0 +1,47 @@
+import { useState } from "react";
+import Heatmap360 from "./components/Heatmap360";
+import SectorHeatmap from "./components/SectorHeatmap";
+import FiiDiiActivity from "./components/FiiDiiActivity";
+
+type Tab = "360" | "sectors" | "fiidii";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "360", label: "360° Market" },
+  { id: "sectors", label: "Sector Heatmap" },
+  { id: "fiidii", label: "FII / DII Activity" },
+];
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>("360");
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="logo">◆</span> Lazzy <b>Markets</b>
+        </div>
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={t.id === tab ? "on" : ""}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        <div className="disclaimer">EOD / delayed · sample data if offline</div>
+      </header>
+
+      <main className="content">
+        {tab === "360" && <Heatmap360 />}
+        {tab === "sectors" && <SectorHeatmap />}
+        {tab === "fiidii" && <FiiDiiActivity />}
+      </main>
+
+      <footer className="foot">
+        Not investment advice · data may be delayed or illustrative
+      </footer>
+    </div>
+  );
+}
