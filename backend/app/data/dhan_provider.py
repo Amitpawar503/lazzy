@@ -32,6 +32,8 @@ import datetime as _dt
 import io
 import logging
 import threading
+import time
+from collections import deque
 from typing import Optional
 
 import httpx
@@ -42,6 +44,48 @@ from app.data.sample_data import cap_class, sample_universe
 log = logging.getLogger("lazzy.dhan")
 
 _TIMEOUT = 30.0
+
+
+class _RateLimiter:
+    """Thread-safe rolling-window throttle: at most ``rate`` calls per ``per``
+    seconds across ALL threads (REST poller, universe, history, quotes). Blocks
+    the caller just long enough to stay under Dhan's data-API limit (5 req/sec)."""
+
+    def __init__(self, rate: int, per: float = 1.0) -> None:
+        self.rate = max(1, rate)
+        self.per = per
+        self._calls: deque[float] = deque()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                # drop timestamps outside the rolling window
+                while self._calls and now - self._calls[0] >= self.per:
+                    self._calls.popleft()
+                if len(self._calls) < self.rate:
+                    self._calls.append(now)
+                    return
+                wait = self.per - (now - self._calls[0])
+            if wait > 0:
+                log.debug("[dhan] rate limit reached (%d/%.0fs) — waiting %.3fs",
+                          self.rate, self.per, wait)
+                time.sleep(wait)
+
+
+# Built lazily so it picks up DHAN_RATE_LIMIT from settings.
+_LIMITER: Optional[_RateLimiter] = None
+_LIMITER_LOCK = threading.Lock()
+
+
+def _limiter() -> _RateLimiter:
+    global _LIMITER
+    if _LIMITER is None:
+        with _LIMITER_LOCK:
+            if _LIMITER is None:
+                _LIMITER = _RateLimiter(get_settings().dhan_rate_limit)
+    return _LIMITER
 _EXCH_SEGMENT = "NSE_EQ"      # NSE cash-equity segment
 _INSTRUMENT = "EQUITY"
 
@@ -127,6 +171,7 @@ def _post(path: str, body: dict) -> Optional[dict]:
     s = get_settings()
     url = f"{s.dhan_base_url}{path}"
     try:
+        _limiter().acquire()          # stay within Dhan's 5 req/sec data-API limit
         log.info("[dhan] POST %s", url)
         r = httpx.post(url, json=body, headers=h, timeout=_TIMEOUT)
         r.raise_for_status()

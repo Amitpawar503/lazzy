@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     dhan_access_token: Optional[str] = None
     dhan_base_url: str = "https://api.dhan.co/v2"
     dhan_scrip_master_url: str = "https://images.dhan.co/api-data/api-scrip-master.csv"
+    # Max Dhan data-API REST calls per second (Dhan's documented limit is 5/sec).
+    # Throttled client-side across all threads so we never exceed it.
+    dhan_rate_limit: int = 5
     alphavantage_api_key: Optional[str] = None
     finnhub_api_key: Optional[str] = None
     newsapi_key: Optional[str] = None
