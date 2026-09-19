@@ -42,6 +42,11 @@ Open http://localhost:8000/docs for interactive API docs.
 | GET | `/api/fiidii/activity` | `top_n=1..100` | Stocks institutions added / removed |
 | GET | `/api/signals/scorecard` | `top_n`, `view=all\|bullish\|bearish`, `sort=score\|bullish\|bearish` | Multi-algo consensus per stock (+ve/−ve counts + net score) |
 | GET | `/api/signals/{symbol}` | — | Per-algorithm breakdown for one stock |
+| GET | `/api/screener` | `dimension=sector\|cap\|momentum\|seasonal`, `key`, `top_n` | Best stocks by dimension, each row with up/down algos + % |
+| GET | `/api/news` | `category=all\|india\|global`, `ticker`, `limit` | Aggregated market news (entity-linked + sentiment) |
+| GET | `/api/impact/events` | — | Market events + impacted companies (short/long term) |
+| GET | `/api/impact/events/{id}` | — | One event's impact fan-out |
+| GET | `/api/ai/providers` | — | Free AI providers and which are configured |
 | GET | `/meta` | — | Universe size, sectors, timeframes |
 | GET | `/health` | — | Liveness |
 

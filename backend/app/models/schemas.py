@@ -106,3 +106,85 @@ class Scorecard(BaseModel):
     algos: list[str]
     count: int
     rows: list[ScorecardRow]
+
+
+# --- Best-stock screeners (sector / cap / momentum / seasonal) --- #
+
+class AlgoStrength(BaseModel):
+    algo: str
+    strength_pct: float   # 0..100 — "how much" this algo leans
+
+
+class ScreenerRow(BaseModel):
+    symbol: str
+    name: str
+    sector: str
+    cap_class: str
+    market_cap_cr: float
+    metric_label: str     # what the dimension ranked on
+    metric_value: float
+    # multi-algo consensus attached to every row
+    bullish: int
+    bearish: int
+    neutral: int
+    net_score: float
+    verdict: str
+    up_algos: list[AlgoStrength]     # algos voting the stock UP (+ how much)
+    down_algos: list[AlgoStrength]   # algos voting the stock DOWN (+ how much)
+
+
+class ScreenerResult(BaseModel):
+    dimension: str        # sector | cap | momentum | seasonal
+    key: Optional[str]    # e.g. sector name or cap class, when filtered
+    metric_label: str
+    count: int
+    rows: list[ScreenerRow]
+
+
+# --- News feed --- #
+
+class NewsItem(BaseModel):
+    id: str
+    source: str
+    title: str
+    url: str
+    published: str
+    summary: str
+    tickers: list[str]
+    sentiment: str        # positive | negative | neutral
+    sentiment_score: float  # -1..+1
+    category: str         # india | global
+
+
+class NewsFeed(BaseModel):
+    count: int
+    sources: list[str]
+    items: list[NewsItem]
+
+
+# --- News impact (event → affected companies) --- #
+
+class ImpactedStock(BaseModel):
+    symbol: str
+    name: str
+    relation: str         # holder | parent | subsidiary | peer | index | supplier
+    relation_detail: str
+    short_term: float     # -100..+100
+    long_term: float      # -100..+100
+    direction: str        # positive | negative | mixed | neutral
+    rationale: str
+
+
+class MarketEvent(BaseModel):
+    id: str
+    title: str
+    entity: str           # the subject entity (e.g. "Tata Sons")
+    kind: str             # listing | earnings | policy | mna | rating | management
+    date: str
+    summary: str
+    impacted: list[ImpactedStock]
+
+
+class EventList(BaseModel):
+    count: int
+    events: list[MarketEvent]

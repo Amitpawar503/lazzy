@@ -3,14 +3,20 @@ import Heatmap360 from "./components/Heatmap360";
 import SectorHeatmap from "./components/SectorHeatmap";
 import FiiDiiActivity from "./components/FiiDiiActivity";
 import SignalScorecard from "./components/SignalScorecard";
+import Screeners from "./components/Screeners";
+import NewsFeed from "./components/NewsFeed";
+import NewsImpact from "./components/NewsImpact";
 
-type Tab = "360" | "sectors" | "fiidii" | "signals";
+type Tab = "360" | "sectors" | "fiidii" | "signals" | "screeners" | "news" | "impact";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "360", label: "360° Market" },
   { id: "sectors", label: "Sector Heatmap" },
-  { id: "fiidii", label: "FII / DII Activity" },
+  { id: "screeners", label: "Best Stocks" },
   { id: "signals", label: "Algo Signals" },
+  { id: "fiidii", label: "FII / DII Activity" },
+  { id: "news", label: "News" },
+  { id: "impact", label: "News Impact" },
 ];
 
 export default function App() {
@@ -40,6 +46,9 @@ export default function App() {
         {tab === "sectors" && <SectorHeatmap />}
         {tab === "fiidii" && <FiiDiiActivity />}
         {tab === "signals" && <SignalScorecard />}
+        {tab === "screeners" && <Screeners />}
+        {tab === "news" && <NewsFeed />}
+        {tab === "impact" && <NewsImpact />}
       </main>
 
       <footer className="foot">

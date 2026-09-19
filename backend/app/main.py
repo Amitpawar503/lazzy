@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.config import get_settings
-from app.routers import fiidii, health, heatmap, signals
+from app.routers import ai, fiidii, health, heatmap, impact, news, screener, signals
 
 settings = get_settings()
 
@@ -32,6 +32,10 @@ app.include_router(health.router)
 app.include_router(heatmap.router)
 app.include_router(fiidii.router)
 app.include_router(signals.router)
+app.include_router(screener.router)
+app.include_router(news.router)
+app.include_router(impact.router)
+app.include_router(ai.router)
 
 
 @app.get("/", tags=["meta"])
@@ -47,5 +51,9 @@ def root() -> dict:
             "/api/fiidii/activity",
             "/api/signals/scorecard",
             "/api/signals/{symbol}",
+            "/api/screener?dimension=momentum",
+            "/api/news",
+            "/api/impact/events",
+            "/api/ai/providers",
         ],
     }

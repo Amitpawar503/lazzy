@@ -34,8 +34,11 @@ cd frontend && npm install && npm run dev
 |--------|-------------|---------------|
 | **360° Market** | Treemap: box size = market cap, colour = return over 1d/1w/1m | ✅ `top_n` |
 | **Sector Heatmap** | Market-cap-weighted return per sector, with top gainer/loser | timeframe |
+| **Best Stocks** | Screeners by **sector / cap / momentum / seasonal**, each row showing which algos push it up ▲ / down ▼ and by how much | ✅ `top_n` + dimension/key |
 | **FII/DII Activity** | Net institutional cash flows + stocks added / removed | ✅ `top_n` |
 | **Algo Signals** | 10 algorithms vote per stock — how many are +ve / −ve and the net conviction, with a per-algorithm drilldown | ✅ `top_n` + view/sort |
+| **News** | Aggregated Indian & global headlines, entity-linked + sentiment-tagged | category filter |
+| **News Impact** | Event → affected-companies fan-out with short- vs long-term impact (e.g. a Tata Sons listing: holders gain, TCS faces overhang, peers unaffected) | per-event |
 
 The **Algo Signals** screen runs SMA/EMA crossovers, RSI, MACD, Supertrend,
 Bollinger Bands, ROC momentum, ADX/DI, Donchian breakout, and Stochastic on each
@@ -45,10 +48,10 @@ score (−100…+100). Click a row for every algorithm's reading.
 ## Roadmap (see `docs/ANALYSIS_AND_ARCHITECTURE.md`)
 
 - **Phase 1** — live data adapters (jugaad-data EOD/bhavcopy, Tapetide FII/DII, yfinance).
-- **Phase 2** — best-stock screeners: sector / cap / momentum / seasonal (+ Top-N).
-  _(Algo-signal consensus shipped; ranking screens next.)_
-- **Phase 3** — news aggregation + event-graph impact scoring (short/long term).
+- **Phase 2** — best-stock screeners: sector / cap / momentum / seasonal (+ Top-N). ✅ shipped
+- **Phase 3** — news aggregation + event-graph impact scoring (short/long term). ✅ shipped (sample data; live RSS/API wiring next)
 - **Phase 4** — multi-agent AI layer (analysts → bull/bear debate → synthesis) on free LLMs.
+  _(Provider registry live at `/api/ai/providers`; agents next.)_
 - **Phase 5** — VectorBT backtests + tearsheets.
 - **Phase 6** — broker abstraction + paper/live trading.
 

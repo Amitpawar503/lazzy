@@ -5,9 +5,9 @@ import {
   type ScorecardRow,
   type SignalSort,
   type SignalView,
-  type StockSignal,
 } from "../api";
 import Controls from "./Controls";
+import AlgoBreakdown from "./AlgoBreakdown";
 
 function verdictClass(v: string) {
   if (v.includes("Strong Buy")) return "v-strong-buy";
@@ -45,33 +45,6 @@ function Counts({ r }: { r: ScorecardRow }) {
       <span className="c-dn">{r.bearish}▼</span>
       <span className="c-nu">{r.neutral}•</span>
       <span className="c-total">/ {r.total_algos}</span>
-    </div>
-  );
-}
-
-function AlgoBreakdown({ symbol }: { symbol: string }) {
-  const [sig, setSig] = useState<StockSignal | null>(null);
-  useEffect(() => {
-    api.stockSignal(symbol).then(setSig).catch(() => setSig(null));
-  }, [symbol]);
-  if (!sig) return <div className="algo-loading">Loading algorithms…</div>;
-  return (
-    <div className="algo-breakdown">
-      {sig.algos.map((a) => (
-        <div key={a.algo} className="algo-chip">
-          <span
-            className={
-              a.signal > 0 ? "dot up" : a.signal < 0 ? "dot dn" : "dot nu"
-            }
-          />
-          <span className="algo-name">{a.algo}</span>
-          <span className="algo-detail">{a.detail}</span>
-          <span className="algo-str">
-            {a.signal > 0 ? "+" : a.signal < 0 ? "−" : "•"}
-            {a.strength > 0 ? ` ${(a.strength * 100).toFixed(0)}%` : ""}
-          </span>
-        </div>
-      ))}
     </div>
   );
 }
