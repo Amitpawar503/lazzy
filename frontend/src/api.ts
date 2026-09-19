@@ -205,6 +205,18 @@ export interface StrategyCard {
 export interface StrategyList { count: number; strategies: StrategyCard[]; }
 export interface StrategyDetail extends StrategyCard { constituents: ScreenerRow[]; }
 
+// --- Style Picks (6 sections + consensus) ---
+export interface StyleConsensus { favour: number; neutral: number; against: number; total: number; }
+export interface StyleRow extends ScreenerRow { consensus: StyleConsensus; volatility: number; }
+export interface StyleSection {
+  key: string; label: string; metric_label: string; count: number;
+  ret_1y: number; ret_5y: number; alpha_1y: number; beats_benchmark_1y: boolean;
+  volatility: number; max_drawdown: number; sharpe: number;
+  spark: number[]; benchmark_spark: number[];
+  rows: StyleRow[];
+}
+export interface StyleSections { section_count: number; sections: StyleSection[]; }
+
 // --- News ---
 export interface NewsItem {
   id: string;
@@ -284,6 +296,7 @@ export const api = {
     get<Reasoning>(`/api/stock/${encodeURIComponent(symbol)}/reasoning`),
   strategies: () => get<StrategyList>(`/api/strategies`),
   strategy: (id: string) => get<StrategyDetail>(`/api/strategies/${encodeURIComponent(id)}`),
+  styleSections: () => get<StyleSections>(`/api/style/sections`),
   news: (category: "all" | "india" | "global", limit: number) =>
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
   events: () => get<EventList>(`/api/impact/events`),

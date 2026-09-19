@@ -12,7 +12,7 @@ from app import __version__
 from app.config import get_settings
 from app.routers import (
     ai, fiidii, health, heatmap, impact, news, screener, signals, stock,
-    strategies, stream,
+    strategies, stream, style,
 )
 
 settings = get_settings()
@@ -41,6 +41,7 @@ app.include_router(impact.router)
 app.include_router(ai.router)
 app.include_router(stock.router)
 app.include_router(strategies.router)
+app.include_router(style.router)
 app.include_router(stream.router)
 
 

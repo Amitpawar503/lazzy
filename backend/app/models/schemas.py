@@ -154,6 +154,42 @@ class GroupedScreener(BaseModel):
     sections: list[ScreenerSection]
 
 
+# --- Style Picks (6 sections + style consensus) --- #
+
+class StyleConsensus(BaseModel):
+    favour: int
+    neutral: int
+    against: int
+    total: int
+
+
+class StyleRow(ScreenerRow):
+    consensus: StyleConsensus
+    volatility: float
+
+
+class StyleSection(BaseModel):
+    key: str
+    label: str
+    metric_label: str
+    count: int
+    ret_1y: float
+    ret_5y: float
+    alpha_1y: float
+    beats_benchmark_1y: bool
+    volatility: float
+    max_drawdown: float
+    sharpe: float
+    spark: list[float]
+    benchmark_spark: list[float]
+    rows: list[StyleRow]
+
+
+class StyleSections(BaseModel):
+    section_count: int
+    sections: list[StyleSection]
+
+
 # --- News feed --- #
 
 class NewsItem(BaseModel):

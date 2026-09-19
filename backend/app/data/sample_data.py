@@ -9,6 +9,8 @@ live providers when available.
 """
 from __future__ import annotations
 
+import hashlib
+
 # symbol, name, sector, market_cap_cr, ret_1d_pct, ret_1w_pct, ret_1m_pct
 _ROWS: list[tuple[str, str, str, float, float, float, float]] = [
     # IT
@@ -84,6 +86,60 @@ _ROWS: list[tuple[str, str, str, float, float, float, float]] = [
     ("EXCELINDUS", "Excel Industries", "Metals", 300, 0.5, 1.0, 2.0),
 ]
 
+# Extra names to populate mid / small / micro caps (symbol, name, sector, mcap_cr).
+# Returns are generated deterministically in sample_universe(). Illustrative.
+_EXTRA = [
+    # --- Mid cap (₹5k–20k cr) ---
+    ("CYIENT", "Cyient", "IT", 18000), ("SONACOMS", "Sona BLW Precision", "Auto", 17000),
+    ("ESCORTS", "Escorts Kubota", "Auto", 19000), ("APOLLOTYRE", "Apollo Tyres", "Auto", 9000),
+    ("EXIDEIND", "Exide Industries", "Auto", 16000), ("BALKRISIND", "Balkrishna Inds", "Auto", 18000),
+    ("SUPREMEIND", "Supreme Industries", "Consumer", 19000), ("ASTRAL", "Astral", "Cement", 18000),
+    ("FINCABLES", "Finolex Cables", "Metals", 14000), ("THERMAX", "Thermax", "Infrastructure", 19000),
+    ("KAJARIACER", "Kajaria Ceramics", "Cement", 6500), ("CENTURYPLY", "Century Plyboards", "Consumer", 15000),
+    ("VGUARD", "V-Guard Industries", "Consumer", 15000), ("CROMPTON", "Crompton Greaves Cons", "Consumer", 18000),
+    ("BLUESTARCO", "Blue Star", "Consumer", 19000), ("WHIRLPOOL", "Whirlpool of India", "Consumer", 16000),
+    ("JUBLFOOD", "Jubilant FoodWorks", "Retail", 17000), ("DEVYANI", "Devyani Intl", "Retail", 9000),
+    ("WESTLIFE", "Westlife Foodworld", "Retail", 11000), ("UBL", "United Breweries", "FMCG", 19000),
+    ("EMAMILTD", "Emami", "FMCG", 18000), ("DEEPAKNTR", "Deepak Nitrite", "Pharma", 14000),
+    ("AARTIIND", "Aarti Industries", "Pharma", 6000), ("MANAPPURAM", "Manappuram Finance", "Financials", 15000),
+    ("CANFINHOME", "Can Fin Homes", "Financials", 9000), ("MCX", "Multi Commodity Exchange", "Financials", 18000),
+    ("ANGELONE", "Angel One", "Financials", 19000), ("IEXTEND", "IIFL Finance", "Financials", 12000),
+    ("RAMCOCEM", "Ramco Cements", "Cement", 17000), ("GUJGASLTD", "Gujarat Gas", "Energy", 16000),
+    ("MGL", "Mahanagar Gas", "Energy", 12000), ("GSPL", "Gujarat State Petronet", "Energy", 8000),
+    # --- Small cap (₹500–5k cr) ---
+    ("RAYMOND", "Raymond", "Consumer", 4800), ("TRIDENT", "Trident", "Consumer", 3500),
+    ("WELSPUNLIV", "Welspun Living", "Consumer", 4500), ("KPRMILL", "KPR Mill", "Consumer", 4900),
+    ("GOKEX", "Gokaldas Exports", "Consumer", 2000), ("LUXIND", "Lux Industries", "Consumer", 1200),
+    ("CAMPUS", "Campus Activewear", "Retail", 3000), ("VMART", "V-Mart Retail", "Retail", 1800),
+    ("ABFRL", "Aditya Birla Fashion", "Retail", 4800), ("METROBRAND", "Metro Brands", "Retail", 4900),
+    ("RELAXO", "Relaxo Footwears", "Consumer", 3800), ("BATAINDIA", "Bata India", "Consumer", 4900),
+    ("GNFC", "Gujarat Narmada Valley", "Metals", 3200), ("CHAMBLFERT", "Chambal Fertilisers", "Metals", 4800),
+    ("ATUL", "Atul", "Pharma", 2200), ("VINATIORGA", "Vinati Organics", "Pharma", 4800),
+    ("NAVINFLUOR", "Navin Fluorine", "Pharma", 4900), ("GRANULES", "Granules India", "Pharma", 1400),
+    ("HEIDELBERG", "HeidelbergCement India", "Cement", 4500), ("STARCEMENT", "Star Cement", "Cement", 4000),
+    ("NUVOCO", "Nuvoco Vistas", "Cement", 4200), ("INDIACEM", "India Cements", "Cement", 4000),
+    ("CASTROLIND", "Castrol India", "Energy", 4800), ("GULFOILLUB", "Gulf Oil Lubricants", "Energy", 4500),
+    ("AEGISLOG", "Aegis Logistics", "Energy", 4900), ("KFINTECH", "KFin Technologies", "Financials", 4900),
+    ("UTIAMC", "UTI AMC", "Financials", 4800), ("PNBHOUSING", "PNB Housing Finance", "Financials", 4900),
+    ("RITES", "RITES", "Infrastructure", 4200), ("IRCON", "Ircon International", "Infrastructure", 4900),
+    ("NBCC", "NBCC India", "Infrastructure", 4800), ("HFCLEXT", "GTL Infrastructure", "Telecom", 900),
+    # --- Micro cap (< ₹500 cr) ---
+    ("NELCOEXT", "Shaily Engineering", "Metals", 480), ("SALSTEEL", "SAL Steel", "Metals", 120),
+    ("SHANKARA", "Shankara Building", "Infrastructure", 450), ("PATELENG", "Patel Engineering", "Infrastructure", 470),
+    ("AHLUCONT", "Ahluwalia Contracts", "Infrastructure", 490), ("UNIVCABLES", "Universal Cables", "Metals", 400),
+    ("ORIENTCEM", "Orient Cement", "Cement", 480), ("SANGHIIND", "Sanghi Industries", "Cement", 300),
+    ("DHAMPURSUG", "Dhampur Sugar", "FMCG", 250), ("KSCL", "Kaveri Seed", "FMCG", 450),
+    ("HERITGFOOD", "Heritage Foods", "FMCG", 400), ("DFMFOODS", "DFM Foods", "FMCG", 200),
+    ("MOLDTKPAC", "Mold-Tek Packaging", "Consumer", 300), ("CERA", "Cera Sanitaryware", "Consumer", 480),
+    ("ORIENTELEC", "Orient Electric", "Consumer", 450), ("TCPLPACK", "TCPL Packaging", "Consumer", 220),
+    ("GENUSPOWER", "Genus Power Infra", "Power", 480), ("KKVAPOW", "KKV Agro", "Power", 60),
+    ("SJVN", "SJVN", "Power", 470), ("RTNPOWER", "RattanIndia Power", "Power", 350),
+    ("MARKSANS", "Marksans Pharma", "Pharma", 450), ("MOREPENLAB", "Morepen Labs", "Pharma", 250),
+    ("KOPRAN", "Kopran", "Pharma", 150), ("SASTASUNDR", "Sastasundar Ventures", "Healthcare", 200),
+    ("ONMOBILE", "OnMobile Global", "IT", 350), ("SUBEXLTD", "Subex", "IT", 200),
+    ("TAKE", "Take Solutions", "IT", 120), ("BLSINTL", "BLS International", "Consumer", 480),
+]
+
 _SECTOR_INDEX = {  # illustrative sector index period returns (%)
     "IT": {"ret_1d": 0.6, "ret_1w": 2.1, "ret_1m": 2.8},
     "Financials": {"ret_1d": 0.9, "ret_1w": 2.4, "ret_1m": 4.4},
@@ -112,6 +168,15 @@ def cap_class(market_cap_cr: float) -> str:
     return "micro"
 
 
+def _gen_returns(symbol: str) -> tuple[float, float, float]:
+    """Deterministic illustrative returns for extra names."""
+    h = hashlib.sha256(symbol.encode()).digest()
+    r1d = round((h[0] / 255.0 - 0.5) * 4, 2)       # ~ -2..+2
+    r1w = round((h[1] / 255.0 - 0.5) * 8, 2)       # ~ -4..+4
+    r1m = round((h[2] / 255.0 - 0.5) * 16, 2)      # ~ -8..+8
+    return r1d, r1w, r1m
+
+
 def sample_universe() -> list[dict]:
     out = []
     for sym, name, sector, mcap, r1d, r1w, r1m in _ROWS:
@@ -127,6 +192,16 @@ def sample_universe() -> list[dict]:
                 "ret_1m": r1m,
             }
         )
+    seen = {r["symbol"] for r in out}
+    for sym, name, sector, mcap in _EXTRA:
+        if sym in seen:
+            continue
+        r1d, r1w, r1m = _gen_returns(sym)
+        out.append({
+            "symbol": sym, "name": name, "sector": sector, "market_cap_cr": mcap,
+            "cap_class": cap_class(mcap), "ret_1d": r1d, "ret_1w": r1w, "ret_1m": r1m,
+        })
+        seen.add(sym)
     return out
 
 

@@ -8,14 +8,16 @@ import NewsFeed from "./components/NewsFeed";
 import NewsImpact from "./components/NewsImpact";
 import { StockDetailProvider } from "./components/StockDetail";
 import Strategies from "./components/Strategies";
+import StylePicks from "./components/StylePicks";
 
-type Tab = "360" | "sectors" | "fiidii" | "signals" | "screeners" | "news" | "impact" | "ideas";
+type Tab = "360" | "sectors" | "fiidii" | "signals" | "screeners" | "news" | "impact" | "ideas" | "style";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "360", label: "360° Market" },
   { id: "sectors", label: "Sector Heatmap" },
   { id: "screeners", label: "Best Stocks" },
   { id: "ideas", label: "Ideas" },
+  { id: "style", label: "Style Picks" },
   { id: "signals", label: "Algo Signals" },
   { id: "fiidii", label: "FII / DII Activity" },
   { id: "news", label: "News" },
@@ -52,6 +54,7 @@ export default function App() {
         {tab === "signals" && <SignalScorecard />}
         {tab === "screeners" && <Screeners />}
         {tab === "ideas" && <Strategies />}
+        {tab === "style" && <StylePicks />}
         {tab === "news" && <NewsFeed />}
         {tab === "impact" && <NewsImpact />}
       </main>
