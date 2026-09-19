@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # OFF by default: use fast deterministic synthetic OHLCV (no network) so the
     # app is instant. Turn ON to fetch real quotes/history (yfinance/NSE).
     live_data: bool = False
+    # Which market-data provider powers the universe/quotes/history:
+    #   sample   -> bundled deterministic data (default, offline)
+    #   fmp      -> Financial Modeling Prep REST (needs FMP_API_KEY; full NSE market)
+    #   yfinance -> Yahoo Finance per-symbol (needs a symbol universe; slower)
+    data_provider: str = "sample"
+    fmp_base_url: str = "https://financialmodelingprep.com/api/v3"
+    # Max stocks to pull for the full-market universe (ranked by market cap).
+    universe_limit: int = 750
     history_days: int = 400              # ~1 trading year+ retained per symbol
     # Directory to persist per-symbol OHLCV history as JSON (disk cache). When
     # set, history is read from disk first and only refreshed when stale.
@@ -60,6 +68,7 @@ class Settings(BaseSettings):
 
     # --- Data / news providers (optional free tiers) ---
     tapetide_token: Optional[str] = None
+    fmp_api_key: Optional[str] = None        # Financial Modeling Prep (full NSE market)
     alphavantage_api_key: Optional[str] = None
     finnhub_api_key: Optional[str] = None
     newsapi_key: Optional[str] = None
@@ -77,6 +86,14 @@ class Settings(BaseSettings):
 
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    def provider(self) -> str:
+        """Effective data provider: explicit data_provider wins; else yfinance
+        when live_data is on; else sample."""
+        p = (self.data_provider or "sample").lower()
+        if p != "sample":
+            return p
+        return "yfinance" if self.live_data else "sample"
 
 
 @lru_cache

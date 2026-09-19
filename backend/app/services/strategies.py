@@ -171,17 +171,39 @@ ARCHETYPES = {
 }
 
 
+def _cap_filter(e: list[dict], cap: str) -> list[dict]:
+    if cap == "large":
+        return [x for x in e if x["cap_class"] == "large"]
+    if cap == "mid":
+        return [x for x in e if x["cap_class"] == "mid"]
+    if cap == "small":
+        return [x for x in e if x["cap_class"] in ("small", "micro")]
+    return e
+
+
+def persona_selector(archetype: str, cap: str = "any"):
+    """A persona's stock picker = its archetype applied within its cap focus."""
+    base = ARCHETYPES.get(archetype, ARCHETYPES["blend"])
+    return lambda e: base(_cap_filter(e, cap))
+
+
+def investor_selectors() -> list[tuple[str, object]]:
+    """(name, selector) for every investor persona — used for style consensus."""
+    from app.data.investors import investor_catalog
+    return [(inv["name"], persona_selector(inv["archetype"], inv.get("cap", "any")))
+            for inv in investor_catalog()]
+
+
 def _investor_specs() -> list[dict]:
     from app.data.investors import investor_catalog
 
     specs = []
     for inv in investor_catalog():
-        arch = inv["archetype"]
-        sel = ARCHETYPES.get(arch, ARCHETYPES["blend"])
+        sel = persona_selector(inv["archetype"], inv.get("cap", "any"))
         slug = "inv_" + "".join(c.lower() if c.isalnum() else "_" for c in inv["name"])[:48]
         specs.append({
             "id": slug, "name": inv["name"], "category": "style", "top_n": inv["top_n"],
-            "description": f"Style: {arch.replace('_', ' ')}.",
+            "description": f"Style: {inv['archetype'].replace('_', ' ')}.",
             "philosophy": inv["philosophy"],
             "select": (lambda e, fn=sel: fn(e)),
         })

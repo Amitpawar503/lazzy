@@ -95,16 +95,26 @@ def _read_disk_fresh(path: str) -> list[dict] | None:
 
 def _full_history(symbol: str, drift_hint: float) -> list[dict]:
     settings = get_settings()
+    prov = settings.provider()
     path = _disk_path(symbol)
 
-    if settings.live_data:
+    if prov != "sample":
         if path:
             disk = _read_disk_fresh(path)
             if disk:
                 return disk
-        df = _live_yf(symbol)
-        if df is not None:
-            recs = _records_from_df(df)
+        recs = None
+        if prov == "fmp":
+            try:
+                from app.data.live_providers import fmp_history
+
+                recs = fmp_history(symbol, _KEEP)
+            except Exception:
+                recs = None
+        else:  # yfinance
+            df = _live_yf(symbol)
+            recs = _records_from_df(df) if df is not None else None
+        if recs:
             if path:
                 try:
                     with open(path, "w") as f:

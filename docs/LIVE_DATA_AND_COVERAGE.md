@@ -60,12 +60,32 @@ Result (sample universe, cold → warm): momentum **~1.3s → ~0.1s**, scorecard
    `.env.example`). No free source gives true tick data without a broker.
 
 **To turn on live data locally:**
+
+Option A — **Financial Modeling Prep (full NSE market, recommended):**
 ```env
-LIVE_DATA=true
-DATA_STORE_DIR=./data_store     # optional: cache 1y history as JSON on disk
+DATA_PROVIDER=fmp
+FMP_API_KEY=<your key>          # financialmodelingprep.com
+UNIVERSE_LIMIT=750             # how many stocks (by market cap) to load
+DATA_STORE_DIR=./data_store    # optional: cache history as JSON on disk
 ```
-(Requires `pip install yfinance`; network access to Yahoo. Falls back to synthetic
-if unavailable, so the app never breaks.)
+The universe is built from FMP's stock-screener (sector + market cap) merged with
+full-exchange quotes (1-day change); per-symbol EOD history comes from
+`historical-price-full`. This gives the **complete NSE market** (up to
+`UNIVERSE_LIMIT` names) instead of the ~149 bundled samples.
+
+Option B — **yfinance (per-symbol):**
+```env
+LIVE_DATA=true                 # == DATA_PROVIDER=yfinance
+DATA_STORE_DIR=./data_store
+```
+(Requires `pip install yfinance`; network access to Yahoo.)
+
+Both fall back to the bundled sample data if the network/key is unavailable, so
+the app never breaks. The active provider is shown in the top bar and at `/meta`.
+
+> Note: this cloud sandbox blocks outbound finance hosts (Yahoo/NSE/FMP CONNECT
+> is denied by the egress proxy), so live fetching runs on **your** machine; the
+> adapter's shape is verified here with mocked responses.
 
 ---
 

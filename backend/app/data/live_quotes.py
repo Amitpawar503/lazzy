@@ -50,7 +50,19 @@ def get_quote(symbol: str) -> dict:
     def _load() -> dict:
         last, prev = _base(symbol)
         price = last
-        if settings.live_data:
+        prov = settings.provider()
+        if prov == "fmp":
+            try:
+                from app.data.live_providers import fmp_quote
+
+                q = fmp_quote(symbol)
+                if q and q.get("price"):
+                    price = float(q["price"])
+                    if q.get("prev_close"):
+                        prev = float(q["prev_close"])
+            except Exception:
+                pass
+        elif prov == "yfinance":
             live = _live_price(symbol)
             if live:
                 price = live
@@ -61,7 +73,7 @@ def get_quote(symbol: str) -> dict:
             "prev_close": round(prev, 2),
             "change_pct": change_pct,
             "ts": int(time.time()),
-            "live": settings.live_data,
+            "live": prov != "sample",
         }
 
     # short TTL so live polling stays cheap; 2s

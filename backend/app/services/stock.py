@@ -36,7 +36,7 @@ def _quote(symbol: str, row: dict) -> dict:
         "low_52w": round(low_52w, 2),
         "pct_from_52w_high": round((last / high_52w - 1) * 100, 1) if high_52w else 0.0,
         "pct_from_52w_low": round((last / low_52w - 1) * 100, 1) if low_52w else 0.0,
-        "live": get_settings().live_data,
+        "live": get_settings().provider() != "sample",
     }
 
 

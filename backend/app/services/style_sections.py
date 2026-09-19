@@ -7,17 +7,14 @@ are in favour / neutral / against that stock.
 """
 from __future__ import annotations
 
-from collections import Counter
-
 import numpy as np
 
 from app.config import get_settings
 from app.data.cache import cached
-from app.data.investors import investor_catalog
 from app.data.ohlcv import get_ohlcv
 from app.services.backtest import backtest
 from app.services.screener import _row
-from app.services.strategies import ARCHETYPES, _enriched
+from app.services.strategies import _enriched, investor_selectors
 
 SECTION_SIZE = 25
 CAP_LABELS = {"large": "Large Cap", "mid": "Mid Cap", "small": "Small Cap", "micro": "Micro Cap"}
@@ -32,33 +29,27 @@ def _volatility(symbol: str, drift: float) -> float:
 
 
 def style_consensus(enriched: list[dict]) -> dict[str, dict]:
-    """Check every stock against ALL ~110 investor styles and count how many are
-    in favour / neutral / against it. Investors sharing a selection archetype are
-    weighted by their count, so the totals sum to the full investor universe.
-    Favour = top third of that style's ranking; against = bottom third or filtered
-    out; neutral = middle."""
-    weights = Counter(inv["archetype"] for inv in investor_catalog())
-    total = sum(weights.values())
+    """Check every stock against ALL ~110 investor styles (each with its own
+    archetype + cap focus) and count how many are in favour / neutral / against
+    it. Favour = the style would pick it (top of its ranking); against = it drops
+    out of that style's list entirely (filtered out or bottom); neutral = held
+    but not a top pick."""
+    selectors = investor_selectors()
+    total = len(selectors)
     syms = [x["symbol"] for x in enriched]
     consensus = {s: {"favour": 0, "neutral": 0, "against": 0} for s in syms}
-    for arch, w in weights.items():
-        sel = ARCHETYPES.get(arch)
-        if sel is None:
-            continue
+    for _, sel in selectors:
         lst = sel(enriched)
         n = len(lst)
         pos = {s: i for i, s in enumerate(lst)}
-        fav_cut = max(1, n // 3)
-        agn_cut = max(1, (2 * n) // 3)
+        fav_cut = max(1, min(20, n // 2))   # top picks the style would actually buy
         for s in syms:
             if s not in pos:
-                consensus[s]["against"] += w
+                consensus[s]["against"] += 1
             elif pos[s] < fav_cut:
-                consensus[s]["favour"] += w
-            elif pos[s] >= agn_cut:
-                consensus[s]["against"] += w
+                consensus[s]["favour"] += 1
             else:
-                consensus[s]["neutral"] += w
+                consensus[s]["neutral"] += 1
     for s in consensus:
         consensus[s]["total"] = total
     return consensus

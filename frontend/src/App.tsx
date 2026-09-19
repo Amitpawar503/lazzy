@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "./api";
 import Heatmap360 from "./components/Heatmap360";
 import SectorHeatmap from "./components/SectorHeatmap";
 import FiiDiiActivity from "./components/FiiDiiActivity";
@@ -25,6 +26,10 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("360");
+  const [prov, setProv] = useState<{ provider?: string; live?: boolean; size?: number } | null>(null);
+  useEffect(() => {
+    api.meta().then((m) => setProv({ provider: m.provider, live: m.live, size: m.universe_size })).catch(() => {});
+  }, []);
   return (
     <StockDetailProvider>
     <div className="app">
@@ -43,7 +48,11 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="disclaimer">EOD / delayed · sample data if offline</div>
+        <div className="disclaimer">
+          {prov?.live
+            ? <span><span className="live-dot">● LIVE</span> · {prov.provider} · {prov.size} stocks</span>
+            : <span>sample data · {prov?.size ?? ""} stocks</span>}
+        </div>
       </header>
 
       <main className="content">

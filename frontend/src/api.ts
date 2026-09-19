@@ -301,7 +301,7 @@ export const api = {
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
   events: () => get<EventList>(`/api/impact/events`),
   meta: () =>
-    get<{ universe_size: number; sectors: string[]; timeframes: string[] }>(
+    get<{ universe_size: number; sectors: string[]; timeframes: string[]; provider?: string; live?: boolean }>(
       `/meta`
     ),
 };

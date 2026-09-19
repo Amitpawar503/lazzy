@@ -12,10 +12,19 @@ from app.data.sample_data import sample_universe
 
 def _load() -> list[dict]:
     settings = get_settings()
+    prov = settings.provider()
     base = sample_universe()
-    # Only hit the network when live data is explicitly enabled — otherwise the
-    # app stays instant on cold start.
-    if settings.live_data:
+
+    if prov == "fmp":
+        try:
+            from app.data.live_providers import fmp_universe
+
+            rows = fmp_universe()
+            if rows:
+                return rows
+        except Exception:
+            pass
+    elif prov == "yfinance":
         try:
             from app.data.providers.yfinance_provider import enrich_universe
 
@@ -24,14 +33,15 @@ def _load() -> list[dict]:
                 return live
         except Exception:
             pass
-    if not settings.allow_sample_fallback and settings.live_data:
+
+    if not settings.allow_sample_fallback and prov != "sample":
         raise RuntimeError("live universe unavailable and sample fallback disabled")
     return base
 
 
 def get_universe() -> list[dict]:
     ttl = get_settings().cache_ttl_seconds
-    return cached("universe:v2", ttl, _load)
+    return cached("universe:v3", ttl, _load)
 
 
 def sectors() -> list[str]:

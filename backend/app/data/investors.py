@@ -87,16 +87,35 @@ _ARCH_CYCLE = [
     "dividend", "high_roe", "low_debt", "contrarian", "high_fii", "cashflow",
     "magic", "large_quality", "small_cap", "turnaround", "activist",
 ]
+# Cap focus diversifies picks so two same-archetype investors don't overlap.
+_CAP_CYCLE = ["any", "large", "mid", "small", "any", "large", "small"]
+CAP_LABEL = {"any": "all caps", "large": "large caps", "mid": "mid caps", "small": "small/micro caps"}
+
+# Sensible cap focus for marquee names.
+_FAMOUS_CAP = {
+    "Warren Buffett (Quality Value)": "large",
+    "Jennison Associates (Growth)": "large",
+    "GQG Partners (Quality Growth)": "large",
+    "Peter Lynch (GARP)": "mid",
+    "Tang Capital (Contrarian)": "small",
+    "Light Street (Tech Growth)": "mid",
+    "Mark Rachesky / MHR (Activist)": "small",
+    "Weiss Asset Management (Value)": "small",
+}
 
 
 def investor_catalog() -> list[dict]:
     out = []
-    for name, arch, top_n, phil in _FAMOUS:
-        out.append({"name": name, "archetype": arch, "top_n": top_n, "philosophy": phil})
+    for i, (name, arch, top_n, phil) in enumerate(_FAMOUS):
+        cap = _FAMOUS_CAP.get(name, _CAP_CYCLE[i % len(_CAP_CYCLE)])
+        out.append({"name": name, "archetype": arch, "cap": cap, "top_n": top_n,
+                    "philosophy": phil})
     for i, name in enumerate(_FUND_NAMES):
         arch = _ARCH_CYCLE[i % len(_ARCH_CYCLE)]
+        cap = _CAP_CYCLE[(i + 2) % len(_CAP_CYCLE)]
         top_n = 12 + (i * 7) % 14  # 12..25
         blurb = ARCHETYPE_BLURB.get(arch, ARCHETYPE_BLURB["blend"])
-        out.append({"name": name, "archetype": arch, "top_n": top_n,
-                    "philosophy": f"{blurb} (style-emulated)"})
+        focus = "" if cap == "any" else f" ({CAP_LABEL[cap]} focus)"
+        out.append({"name": name, "archetype": arch, "cap": cap, "top_n": top_n,
+                    "philosophy": f"{blurb}{focus} (style-emulated)"})
     return out

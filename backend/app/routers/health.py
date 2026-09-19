@@ -16,9 +16,12 @@ def health() -> dict:
 @router.get("/meta")
 def meta() -> dict:
     uni = get_universe()
+    s = get_settings()
     return {
         "universe_size": len(uni),
         "sectors": sectors(),
         "timeframes": ["1d", "1w", "1m"],
-        "sample_fallback": get_settings().allow_sample_fallback,
+        "sample_fallback": s.allow_sample_fallback,
+        "provider": s.provider(),
+        "live": s.provider() != "sample",
     }
