@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     #               Live Market Feed + 20-level Full Depth (websocket) + Daily Historical
     #   yfinance -> Yahoo Finance per-symbol (needs a symbol universe; slower)
     data_provider: str = "sample"
+    # If the primary provider is unavailable at runtime (e.g. Dhan Data APIs not
+    # subscribed → DH-902), automatically fall back to this FREE provider before
+    # sample. "yfinance" (Yahoo, no key/subscription) | "fmp" | "sample".
+    data_provider_fallback: str = "yfinance"
     fmp_base_url: str = "https://financialmodelingprep.com/api/v3"
     # Max stocks to pull for the full-market universe (ranked by market cap).
     universe_limit: int = 750
@@ -100,12 +104,30 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     def provider(self) -> str:
-        """Effective data provider: explicit data_provider wins; else yfinance
-        when live_data is on; else sample."""
+        """Effective data provider: a runtime override (set when the primary
+        provider proves unavailable, e.g. Dhan not subscribed) wins; else the
+        explicit data_provider; else yfinance when live_data is on; else sample."""
+        if _PROVIDER_OVERRIDE:
+            return _PROVIDER_OVERRIDE
         p = (self.data_provider or "sample").lower()
         if p != "sample":
             return p
         return "yfinance" if self.live_data else "sample"
+
+
+# Runtime override, set by a provider that discovers at request time it can't
+# serve (e.g. Dhan Data-API subscription missing). Makes the WHOLE app switch to
+# the free fallback without restart. Reset only by process restart.
+_PROVIDER_OVERRIDE: Optional[str] = None
+
+
+def set_provider_override(p: Optional[str]) -> None:
+    global _PROVIDER_OVERRIDE
+    _PROVIDER_OVERRIDE = (p or "").lower() or None
+
+
+def get_provider_override() -> Optional[str]:
+    return _PROVIDER_OVERRIDE
 
 
 @lru_cache

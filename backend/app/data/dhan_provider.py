@@ -96,6 +96,37 @@ _ID_TO_SYM: dict[str, str] = {}
 _SCRIP_LOADED = False
 
 
+# Circuit breaker: once Dhan tells us the account can't use Data APIs (DH-902 /
+# HTTP 451 "not subscribed") or the token is invalid, stop hammering it — every
+# further call would 401 too. Flip to the free fallback provider for the session.
+_DHAN_DISABLED = False
+
+
+def is_disabled() -> bool:
+    return _DHAN_DISABLED
+
+
+def _disable_dhan(reason: str) -> None:
+    global _DHAN_DISABLED
+    if _DHAN_DISABLED:
+        return
+    _DHAN_DISABLED = True
+    from app.config import get_settings, set_provider_override
+
+    fb = get_settings().data_provider_fallback
+    log.error("=" * 64)
+    log.error("[dhan] Data APIs are NOT available for this account:")
+    log.error("[dhan]   %s", reason.strip()[:300])
+    log.error("[dhan] Dhan's Live Feed / Historical / Depth need a paid "
+              "'Data APIs' subscription (separate from the demat account).")
+    log.error("[dhan] Subscribe at web.dhan.co → DhanHQ APIs → Data APIs, or use a "
+              "different DATA_PROVIDER.")
+    if fb and fb.lower() != "dhan":
+        log.error("[dhan] → Auto-falling back to FREE provider '%s' for this session.", fb)
+        set_provider_override(fb)
+    log.error("=" * 64)
+
+
 def _headers() -> Optional[dict]:
     s = get_settings()
     if not s.dhan_access_token:
@@ -164,6 +195,8 @@ def symbol_for_id(sid: str | int) -> Optional[str]:
 
 
 def _post(path: str, body: dict) -> Optional[dict]:
+    if _DHAN_DISABLED:                 # circuit open → don't hammer a dead endpoint
+        return None
     h = _headers()
     if h is None:
         log.warning("[dhan] %s skipped: DHAN_ACCESS_TOKEN not set", path)
@@ -178,8 +211,13 @@ def _post(path: str, body: dict) -> Optional[dict]:
         log.info("[dhan] POST %s → %s OK", path, r.status_code)
         return r.json()
     except httpx.HTTPStatusError as e:
+        body_txt = e.response.text or ""
         log.warning("[dhan] POST %s → HTTP %s: %s", path, e.response.status_code,
-                    e.response.text[:300])
+                    body_txt[:300])
+        low = body_txt.lower()
+        if ("dh-902" in low or "not subscribed" in low or "does not have access" in low
+                or "status 451" in low or e.response.status_code == 451):
+            _disable_dhan(body_txt)   # not subscribed → stop + fall back
         return None
     except Exception as e:
         log.warning("[dhan] POST %s FAILED: %s", path, e)
@@ -245,7 +283,7 @@ def dhan_history(symbol: str, days: int) -> Optional[list[dict]]:
     """
     sid = security_id(symbol)
     if not sid:
-        log.warning("[dhan] HISTORY %s: no security_id (scrip master empty/miss)", symbol)
+        log.debug("[dhan] HISTORY %s: no security_id (scrip master empty/miss)", symbol)
         return None
     log.info("[dhan] HISTORY %s (security_id=%s, days=%d)", symbol, sid, days)
     today = _dt.date.today()

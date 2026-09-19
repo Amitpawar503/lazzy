@@ -79,6 +79,9 @@ def _set_depth(symbol: str, buy: list[dict], sell: list[dict]) -> None:
 def _rest_poll_loop(interval: float = 3.0) -> None:
     log.info("[dhan.feed] REST quote poller started (interval=%.1fs)", interval)
     while True:
+        if dh.is_disabled():
+            log.info("[dhan.feed] Dhan disabled (not subscribed) → stopping REST poller")
+            return
         with _LOCK:
             syms = list(_SUBSCRIBED)
         if syms:

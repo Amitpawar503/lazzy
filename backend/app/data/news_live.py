@@ -81,8 +81,14 @@ def _link_tickers(text: str, idx: list[tuple[str, re.Pattern]]) -> list[str]:
 def _parse_dt(raw: str | None) -> str:
     if not raw:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    # RSS RFC-822 (e.g. "Fri, 19 Sep 2026 09:15:00 +0530")
     try:
         return parsedate_to_datetime(raw).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+    # ISO-8601 (e.g. "2026-09-19T08:00:00Z") from JSON APIs
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
     except Exception:
         return raw[:16]
 
@@ -151,6 +157,48 @@ def _fetch_finnhub(idx: list[tuple[str, re.Pattern]]) -> list[dict]:
     return items
 
 
+def _fetch_newsapi(idx: list[tuple[str, re.Pattern]]) -> list[dict]:
+    """NewsAPI.org aggregates many outlets (Reuters/CNBC/Bloomberg/ET/…) with one
+    free key. Pulls Indian-market + business headlines."""
+    s = get_settings()
+    if not s.newsapi_key:
+        return []
+    items = []
+    queries = [
+        ("https://newsapi.org/v2/everything",
+         {"q": "NSE OR BSE OR Sensex OR Nifty OR Indian stock market",
+          "language": "en", "sortBy": "publishedAt", "pageSize": 40}, "india"),
+        ("https://newsapi.org/v2/top-headlines",
+         {"category": "business", "language": "en", "pageSize": 30}, "global"),
+    ]
+    for url, params, cat in queries:
+        try:
+            r = httpx.get(url, params={**params, "apiKey": s.newsapi_key},
+                          timeout=_TIMEOUT, headers=_UA)
+            r.raise_for_status()
+            arts = r.json().get("articles", [])
+        except Exception as e:
+            log.warning("[news] NewsAPI (%s) FAILED: %s", cat, e)
+            continue
+        for a in arts:
+            title = (a.get("title") or "").strip()
+            if not title:
+                continue
+            summary = (a.get("description") or "").strip()
+            blob = f"{title}. {summary}"
+            sent, score = _sentiment(blob)
+            items.append({
+                "id": "na_" + hashlib.md5(title.encode()).hexdigest()[:10],
+                "source": (a.get("source") or {}).get("name") or "NewsAPI",
+                "title": title, "url": a.get("url") or "",
+                "published": _parse_dt(a.get("publishedAt")),
+                "summary": summary[:300], "tickers": _link_tickers(blob, idx),
+                "sentiment": sent, "sentiment_score": score, "category": cat,
+            })
+    log.info("[news] NewsAPI → %d items", len(items))
+    return items
+
+
 def fetch_live_news() -> list[dict]:
     """Fetch + normalise live headlines from all free sources. Empty on total
     failure (offline) so the caller falls back to sample."""
@@ -162,6 +210,7 @@ def fetch_live_news() -> list[dict]:
         cat = "india" if name in india else "global"
         out.extend(_fetch_rss(name, url, cat, idx))
     out.extend(_fetch_finnhub(idx))
+    out.extend(_fetch_newsapi(idx))
     # de-dup by title, newest first
     seen, dedup = set(), []
     for n in sorted(out, key=lambda x: x["published"], reverse=True):

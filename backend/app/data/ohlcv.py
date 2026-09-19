@@ -93,6 +93,23 @@ def _read_disk_fresh(path: str) -> list[dict] | None:
         return None
 
 
+def _history_from(prov: str, symbol: str) -> list[dict] | None:
+    """EOD history for one symbol from a named provider, or None."""
+    try:
+        if prov == "fmp":
+            from app.data.live_providers import fmp_history
+            return fmp_history(symbol, _KEEP)
+        if prov == "dhan":
+            from app.data.dhan_provider import dhan_history
+            return dhan_history(symbol, _KEEP)
+        if prov == "yfinance":
+            df = _live_yf(symbol)
+            return _records_from_df(df) if df is not None else None
+    except Exception:
+        return None
+    return None
+
+
 def _full_history(symbol: str, drift_hint: float) -> list[dict]:
     settings = get_settings()
     prov = settings.provider()
@@ -103,24 +120,18 @@ def _full_history(symbol: str, drift_hint: float) -> list[dict]:
             disk = _read_disk_fresh(path)
             if disk:
                 return disk
+        # Try the effective provider, then the free fallback (e.g. Dhan not
+        # subscribed → yfinance), before synthetic.
         recs = None
-        if prov == "fmp":
-            try:
-                from app.data.live_providers import fmp_history
-
-                recs = fmp_history(symbol, _KEEP)
-            except Exception:
-                recs = None
-        elif prov == "dhan":
-            try:
-                from app.data.dhan_provider import dhan_history
-
-                recs = dhan_history(symbol, _KEEP)
-            except Exception:
-                recs = None
-        else:  # yfinance
-            df = _live_yf(symbol)
-            recs = _records_from_df(df) if df is not None else None
+        tried: list[str] = []
+        for p in (prov, settings.data_provider_fallback):
+            p = (p or "").lower()
+            if not p or p == "sample" or p in tried:
+                continue
+            tried.append(p)
+            recs = _history_from(p, symbol)
+            if recs:
+                break
         if recs:
             if path:
                 try:

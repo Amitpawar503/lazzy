@@ -69,13 +69,20 @@ category and search by investor/strategy name.
 
 **Live data & speed:** off by default (fast synthetic data, no network). Three
 live providers via `DATA_PROVIDER`:
-- **`dhan`** — DhanHQ v2 (free with a demat account): **Live Market Feed** +
-  **20-level Full Market Depth** (websockets) + **Daily Historical** data. Set
-  `DHAN_CLIENT_ID` + `DHAN_ACCESS_TOKEN`. Real tick-by-tick prices feed
-  `/api/stream/quotes`; the live order book is at `/api/depth/{symbol}`.
+- **`yfinance`** (`LIVE_DATA=true` or `DATA_PROVIDER=yfinance`) — **free, no key,
+  no subscription** Yahoo Finance (NSE, ~15-min delayed). The easiest live path.
+- **`dhan`** — DhanHQ v2: **Live Market Feed** + **20-level Full Market Depth**
+  (websockets) + **Daily Historical**. Set `DHAN_CLIENT_ID` + `DHAN_ACCESS_TOKEN`.
+  ⚠️ Requires a **paid "Data APIs" subscription** on your Dhan account (separate
+  from the demat account) — without it Dhan returns `DH-902 / HTTP 451` and the
+  app **auto-falls back** to `DATA_PROVIDER_FALLBACK` (default `yfinance`). Real
+  tick prices feed `/api/stream/quotes`; the live order book is at `/api/depth/{symbol}`.
 - **`fmp`** — Financial Modeling Prep + `FMP_API_KEY`: full NSE universe via
   screener + quotes + EOD history (`UNIVERSE_LIMIT` names by market cap).
-- **`yfinance`** (`LIVE_DATA=true`) — per-symbol Yahoo Finance.
+
+If the chosen provider can't serve (missing key/subscription), the app
+automatically tries `DATA_PROVIDER_FALLBACK` (a free provider) before sample —
+so you still get live data. The active provider is shown in `/meta`.
 
 History is cached to JSON (`DATA_STORE_DIR`); a near-live SSE stream
 (`/api/stream/quotes`) buffers quotes. Everything falls back to sample data if
@@ -83,9 +90,12 @@ the feed/key is missing.
 
 **Live news:** on by default (`NEWS_LIVE=true`) — real headlines from free RSS
 feeds (Moneycontrol, Economic Times, Livemint, Business Standard, Google News,
-Reuters, CNBC, MarketWatch) plus Finnhub (`FINNHUB_API_KEY`, optional), each
-entity-linked to the universe and sentiment-tagged. **No login needed** (RSS is
-public); it falls back to sample only when offline.
+Reuters, CNBC, MarketWatch) plus **Finnhub** (`FINNHUB_API_KEY`) and **NewsAPI**
+(`NEWSAPI_KEY`, aggregates Reuters/CNBC/Bloomberg/ET/… ) when keyed — each
+entity-linked to the universe and sentiment-tagged. **No login needed**; it falls
+back to sample only when every source is unreachable. (The **News** tab is the
+live feed; **News Impact** is curated event→company analysis, illustrative by
+design.)
 
 **Seeing sample data instead of live?** The backend now logs every provider hit
 and every fallback reason to the terminal (`[dhan] …`, `[news] …`), and prints a

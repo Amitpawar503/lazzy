@@ -61,8 +61,16 @@ def dhan_diagnostics(symbol: str = Query("RELIANCE")) -> dict:
         out["history_sample"] = hist[-1] if hist else None
         dhan_feed.ensure_started([symbol])
         out["feed"] = dhan_feed.status()
+        out["dhan_disabled"] = dh.is_disabled()
         out["ok"] = bool(out.get("quote") or out.get("history_bars"))
-        if not out["ok"]:
+        if dh.is_disabled():
+            out["hint"] = ("Your Dhan account is NOT subscribed to Data APIs (DH-902 / "
+                           "HTTP 451). Data APIs are a paid add-on at web.dhan.co → DhanHQ "
+                           "APIs → Data APIs. Meanwhile the app auto-fell back to the free "
+                           f"provider '{s.data_provider_fallback}'. Or set DATA_PROVIDER="
+                           f"{s.data_provider_fallback} directly.")
+            out["effective_provider"] = s.provider()
+        elif not out["ok"]:
             out["hint"] = ("Creds set but Dhan returned nothing — check the terminal [dhan] "
                            "lines for HTTP 401/403 (bad/expired token) or network egress.")
     except Exception as e:  # pragma: no cover

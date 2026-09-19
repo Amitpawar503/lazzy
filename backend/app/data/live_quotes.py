@@ -63,6 +63,7 @@ def get_quote(symbol: str) -> dict:
             except Exception:
                 pass
         elif prov == "dhan":
+            got = False
             try:
                 from app.data import dhan_feed
                 from app.data.dhan_provider import dhan_quote
@@ -70,17 +71,22 @@ def get_quote(symbol: str) -> dict:
                 dhan_feed.ensure_started([symbol])
                 tick = dhan_feed.get_tick(symbol)   # websocket / poller push cache
                 if tick and tick.get("price"):
-                    price = float(tick["price"])
+                    price = float(tick["price"]); got = True
                     if tick.get("prev_close"):
                         prev = float(tick["prev_close"])
                 else:                               # cold cache → one REST quote
                     q = dhan_quote(symbol)
                     if q and q.get("price"):
-                        price = float(q["price"])
+                        price = float(q["price"]); got = True
                         if q.get("prev_close"):
                             prev = float(q["prev_close"])
             except Exception:
                 pass
+            # Dhan unavailable (e.g. not subscribed) → free fallback provider.
+            if not got and settings.data_provider_fallback.lower() == "yfinance":
+                live = _live_price(symbol)
+                if live:
+                    price = live
         elif prov == "yfinance":
             live = _live_price(symbol)
             if live:
