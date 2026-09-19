@@ -37,8 +37,8 @@ cd frontend && npm install && npm run dev
 | **Best Stocks** | Screeners by **sector / cap / momentum / seasonal**; sector & cap show **subsections** (per sector / large-mid-small-micro), each row showing which algos push it up ▲ / down ▼ and by how much | ✅ `top_n` + dimension |
 | **FII/DII Activity** | Net institutional cash flows + stocks added / removed | ✅ `top_n` |
 | **Algo Signals** | 10 algorithms vote per stock — how many are +ve / −ve and the net conviction, with a per-algorithm drilldown | ✅ `top_n` + view/sort |
-| **Ideas** | ProPicks-style **strategy baskets** (style / fundamentals / sector / cap / theme), each **backtested** vs a NIFTY-style benchmark: 1Y & 5Y return, beats/lags alpha, risk (vol / max-DD / Sharpe), sparkline, and "View stocks" | category filter + search |
-| **Style Picks** | 6 sections — **Large / Mid / Small / Micro cap**, **Multibagger**, **Most Volatile (SIP)** — ~30 stocks each, with a **style-consensus** column (how many investor styles are 👍 favour / • neutral / 👎 against) | section tabs |
+| **Ideas** | Categories **style / fundamentals / sector / cap**. **style** = 6 sections (Large/Mid/Small/Micro cap, Multibagger, Most Volatile-SIP), each ~25 stocks ranked by **styles-in-favour across all ~110 investor styles**, with a 👍/•/👎 consensus column. Fundamentals/sector/cap are backtested baskets. | category + section tabs |
+| **Themes** | Thematic baskets (High Conviction, Bharat Bargains, Quality, Momentum, Seasonal, Dividend), backtested vs benchmark | — |
 | **News** | Aggregated Indian & global headlines, entity-linked + sentiment-tagged | category filter |
 | **News Impact** | Event → affected-companies fan-out with short- vs long-term impact (e.g. a Tata Sons listing: holders gain, TCS faces overhang, peers unaffected) | per-event |
 

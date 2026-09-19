@@ -7,18 +7,19 @@ are in favour / neutral / against that stock.
 """
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from collections import Counter
 
 import numpy as np
 
 from app.config import get_settings
 from app.data.cache import cached
+from app.data.investors import investor_catalog
 from app.data.ohlcv import get_ohlcv
 from app.services.backtest import backtest
 from app.services.screener import _row
 from app.services.strategies import ARCHETYPES, _enriched
 
-SECTION_SIZE = 30
+SECTION_SIZE = 25
 CAP_LABELS = {"large": "Large Cap", "mid": "Mid Cap", "small": "Small Cap", "micro": "Micro Cap"}
 
 
@@ -31,12 +32,19 @@ def _volatility(symbol: str, drift: float) -> float:
 
 
 def style_consensus(enriched: list[dict]) -> dict[str, dict]:
-    """For each symbol, count archetypes (styles) that favour / are neutral /
-    are against it. Favour = top third of the style's ranking; against = bottom
-    third or filtered out; neutral = middle."""
+    """Check every stock against ALL ~110 investor styles and count how many are
+    in favour / neutral / against it. Investors sharing a selection archetype are
+    weighted by their count, so the totals sum to the full investor universe.
+    Favour = top third of that style's ranking; against = bottom third or filtered
+    out; neutral = middle."""
+    weights = Counter(inv["archetype"] for inv in investor_catalog())
+    total = sum(weights.values())
     syms = [x["symbol"] for x in enriched]
     consensus = {s: {"favour": 0, "neutral": 0, "against": 0} for s in syms}
-    for _, sel in ARCHETYPES.items():
+    for arch, w in weights.items():
+        sel = ARCHETYPES.get(arch)
+        if sel is None:
+            continue
         lst = sel(enriched)
         n = len(lst)
         pos = {s: i for i, s in enumerate(lst)}
@@ -44,14 +52,13 @@ def style_consensus(enriched: list[dict]) -> dict[str, dict]:
         agn_cut = max(1, (2 * n) // 3)
         for s in syms:
             if s not in pos:
-                consensus[s]["against"] += 1
+                consensus[s]["against"] += w
             elif pos[s] < fav_cut:
-                consensus[s]["favour"] += 1
+                consensus[s]["favour"] += w
             elif pos[s] >= agn_cut:
-                consensus[s]["against"] += 1
+                consensus[s]["against"] += w
             else:
-                consensus[s]["neutral"] += 1
-    total = len(ARCHETYPES)
+                consensus[s]["neutral"] += w
     for s in consensus:
         consensus[s]["total"] = total
     return consensus

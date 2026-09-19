@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type StrategyCard, type StrategyDetail } from "../api";
 import { fmtPct } from "../color";
 import { useStockDetail } from "./StockDetail";
+import StylePicks from "./StylePicks";
 
 function Spark({ a, b, w = 220, h = 54 }: { a: number[]; b: number[]; w?: number; h?: number }) {
   const all = [...a, ...b];
@@ -112,13 +113,13 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-const CATS = ["all", "style", "fundamentals", "sector", "cap", "theme"] as const;
-type Cat = (typeof CATS)[number];
+const IDEAS_CATS = ["style", "fundamentals", "sector", "cap"] as const;
+type IdeasCat = (typeof IDEAS_CATS)[number];
 
-export default function Strategies() {
+export default function Strategies({ variant = "ideas" }: { variant?: "ideas" | "themes" }) {
   const [cards, setCards] = useState<StrategyCard[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [cat, setCat] = useState<Cat>("all");
+  const [cat, setCat] = useState<IdeasCat>("style");
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string | null>(null);
 
@@ -126,47 +127,59 @@ export default function Strategies() {
     api.strategies().then((d) => setCards(d.strategies)).catch((e) => setErr(String(e)));
   }, []);
 
+  const isThemes = variant === "themes";
   const query = q.trim().toLowerCase();
+  const activeCat = isThemes ? "theme" : cat;
   const shown = (cards || [])
-    .filter((c) => cat === "all" || c.category === cat)
+    .filter((c) => c.category === activeCat)
     .filter((c) => !query || c.name.toLowerCase().includes(query) || c.description.toLowerCase().includes(query));
 
   return (
     <section>
       <div className="screen-head">
         <div>
-          <h2>Ideas — AI Strategy Baskets</h2>
+          <h2>{isThemes ? "Themes — AI Strategy Baskets" : "Ideas — AI Strategy Baskets"}</h2>
           <p className="sub">
-            Curated baskets (sector / cap / theme), each backtested vs a NIFTY-style benchmark
-            with risk. Only adopt one if it <b>beats the benchmark</b> at acceptable risk.
+            {isThemes
+              ? "Thematic baskets, each backtested vs a NIFTY-style benchmark with risk."
+              : "Style (investor-consensus picks), fundamentals, sector & cap baskets — backtested vs a NIFTY-style benchmark."}{" "}
+            Only adopt one if it <b>beats the benchmark</b> at acceptable risk.
           </p>
         </div>
-        <div className="controls">
-          <div className="control">
-            <label>Category</label>
-            <div className="segmented">
-              {CATS.map((c) => (
-                <button key={c} className={c === cat ? "on" : ""} onClick={() => setCat(c)}>{c}</button>
-              ))}
+        {!isThemes && (
+          <div className="controls">
+            <div className="control">
+              <label>Category</label>
+              <div className="segmented">
+                {IDEAS_CATS.map((c) => (
+                  <button key={c} className={c === cat ? "on" : ""} onClick={() => setCat(c)}>{c}</button>
+                ))}
+              </div>
             </div>
+            {cat !== "style" && (
+              <div className="control">
+                <label>Search</label>
+                <input className="search-inp" placeholder="strategy…" value={q}
+                       onChange={(e) => setQ(e.target.value)} />
+              </div>
+            )}
           </div>
-          <div className="control">
-            <label>Search</label>
-            <input className="search-inp" placeholder="investor / strategy…" value={q}
-                   onChange={(e) => setQ(e.target.value)} />
-          </div>
-        </div>
-      </div>
-      {cards && <p className="hint">{shown.length} of {cards.length} strategies</p>}
-
-      {err && <div className="error">Failed to load: {err}</div>}
-      {!cards && !err && <div className="algo-loading">Backtesting strategies…</div>}
-
-      <div className="strat-grid">
-        {shown.map((s) => <Card key={s.id} s={s} onView={() => setSel(s.id)} />)}
+        )}
       </div>
 
-      {sel && <DetailModal id={sel} onClose={() => setSel(null)} />}
+      {/* Ideas → Style renders the 6-section, all-styles-consensus view */}
+      {!isThemes && cat === "style" ? (
+        <StylePicks embedded />
+      ) : (
+        <>
+          {err && <div className="error">Failed to load: {err}</div>}
+          {!cards && !err && <div className="algo-loading">Backtesting strategies…</div>}
+          <div className="strat-grid">
+            {shown.map((s) => <Card key={s.id} s={s} onView={() => setSel(s.id)} />)}
+          </div>
+          {sel && <DetailModal id={sel} onClose={() => setSel(null)} />}
+        </>
+      )}
     </section>
   );
 }

@@ -102,7 +102,7 @@ function Section({ s }: { s: StyleSection }) {
   );
 }
 
-export default function StylePicks() {
+export default function StylePicks({ embedded = false }: { embedded?: boolean }) {
   const [data, setData] = useState<StyleSections | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [active, setActive] = useState<string>("large");
@@ -115,16 +115,24 @@ export default function StylePicks() {
 
   return (
     <section>
-      <div className="screen-head">
-        <div>
-          <h2>Style Picks — 6 Sections</h2>
-          <p className="sub">
-            Best ~30 stocks per bucket by investor-style consensus. The last column shows how many
-            of the investor styles are <span className="up">in favour</span> / neutral /{" "}
-            <span className="dn">against</span> each stock.
-          </p>
+      {!embedded && (
+        <div className="screen-head">
+          <div>
+            <h2>Style Picks — 6 Sections</h2>
+            <p className="sub">
+              Best ~25 stocks per bucket by investor-style consensus. The last column shows how many
+              of the ~110 investor styles are <span className="up">in favour</span> / neutral /{" "}
+              <span className="dn">against</span> each stock.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
+      {embedded && (
+        <p className="sub" style={{ margin: "0 0 12px" }}>
+          Each stock is checked against all ~110 investor styles; the top ~25 per bucket by
+          <span className="up"> styles in favour</span> are shown, with the full 👍/•/👎 split.
+        </p>
+      )}
 
       {err && <div className="error">Failed to load: {err}</div>}
       {!data && !err && <div className="algo-loading">Scoring styles across the universe…</div>}
