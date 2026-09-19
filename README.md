@@ -58,11 +58,13 @@ govt contracts**, **management** notes, and **news impact** (short/long-term) �
 each with the concrete figure behind it (Moneycontrol #KnowBeforeYouInvest style).
 The stock-detail modal shows the full SWOT grid too.
 
-The **Ideas** tab includes investor-**style / guru baskets** that pick the way
-famous investors do — Activist Value (Icahn), Disruptive Growth (ARK), Quality
-Compounder (Buffett), Deep Value (Graham), GARP (Lynch), Magic Formula
-(Greenblatt), Contrarian, and Trend Momentum (CANSLIM) — each card explains
-*how it picks* and is backtested with return + risk vs the benchmark.
+The **Ideas** tab (145 baskets) spans **style** (~110 investor personas — Icahn,
+ARK, Buffett, Graham, Lynch, Greenblatt and many funds, each style-emulated on the
+Indian universe), **fundamentals** (High ROE, Low Debt, Dividend, Undervalued,
+Deep Value, Growth, Cash-flow, Quality, Institutional-favourites, GARP),
+**sector**, **cap**, and **theme**. Every basket holds **5–25 stocks**, explains
+*how it picks*, and is backtested with return + risk vs the benchmark. Filter by
+category and search by investor/strategy name.
 
 **Live data & speed:** off by default (fast synthetic data, no network). Set
 `LIVE_DATA=true` for real quotes + ~1-year history (yfinance), optionally cached

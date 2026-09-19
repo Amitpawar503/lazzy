@@ -112,20 +112,24 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-const CATS = ["all", "style", "sector", "cap", "theme"] as const;
+const CATS = ["all", "style", "fundamentals", "sector", "cap", "theme"] as const;
 type Cat = (typeof CATS)[number];
 
 export default function Strategies() {
   const [cards, setCards] = useState<StrategyCard[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [cat, setCat] = useState<Cat>("all");
+  const [q, setQ] = useState("");
   const [sel, setSel] = useState<string | null>(null);
 
   useEffect(() => {
     api.strategies().then((d) => setCards(d.strategies)).catch((e) => setErr(String(e)));
   }, []);
 
-  const shown = (cards || []).filter((c) => cat === "all" || c.category === cat);
+  const query = q.trim().toLowerCase();
+  const shown = (cards || [])
+    .filter((c) => cat === "all" || c.category === cat)
+    .filter((c) => !query || c.name.toLowerCase().includes(query) || c.description.toLowerCase().includes(query));
 
   return (
     <section>
@@ -137,15 +141,23 @@ export default function Strategies() {
             with risk. Only adopt one if it <b>beats the benchmark</b> at acceptable risk.
           </p>
         </div>
-        <div className="control">
-          <label>Category</label>
-          <div className="segmented">
-            {CATS.map((c) => (
-              <button key={c} className={c === cat ? "on" : ""} onClick={() => setCat(c)}>{c}</button>
-            ))}
+        <div className="controls">
+          <div className="control">
+            <label>Category</label>
+            <div className="segmented">
+              {CATS.map((c) => (
+                <button key={c} className={c === cat ? "on" : ""} onClick={() => setCat(c)}>{c}</button>
+              ))}
+            </div>
+          </div>
+          <div className="control">
+            <label>Search</label>
+            <input className="search-inp" placeholder="investor / strategy…" value={q}
+                   onChange={(e) => setQ(e.target.value)} />
           </div>
         </div>
       </div>
+      {cards && <p className="hint">{shown.length} of {cards.length} strategies</p>}
 
       {err && <div className="error">Failed to load: {err}</div>}
       {!cards && !err && <div className="algo-loading">Backtesting strategies…</div>}

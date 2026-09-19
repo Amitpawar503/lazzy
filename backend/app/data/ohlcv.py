@@ -13,6 +13,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+import time
 
 import numpy as np
 import pandas as pd
@@ -116,9 +117,21 @@ def _full_history(symbol: str, drift_hint: float) -> list[dict]:
     return _records_from_df(_synthetic(symbol, _KEEP, drift_hint))
 
 
+# In-process cache of the *constructed* DataFrame per symbol (rebuilding a
+# DataFrame from records on every call was the hot path when backtesting 100+
+# baskets). Keyed by symbol; slice to `days` per caller.
+_DF_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
+
+
 def get_ohlcv(symbol: str, days: int = 260, drift_hint: float = 0.0) -> pd.DataFrame:
     """Return the last `days` sessions for `symbol` (from one cached long series)."""
     ttl = get_settings().cache_ttl_seconds
-    records = cached(f"ohlcv:{symbol}:v2", ttl, lambda: _full_history(symbol, drift_hint))
-    df = pd.DataFrame(records).set_index("date")
+    now = time.time()
+    ent = _DF_CACHE.get(symbol)
+    if ent is None or ent[0] <= now:
+        records = cached(f"ohlcv:{symbol}:v2", ttl, lambda: _full_history(symbol, drift_hint))
+        df = pd.DataFrame(records).set_index("date")
+        _DF_CACHE[symbol] = (now + ttl, df)
+    else:
+        df = ent[1]
     return df.tail(max(1, days))

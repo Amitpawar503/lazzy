@@ -97,7 +97,8 @@ def _specs() -> list[dict]:
              key=lambda x: x["f"]["dividend_yield"], reverse=True)]},
     ]
 
-    specs += _style_specs()
+    specs += _fundamental_specs()
+    specs += _investor_specs()
     return specs
 
 
@@ -115,67 +116,98 @@ def _magic_formula_rank(e: list[dict]) -> list[str]:
     return [s for s, _ in sorted(rank.items(), key=lambda t: t[1])]
 
 
-def _style_specs() -> list[dict]:
-    return [
-        {"id": "style_activist", "name": "Activist Value (Icahn-style)", "category": "style", "top_n": 10,
-         "description": "Undervalued, under-managed businesses ripe for a turnaround / value unlock.",
-         "philosophy": "Buy cheap, sound-balance-sheet companies the market has given up on, "
-                       "where a catalyst (restructuring, capital return, activism) can unlock value.",
-         "select": lambda e: [r["symbol"] for r in sorted(
-             [x for x in e if x["f"]["cheap_vs_industry"] and x["f"]["debt_to_equity"] < 0.8
-              and 5 <= x["f"]["roe"] <= 18],
-             key=lambda x: (x["f"]["industry_pe"] - x["f"]["pe"]), reverse=True)]},
-        {"id": "style_growth", "name": "Disruptive Growth (ARK-style)", "category": "style", "top_n": 10,
-         "description": "Fast-growing disruptors; pay up for growth and momentum.",
-         "philosophy": "Prioritise high revenue growth and price momentum over valuation, "
-                       "betting on innovation-led compounding — higher risk, higher variance.",
-         "select": lambda e: [s for s, _ in sorted(
-             [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0)))
-              for x in e if x["f"]["sales_growth_yoy"] >= 15],
-             key=lambda t: t[1], reverse=True)]},
-        {"id": "style_quality", "name": "Quality Compounder (Buffett-style)", "category": "style", "top_n": 10,
-         "description": "Durable, cash-rich franchises with high returns and low debt.",
-         "philosophy": "Own wonderful businesses — high, consistent ROE/ROCE, low leverage, "
-                       "positive cash flow — and hold them; let compounding do the work.",
-         "select": lambda e: [r["symbol"] for r in sorted(
-             [x for x in e if x["f"]["roe"] >= 18 and x["f"]["debt_to_equity"] < 0.5
-              and x["f"]["profit_growth_yoy"] > 0 and x["f"]["ocf_positive"]],
-             key=lambda x: x["f"]["roe"], reverse=True)]},
-        {"id": "style_deep_value", "name": "Deep Value (Graham)", "category": "style", "top_n": 10,
-         "description": "Statistically cheap: low P/B, low P/E, strong liquidity — margin of safety.",
-         "philosophy": "Ben Graham's net-cheap screen: buy well below intrinsic value with a "
-                       "margin of safety (low P/B & P/E, healthy current ratio).",
-         "select": lambda e: [r["symbol"] for r in sorted(
-             [x for x in e if x["f"]["pb"] < 3 and x["f"]["cheap_vs_industry"] and x["f"]["current_ratio"] > 1.3],
-             key=lambda x: (x["f"]["pb"] + x["f"]["pe"] / max(x["f"]["industry_pe"], 1)))]},
-        {"id": "style_garp", "name": "GARP (Peter Lynch)", "category": "style", "top_n": 10,
-         "description": "Growth at a reasonable price — earnings growth vs a sensible P/E.",
-         "philosophy": "Lynch's GARP: favour solid earnings growth that isn't overpriced "
-                       "(low PEG-style trade-off of growth against valuation).",
-         "select": lambda e: [r["symbol"] for r in sorted(
-             [x for x in e if x["f"]["profit_growth_yoy"] >= 12 and x["f"]["pe"] <= x["f"]["industry_pe"] * 1.1],
-             key=lambda x: x["f"]["profit_growth_yoy"] / max(x["f"]["pe"], 1), reverse=True)]},
-        {"id": "style_magic", "name": "Magic Formula (Greenblatt)", "category": "style", "top_n": 10,
-         "description": "Good + cheap: rank by return on capital and earnings yield.",
-         "philosophy": "Joel Greenblatt's Magic Formula: combine high ROCE (good business) with "
-                       "high earnings yield (cheap price) and buy the top-ranked names.",
-         "select": lambda e: _magic_formula_rank(e)},
-        {"id": "style_contrarian", "name": "Contrarian / Distressed", "category": "style", "top_n": 10,
-         "description": "Beaten-down names with improving fundamentals — buying pessimism.",
-         "philosophy": "Go against the crowd: weak recent price/signal but sound underlying "
-                       "returns, betting on mean reversion as sentiment turns.",
-         "select": lambda e: [r["symbol"] for r in sorted(
-             [x for x in e if x["net_score"] < 5 and x["f"]["roe"] >= 12 and x["f"]["debt_to_equity"] < 1.0],
-             key=lambda x: x["f"]["roe"], reverse=True)]},
-        {"id": "style_momentum", "name": "Trend Momentum (CANSLIM-style)", "category": "style", "top_n": 10,
-         "description": "Winners keep winning — strong momentum backed by earnings growth.",
-         "philosophy": "Ride established uptrends in companies with strong earnings growth; "
-                       "cut laggards. Trend-following with a fundamental filter.",
-         "select": lambda e: [s for s, _ in sorted(
-             [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0)))
-              for x in e if x["f"]["profit_growth_yoy"] >= 10],
-             key=lambda t: t[1], reverse=True)]},
+# --- Archetype selectors: return symbols best-first (unclamped) --- #
+
+def _sorted_syms(items, key, rev=True):
+    return [x["symbol"] for x in sorted(items, key=key, reverse=rev)]
+
+
+def _mom(e):
+    return [s for s, _ in sorted(
+        [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0))) for x in e],
+        key=lambda t: t[1], reverse=True)]
+
+
+ARCHETYPES = {
+    "activist": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["cheap_vs_industry"] and x["f"]["debt_to_equity"] < 0.9 and 5 <= x["f"]["roe"] <= 20],
+        key=lambda x: (x["f"]["industry_pe"] - x["f"]["pe"])),
+    "growth": lambda e: [s for s, _ in sorted(
+        [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0))) for x in e if x["f"]["sales_growth_yoy"] >= 12],
+        key=lambda t: t[1], reverse=True)],
+    "quality": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["roe"] >= 16 and x["f"]["debt_to_equity"] < 0.6 and x["f"]["ocf_positive"]],
+        key=lambda x: x["f"]["roe"]),
+    "deep_value": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["pb"] < 4 and x["f"]["cheap_vs_industry"]],
+        key=lambda x: (x["f"]["pb"] + x["f"]["pe"] / max(x["f"]["industry_pe"], 1)), rev=False),
+    "value": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["cheap_vs_industry"] and x["f"]["roe"] >= 10],
+        key=lambda x: (x["f"]["industry_pe"] - x["f"]["pe"])),
+    "garp": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["profit_growth_yoy"] >= 10 and x["f"]["pe"] <= x["f"]["industry_pe"] * 1.15],
+        key=lambda x: x["f"]["profit_growth_yoy"] / max(x["f"]["pe"], 1)),
+    "magic": lambda e: _magic_formula_rank(e),
+    "contrarian": lambda e: _sorted_syms(
+        [x for x in e if x["net_score"] < 5 and x["f"]["roe"] >= 12 and x["f"]["debt_to_equity"] < 1.0],
+        key=lambda x: x["f"]["roe"]),
+    "momentum": lambda e: [s for s, _ in sorted(
+        [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0))) for x in e if x["f"]["profit_growth_yoy"] >= 8],
+        key=lambda t: t[1], reverse=True)],
+    "dividend": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["ocf_positive"]], key=lambda x: x["f"]["dividend_yield"]),
+    "low_debt": lambda e: _sorted_syms(e, key=lambda x: x["f"]["debt_to_equity"], rev=False),
+    "high_roe": lambda e: _sorted_syms(e, key=lambda x: x["f"]["roe"]),
+    "high_fii": lambda e: _sorted_syms(e, key=lambda x: x["f"]["fii_holding"] + x["f"]["dii_holding"]),
+    "cashflow": lambda e: _sorted_syms(
+        [x for x in e if x["f"]["ocf_positive"]], key=lambda x: x["f"]["free_cash_flow_cr"]),
+    "small_cap": lambda e: _sorted_syms(
+        [x for x in e if x["cap_class"] in ("small", "micro", "mid")], key=lambda x: x["net_score"]),
+    "large_quality": lambda e: _sorted_syms(
+        [x for x in e if x["cap_class"] == "large"], key=lambda x: x["net_score"]),
+    "turnaround": lambda e: _sorted_syms(
+        [x for x in e if x["net_score"] < 0 and x["f"]["roe"] >= 8], key=lambda x: x["f"]["roe"]),
+    "blend": lambda e: _sorted_syms(e, key=lambda x: x["net_score"]),
+}
+
+
+def _investor_specs() -> list[dict]:
+    from app.data.investors import investor_catalog
+
+    specs = []
+    for inv in investor_catalog():
+        arch = inv["archetype"]
+        sel = ARCHETYPES.get(arch, ARCHETYPES["blend"])
+        slug = "inv_" + "".join(c.lower() if c.isalnum() else "_" for c in inv["name"])[:48]
+        specs.append({
+            "id": slug, "name": inv["name"], "category": "style", "top_n": inv["top_n"],
+            "description": f"Style: {arch.replace('_', ' ')}.",
+            "philosophy": inv["philosophy"],
+            "select": (lambda e, fn=sel: fn(e)),
+        })
+    return specs
+
+
+def _fundamental_specs() -> list[dict]:
+    defs = [
+        ("fund_high_roe", "High ROE / ROCE", "Best returns on equity & capital.", "high_roe"),
+        ("fund_low_debt", "Low Debt / Strong Balance Sheet", "Least leveraged, financially safest.", "low_debt"),
+        ("fund_dividend", "High Dividend Yield", "Top income payers with positive cash flow.", "dividend"),
+        ("fund_value", "Undervalued (Low PE vs peers)", "Trading cheap to their industry.", "value"),
+        ("fund_deep_value", "Deep Value (Low P/B)", "Statistically cheap on book value.", "deep_value"),
+        ("fund_growth", "High Sales Growth", "Fastest top-line growers.", "growth"),
+        ("fund_cashflow", "Free Cash Flow Machines", "Strongest free-cash-flow generators.", "cashflow"),
+        ("fund_quality", "Quality (High ROE + Low Debt)", "Durable, well-run compounders.", "quality"),
+        ("fund_institutional", "Institutional Favourites", "Highest FII+DII ownership.", "high_fii"),
+        ("fund_garp", "Growth at Reasonable Price", "Earnings growth vs a sensible P/E.", "garp"),
     ]
+    out = []
+    for sid, name, desc, arch in defs:
+        sel = ARCHETYPES[arch]
+        out.append({"id": sid, "name": name, "category": "fundamentals", "top_n": 15,
+                    "description": desc, "philosophy": "",
+                    "select": (lambda e, fn=sel: fn(e))})
+    return out
 
 
 def _period_label() -> str:
@@ -183,8 +215,27 @@ def _period_label() -> str:
     return f"{y - 5} – {y}"
 
 
+MIN_HOLDINGS = 5
+MAX_HOLDINGS = 25
+
+
+def _clamp_holdings(symbols: list[str], top_n: int, enriched: list[dict]) -> list[str]:
+    top_n = max(MIN_HOLDINGS, min(MAX_HOLDINGS, top_n))
+    picked = symbols[:top_n]
+    if len(picked) < MIN_HOLDINGS:  # backfill from strongest net-score names
+        seen = set(picked)
+        pool = [x["symbol"] for x in sorted(enriched, key=lambda r: r["net_score"], reverse=True)]
+        for s in pool:
+            if s not in seen:
+                picked.append(s)
+                seen.add(s)
+            if len(picked) >= MIN_HOLDINGS:
+                break
+    return picked
+
+
 def _build(spec: dict, enriched: list[dict], detail: bool) -> dict:
-    symbols = spec["select"](enriched)[: spec["top_n"]]
+    symbols = _clamp_holdings(spec["select"](enriched), spec.get("top_n", 15), enriched)
     bt = backtest(symbols)
     card = {
         "id": spec["id"],
@@ -219,8 +270,12 @@ def _build(spec: dict, enriched: list[dict], detail: bool) -> dict:
 
 def list_strategies() -> dict:
     def _load():
+        from concurrent.futures import ThreadPoolExecutor
         enriched = _enriched()
-        cards = [_build(s, enriched, detail=False) for s in _specs()]
+        specs = _specs()
+        workers = max(4, get_settings().compute_workers)
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            cards = list(ex.map(lambda s: _build(s, enriched, detail=False), specs))
         return {"count": len(cards), "strategies": cards}
 
     ttl = get_settings().cache_ttl_seconds

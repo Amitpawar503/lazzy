@@ -291,7 +291,9 @@ select {
 .cat-cap { background: #2e2740; color: #c3a6f0; }
 .cat-theme { background: #14301f; color: #6fd39a; }
 .cat-style { background: #3a2c14; color: #e0b45a; }
+.cat-fundamentals { background: #12303a; color: #6fc3d3; }
 .strat-phil { color: #b9a76a; font-size: 12px; font-style: italic; margin: 0 0 8px; }
+.search-inp { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); padding: 7px 10px; border-radius: 8px; font-size: 13px; min-width: 200px; }
 .flag { font-size: 15px; }
 .view-link { margin-left: auto; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; }
 .strat-name { margin: 10px 0 4px; font-size: 17px; }
