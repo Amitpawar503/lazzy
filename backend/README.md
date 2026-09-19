@@ -6,15 +6,31 @@ unavailable, so it runs with zero config.
 
 ## Run
 
+Requires **Python 3.9+**. Using a virtual environment is strongly recommended so
+the `uvicorn` command lands on your `PATH`:
+
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate      # optional
-pip install -r requirements.txt
+python3 -m venv .venv && source .venv/bin/activate     # recommended
+pip install -r requirements.txt                        # installs ALL deps (fastapi, pandas, …)
 cp ../.env.example ../.env                              # optional
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000/docs for interactive API docs.
+
+### Troubleshooting
+
+- **`zsh: command not found: uvicorn`** (common on macOS): a `pip3 install --user`
+  puts the `uvicorn` script in `~/Library/Python/3.x/bin`, which usually isn't on
+  `PATH`. Don't chase the PATH — just run it as a module:
+  `python3 -m uvicorn app.main:app --port 8000`. (A venv, as above, avoids this
+  entirely.)
+- **`ModuleNotFoundError: fastapi` / `pandas`**: you only installed `uvicorn`. Run
+  `pip install -r requirements.txt` to get every dependency.
+- **`TypeError: unsupported operand type(s) for |`**: you're on an old build of the
+  code with Python 3.9. This is fixed — pull the latest (type hints use
+  `Optional[...]`, which 3.9 supports).
 
 ## Endpoints
 

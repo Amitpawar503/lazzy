@@ -6,6 +6,7 @@ every key is optional — the app degrades to free sources / sample data.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -26,23 +27,23 @@ class Settings(BaseSettings):
     # the UI always renders. Set False to surface errors instead.
     allow_sample_fallback: bool = True
     cache_ttl_seconds: int = 300
-    redis_url: str | None = None  # e.g. redis://localhost:6379/0
+    redis_url: Optional[str] = None  # e.g. redis://localhost:6379/0
 
     # --- Free LLM providers (Phase 4; unused in this slice) ---
-    groq_api_key: str | None = None
-    gemini_api_key: str | None = None
-    together_api_key: str | None = None
-    hf_token: str | None = None
-    nvidia_api_key: str | None = None
-    cloudflare_account_id: str | None = None
-    cloudflare_api_token: str | None = None
-    openrouter_api_key: str | None = None
+    groq_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    together_api_key: Optional[str] = None
+    hf_token: Optional[str] = None
+    nvidia_api_key: Optional[str] = None
+    cloudflare_account_id: Optional[str] = None
+    cloudflare_api_token: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
 
     # --- Data / news providers (optional free tiers) ---
-    tapetide_token: str | None = None
-    alphavantage_api_key: str | None = None
-    finnhub_api_key: str | None = None
-    newsapi_key: str | None = None
+    tapetide_token: Optional[str] = None
+    alphavantage_api_key: Optional[str] = None
+    finnhub_api_key: Optional[str] = None
+    newsapi_key: Optional[str] = None
 
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

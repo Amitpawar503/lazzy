@@ -1,6 +1,8 @@
 """Pydantic response models (API contract)."""
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -12,7 +14,7 @@ class HeatmapTile(BaseModel):
     cap_class: str
     weight: float          # market-cap share (0..1) → treemap box size
     return_pct: float
-    last_price: float | None = None
+    last_price: Optional[float] = None
 
 
 class Heatmap360(BaseModel):
@@ -29,8 +31,8 @@ class SectorTile(BaseModel):
     weight: float
     return_pct: float       # market-cap-weighted sector return
     constituents: int
-    top_gainer: str | None = None
-    top_loser: str | None = None
+    top_gainer: Optional[str] = None
+    top_loser: Optional[str] = None
 
 
 class SectorHeatmap(BaseModel):
