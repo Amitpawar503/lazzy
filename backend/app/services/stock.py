@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.data.fundamentals_data import fundamentals_for
 from app.data.ohlcv import get_ohlcv
 from app.data.universe import get_universe
+from app.services.factors import build_factors
 from app.services.signals import compute_signals_cached
 
 
@@ -141,6 +142,7 @@ def reasoning(symbol: str) -> dict | None:
         "net_score": d["net_score"],
         "bull": d["bull_points"][:4],
         "bear": d["bear_points"][:4],
+        "factors": d["factors"],
         "news": _news_for(symbol),
         "impact": _impact_for(symbol),
     }
@@ -155,6 +157,7 @@ def stock_detail(symbol: str) -> dict | None:
     fund = fundamentals_for(row)
     q = _quote(symbol, row)
     bull, bear = _bull_bear(sig["algos"], fund, q)
+    factors = build_factors(row, fund, q["pct_from_52w_high"], q["pct_from_52w_low"])
     return {
         "symbol": symbol,
         "name": row["name"],
@@ -171,4 +174,5 @@ def stock_detail(symbol: str) -> dict | None:
         "fundamentals": fund,
         "bull_points": bull,
         "bear_points": bear,
+        "factors": factors,
     }

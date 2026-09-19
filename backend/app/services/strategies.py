@@ -96,7 +96,86 @@ def _specs() -> list[dict]:
              [x for x in e if x["f"]["ocf_positive"]],
              key=lambda x: x["f"]["dividend_yield"], reverse=True)]},
     ]
+
+    specs += _style_specs()
     return specs
+
+
+# --- Investor-style / guru personas: mimic HOW famous investors pick --- #
+
+def _magic_formula_rank(e: list[dict]) -> list[str]:
+    # Greenblatt: rank by ROCE and earnings yield (1/PE), sum ranks (lower=better)
+    by_roce = sorted(e, key=lambda x: x["f"]["roce"], reverse=True)
+    by_ey = sorted(e, key=lambda x: (1.0 / max(x["f"]["pe"], 1)), reverse=True)
+    rank = {}
+    for i, x in enumerate(by_roce):
+        rank[x["symbol"]] = rank.get(x["symbol"], 0) + i
+    for i, x in enumerate(by_ey):
+        rank[x["symbol"]] = rank.get(x["symbol"], 0) + i
+    return [s for s, _ in sorted(rank.items(), key=lambda t: t[1])]
+
+
+def _style_specs() -> list[dict]:
+    return [
+        {"id": "style_activist", "name": "Activist Value (Icahn-style)", "category": "style", "top_n": 10,
+         "description": "Undervalued, under-managed businesses ripe for a turnaround / value unlock.",
+         "philosophy": "Buy cheap, sound-balance-sheet companies the market has given up on, "
+                       "where a catalyst (restructuring, capital return, activism) can unlock value.",
+         "select": lambda e: [r["symbol"] for r in sorted(
+             [x for x in e if x["f"]["cheap_vs_industry"] and x["f"]["debt_to_equity"] < 0.8
+              and 5 <= x["f"]["roe"] <= 18],
+             key=lambda x: (x["f"]["industry_pe"] - x["f"]["pe"]), reverse=True)]},
+        {"id": "style_growth", "name": "Disruptive Growth (ARK-style)", "category": "style", "top_n": 10,
+         "description": "Fast-growing disruptors; pay up for growth and momentum.",
+         "philosophy": "Prioritise high revenue growth and price momentum over valuation, "
+                       "betting on innovation-led compounding — higher risk, higher variance.",
+         "select": lambda e: [s for s, _ in sorted(
+             [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0)))
+              for x in e if x["f"]["sales_growth_yoy"] >= 15],
+             key=lambda t: t[1], reverse=True)]},
+        {"id": "style_quality", "name": "Quality Compounder (Buffett-style)", "category": "style", "top_n": 10,
+         "description": "Durable, cash-rich franchises with high returns and low debt.",
+         "philosophy": "Own wonderful businesses — high, consistent ROE/ROCE, low leverage, "
+                       "positive cash flow — and hold them; let compounding do the work.",
+         "select": lambda e: [r["symbol"] for r in sorted(
+             [x for x in e if x["f"]["roe"] >= 18 and x["f"]["debt_to_equity"] < 0.5
+              and x["f"]["profit_growth_yoy"] > 0 and x["f"]["ocf_positive"]],
+             key=lambda x: x["f"]["roe"], reverse=True)]},
+        {"id": "style_deep_value", "name": "Deep Value (Graham)", "category": "style", "top_n": 10,
+         "description": "Statistically cheap: low P/B, low P/E, strong liquidity — margin of safety.",
+         "philosophy": "Ben Graham's net-cheap screen: buy well below intrinsic value with a "
+                       "margin of safety (low P/B & P/E, healthy current ratio).",
+         "select": lambda e: [r["symbol"] for r in sorted(
+             [x for x in e if x["f"]["pb"] < 3 and x["f"]["cheap_vs_industry"] and x["f"]["current_ratio"] > 1.3],
+             key=lambda x: (x["f"]["pb"] + x["f"]["pe"] / max(x["f"]["industry_pe"], 1)))]},
+        {"id": "style_garp", "name": "GARP (Peter Lynch)", "category": "style", "top_n": 10,
+         "description": "Growth at a reasonable price — earnings growth vs a sensible P/E.",
+         "philosophy": "Lynch's GARP: favour solid earnings growth that isn't overpriced "
+                       "(low PEG-style trade-off of growth against valuation).",
+         "select": lambda e: [r["symbol"] for r in sorted(
+             [x for x in e if x["f"]["profit_growth_yoy"] >= 12 and x["f"]["pe"] <= x["f"]["industry_pe"] * 1.1],
+             key=lambda x: x["f"]["profit_growth_yoy"] / max(x["f"]["pe"], 1), reverse=True)]},
+        {"id": "style_magic", "name": "Magic Formula (Greenblatt)", "category": "style", "top_n": 10,
+         "description": "Good + cheap: rank by return on capital and earnings yield.",
+         "philosophy": "Joel Greenblatt's Magic Formula: combine high ROCE (good business) with "
+                       "high earnings yield (cheap price) and buy the top-ranked names.",
+         "select": lambda e: _magic_formula_rank(e)},
+        {"id": "style_contrarian", "name": "Contrarian / Distressed", "category": "style", "top_n": 10,
+         "description": "Beaten-down names with improving fundamentals — buying pessimism.",
+         "philosophy": "Go against the crowd: weak recent price/signal but sound underlying "
+                       "returns, betting on mean reversion as sentiment turns.",
+         "select": lambda e: [r["symbol"] for r in sorted(
+             [x for x in e if x["net_score"] < 5 and x["f"]["roe"] >= 12 and x["f"]["debt_to_equity"] < 1.0],
+             key=lambda x: x["f"]["roe"], reverse=True)]},
+        {"id": "style_momentum", "name": "Trend Momentum (CANSLIM-style)", "category": "style", "top_n": 10,
+         "description": "Winners keep winning — strong momentum backed by earnings growth.",
+         "philosophy": "Ride established uptrends in companies with strong earnings growth; "
+                       "cut laggards. Trend-following with a fundamental filter.",
+         "select": lambda e: [s for s, _ in sorted(
+             [(x["symbol"], _momentum_score(x["symbol"], x.get("ret_1m", 0.0)))
+              for x in e if x["f"]["profit_growth_yoy"] >= 10],
+             key=lambda t: t[1], reverse=True)]},
+    ]
 
 
 def _period_label() -> str:
@@ -111,6 +190,7 @@ def _build(spec: dict, enriched: list[dict], detail: bool) -> dict:
         "id": spec["id"],
         "name": spec["name"],
         "description": spec["description"],
+        "philosophy": spec.get("philosophy", ""),
         "category": spec["category"],
         "region": REGION_IN,
         "period": _period_label(),

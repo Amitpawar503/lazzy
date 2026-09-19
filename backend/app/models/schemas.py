@@ -252,6 +252,23 @@ class ThesisPoint(BaseModel):
     detail: str
 
 
+class Factor(BaseModel):
+    label: str
+    detail: str
+    sentiment: str        # positive | negative | neutral
+    category: str
+
+
+class Factors(BaseModel):
+    strengths: list[Factor]
+    weaknesses: list[Factor]
+    opportunities: list[Factor]
+    threats: list[Factor]
+    corporate_actions: list[Factor]
+    orders: list[Factor]
+    management: list[Factor]
+
+
 class StockDetail(BaseModel):
     symbol: str
     name: str
@@ -268,6 +285,7 @@ class StockDetail(BaseModel):
     fundamentals: Fundamentals
     bull_points: list[ThesisPoint]
     bear_points: list[ThesisPoint]
+    factors: Factors
 
 
 # --- Reasoning (row hover) --- #
@@ -285,6 +303,7 @@ class Reasoning(BaseModel):
     net_score: float
     bull: list[ThesisPoint]
     bear: list[ThesisPoint]
+    factors: Factors
     news: list[str]                 # headlines mentioning the stock
     impact: list[NewsImpactNote]    # event-graph impact on the stock
 
@@ -295,7 +314,8 @@ class StrategyCard(BaseModel):
     id: str
     name: str
     description: str
-    category: str        # sector | cap | theme
+    philosophy: str = ""     # how this style/guru picks stocks
+    category: str        # sector | cap | theme | style
     region: str
     period: str
     rebalance: str

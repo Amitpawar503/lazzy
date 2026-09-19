@@ -33,6 +33,7 @@ function Card({ s, onView }: { s: StrategyCard; onView: () => void }) {
       </div>
       <h3 className="strat-name">{s.name}</h3>
       <p className="strat-desc">{s.description}</p>
+      {s.philosophy && <p className="strat-phil">🧠 {s.philosophy}</p>}
       <div className="strat-meta">
         <span>🕒 {s.period}</span><span>🔁 {s.rebalance}</span><span>{s.constituents_count} stocks</span>
       </div>
@@ -73,6 +74,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
           <>
             <h2>{d.name} <span className="sd-name">{d.constituents_count} stocks · {d.rebalance}</span></h2>
             <p className="strat-desc">{d.description}</p>
+            {d.philosophy && <p className="strat-phil">🧠 How it picks: {d.philosophy}</p>}
             <div className="strat-rets" style={{ maxWidth: 520 }}>
               <div className="strat-ret"><span className="k">Return (1Y)</span><span className="v">{ret(d.ret_1y)}</span>
                 <span className={`alpha ${d.beats_benchmark_1y ? "up" : "dn"}`}>α {d.alpha_1y >= 0 ? "+" : ""}{d.alpha_1y}%</span></div>
@@ -110,7 +112,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-const CATS = ["all", "sector", "cap", "theme"] as const;
+const CATS = ["all", "style", "sector", "cap", "theme"] as const;
 type Cat = (typeof CATS)[number];
 
 export default function Strategies() {

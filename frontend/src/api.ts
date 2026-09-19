@@ -163,6 +163,11 @@ export interface Fundamentals {
   expensive_vs_industry: boolean; cheap_vs_industry: boolean;
 }
 export interface ThesisPoint { kind: string; point: string; detail: string; }
+export interface Factor { label: string; detail: string; sentiment: string; category: string; }
+export interface Factors {
+  strengths: Factor[]; weaknesses: Factor[]; opportunities: Factor[]; threats: Factor[];
+  corporate_actions: Factor[]; orders: Factor[]; management: Factor[];
+}
 export interface StockDetail {
   symbol: string; name: string; sector: string; cap_class: string;
   market_cap_cr: number;
@@ -173,6 +178,7 @@ export interface StockDetail {
   fundamentals: Fundamentals;
   bull_points: ThesisPoint[];
   bear_points: ThesisPoint[];
+  factors: Factors;
 }
 
 // --- Reasoning (row hover) ---
@@ -181,13 +187,13 @@ export interface NewsImpactNote {
 }
 export interface Reasoning {
   symbol: string; verdict: string; net_score: number;
-  bull: ThesisPoint[]; bear: ThesisPoint[];
+  bull: ThesisPoint[]; bear: ThesisPoint[]; factors: Factors;
   news: string[]; impact: NewsImpactNote[];
 }
 
 // --- Strategies (ProPicks-style baskets) ---
 export interface StrategyCard {
-  id: string; name: string; description: string; category: string;
+  id: string; name: string; description: string; philosophy?: string; category: string;
   region: string; period: string; rebalance: string; constituents_count: number;
   ret_1y: number; ret_5y: number;
   benchmark_ret_1y: number; benchmark_ret_5y: number;

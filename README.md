@@ -51,9 +51,18 @@ a **"why it can go UP / why it can go DOWN"** thesis (each point backed by a
 technical reading or a fundamental figure), a full **fundamentals** grid, the
 52-week range, and the 10-algo technical panel.
 
-Every screener/signals row also has a **Reasoning** column — hover it for a quick
-tooltip of the stock's top bullish reasons, bearish reasons, and any **news
-impact** (short/long-term), without leaving the table.
+Every screener/signals row also has a **Reasoning** column — hover it for a rich
+tooltip: **SWOT** (strengths / weaknesses / opportunities / threats),
+**corporate actions** (dividend / bonus / buyback / pledge), **order wins &
+govt contracts**, **management** notes, and **news impact** (short/long-term) —
+each with the concrete figure behind it (Moneycontrol #KnowBeforeYouInvest style).
+The stock-detail modal shows the full SWOT grid too.
+
+The **Ideas** tab includes investor-**style / guru baskets** that pick the way
+famous investors do — Activist Value (Icahn), Disruptive Growth (ARK), Quality
+Compounder (Buffett), Deep Value (Graham), GARP (Lynch), Magic Formula
+(Greenblatt), Contrarian, and Trend Momentum (CANSLIM) — each card explains
+*how it picks* and is backtested with return + risk vs the benchmark.
 
 **Live data & speed:** off by default (fast synthetic data, no network). Set
 `LIVE_DATA=true` for real quotes + ~1-year history (yfinance), optionally cached

@@ -1,6 +1,18 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type StockDetail as SD } from "../api";
+import { api, type Factor, type StockDetail as SD } from "../api";
 import { fmtPct, fmtCr } from "../color";
+
+function FactorBox({ title, cls, items }: { title: string; cls: string; items: Factor[] }) {
+  return (
+    <div className="factor-box">
+      <h4 className={cls}>{title} <span>({items.length})</span></h4>
+      {items.length === 0 && <div className="factor-none">—</div>}
+      {items.map((it, i) => (
+        <div className="factor-item" key={i}><b>{it.label}</b> — {it.detail}</div>
+      ))}
+    </div>
+  );
+}
 
 // ---- context so any row can open the detail modal ----
 const Ctx = createContext<(symbol: string) => void>(() => {});
@@ -90,6 +102,25 @@ function Modal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
                 ))}
               </div>
             </div>
+
+            {d.factors && (
+              <div className="sd-section">
+                <h3>Company factors (SWOT)</h3>
+                <div className="swot-grid">
+                  <FactorBox title="Strengths" cls="s-pos" items={d.factors.strengths} />
+                  <FactorBox title="Weaknesses" cls="s-neg" items={d.factors.weaknesses} />
+                  <FactorBox title="Opportunities" cls="s-op" items={d.factors.opportunities} />
+                  <FactorBox title="Threats" cls="s-neg" items={d.factors.threats} />
+                </div>
+                {(d.factors.corporate_actions.length > 0 || d.factors.orders.length > 0 || d.factors.management.length > 0) && (
+                  <div className="swot-grid" style={{ marginTop: 10 }}>
+                    <FactorBox title="Corporate actions" cls="s-neu" items={d.factors.corporate_actions} />
+                    <FactorBox title="Order wins / contracts" cls="s-pos" items={d.factors.orders} />
+                    <FactorBox title="Management" cls="s-neu" items={d.factors.management} />
+                  </div>
+                )}
+              </div>
+            )}
 
             {f && (
               <div className="sd-section">
