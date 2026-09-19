@@ -34,8 +34,9 @@ def _direction(st: float, lt: float) -> str:
 def _build_event(ev: dict, names: dict[str, str]) -> dict:
     impacted = []
     for c in ev["impacted"]:
-        st = round(c["lean"] * c["st"] * 100, 1)
-        lt = round(c["lean"] * c["lt"] * 100, 1)
+        # direction always comes from `lean`; st/lt are magnitudes.
+        st = round(c["lean"] * abs(c["st"]) * 100, 1)
+        lt = round(c["lean"] * abs(c["lt"]) * 100, 1)
         impacted.append(
             {
                 "symbol": c["symbol"],

@@ -37,6 +37,7 @@ cd frontend && npm install && npm run dev
 | **Best Stocks** | Screeners by **sector / cap / momentum / seasonal**; sector & cap show **subsections** (per sector / large-mid-small-micro), each row showing which algos push it up ▲ / down ▼ and by how much | ✅ `top_n` + dimension |
 | **FII/DII Activity** | Net institutional cash flows + stocks added / removed | ✅ `top_n` |
 | **Algo Signals** | 10 algorithms vote per stock — how many are +ve / −ve and the net conviction, with a per-algorithm drilldown | ✅ `top_n` + view/sort |
+| **Ideas** | ProPicks-style **strategy baskets** (sector / cap / theme), each **backtested** vs a NIFTY-style benchmark: 1Y & 5Y return, beats/lags alpha, risk (vol / max-DD / Sharpe), sparkline, and "View stocks" | category filter |
 | **News** | Aggregated Indian & global headlines, entity-linked + sentiment-tagged | category filter |
 | **News Impact** | Event → affected-companies fan-out with short- vs long-term impact (e.g. a Tata Sons listing: holders gain, TCS faces overhang, peers unaffected) | per-event |
 
@@ -49,6 +50,10 @@ score (−100…+100). Click a row for every algorithm's reading.
 a **"why it can go UP / why it can go DOWN"** thesis (each point backed by a
 technical reading or a fundamental figure), a full **fundamentals** grid, the
 52-week range, and the 10-algo technical panel.
+
+Every screener/signals row also has a **Reasoning** column — hover it for a quick
+tooltip of the stock's top bullish reasons, bearish reasons, and any **news
+impact** (short/long-term), without leaving the table.
 
 **Live data & speed:** off by default (fast synthetic data, no network). Set
 `LIVE_DATA=true` for real quotes + ~1-year history (yfinance), optionally cached

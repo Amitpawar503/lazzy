@@ -8,6 +8,7 @@ import {
 } from "../api";
 import Controls from "./Controls";
 import AlgoBreakdown from "./AlgoBreakdown";
+import WhyCell from "./WhyCell";
 import { useStockDetail } from "./StockDetail";
 
 const DIMS: { id: Dimension; label: string; blurb: string }[] = [
@@ -59,6 +60,7 @@ function RowTable({ rows, metricLabel, showMetric }: { rows: ScreenerRow[]; metr
         <span>{showMetric ? metricLabel : "Net score"}</span>
         <span>Algos up ▲ / down ▼ (how much)</span>
         <span>Verdict</span>
+        <span>Reasoning</span>
       </div>
       {rows.map((r) => (
         <div key={r.symbol} className="sig-rowwrap">
@@ -77,6 +79,7 @@ function RowTable({ rows, metricLabel, showMetric }: { rows: ScreenerRow[]; metr
               <em className={`verdict ${verdictClass(r.verdict)}`}>{r.verdict}</em>
               <span className="expand">{open === r.symbol ? "▾" : "▸"}</span>
             </span>
+            <span><WhyCell symbol={r.symbol} /></span>
           </div>
           {open === r.symbol && <AlgoBreakdown symbol={r.symbol} />}
         </div>

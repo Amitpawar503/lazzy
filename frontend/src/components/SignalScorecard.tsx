@@ -8,6 +8,7 @@ import {
 } from "../api";
 import Controls from "./Controls";
 import AlgoBreakdown from "./AlgoBreakdown";
+import WhyCell from "./WhyCell";
 import { useStockDetail } from "./StockDetail";
 
 function verdictClass(v: string) {
@@ -109,6 +110,7 @@ export default function SignalScorecard() {
           <span>Algos +ve / −ve / •</span>
           <span>Net conviction</span>
           <span>Verdict</span>
+          <span>Reasoning</span>
         </div>
         {data?.rows.map((r) => (
           <div key={r.symbol} className="sig-rowwrap">
@@ -125,6 +127,7 @@ export default function SignalScorecard() {
                 <em className={`verdict ${verdictClass(r.verdict)}`}>{r.verdict}</em>
                 <span className="expand">{open === r.symbol ? "▾" : "▸"}</span>
               </span>
+              <span><WhyCell symbol={r.symbol} /></span>
             </div>
             {open === r.symbol && <AlgoBreakdown symbol={r.symbol} />}
           </div>

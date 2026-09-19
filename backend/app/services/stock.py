@@ -109,6 +109,43 @@ def _bull_bear(algos: list[dict], f: dict, q: dict) -> tuple[list, list]:
     return bull, bear
 
 
+def _news_for(symbol: str) -> list[str]:
+    from app.data.news_data import sample_news
+    return [n["title"] for n in sample_news() if symbol in n["tickers"]][:3]
+
+
+def _impact_for(symbol: str) -> list[dict]:
+    from app.services.impact import list_events
+    notes = []
+    for ev in list_events()["events"]:
+        for im in ev["impacted"]:
+            if im["symbol"] == symbol and (abs(im["short_term"]) >= 5 or abs(im["long_term"]) >= 5):
+                notes.append({
+                    "title": ev["title"],
+                    "short_term": im["short_term"],
+                    "long_term": im["long_term"],
+                    "direction": im["direction"],
+                })
+    return notes[:3]
+
+
+def reasoning(symbol: str) -> dict | None:
+    """Compact reasoning for the row-hover tooltip."""
+    symbol = symbol.upper()
+    d = stock_detail(symbol)
+    if d is None:
+        return None
+    return {
+        "symbol": symbol,
+        "verdict": d["verdict"],
+        "net_score": d["net_score"],
+        "bull": d["bull_points"][:4],
+        "bear": d["bear_points"][:4],
+        "news": _news_for(symbol),
+        "impact": _impact_for(symbol),
+    }
+
+
 def stock_detail(symbol: str) -> dict | None:
     symbol = symbol.upper()
     row = _row_for(symbol)

@@ -175,6 +175,30 @@ export interface StockDetail {
   bear_points: ThesisPoint[];
 }
 
+// --- Reasoning (row hover) ---
+export interface NewsImpactNote {
+  title: string; short_term: number; long_term: number; direction: string;
+}
+export interface Reasoning {
+  symbol: string; verdict: string; net_score: number;
+  bull: ThesisPoint[]; bear: ThesisPoint[];
+  news: string[]; impact: NewsImpactNote[];
+}
+
+// --- Strategies (ProPicks-style baskets) ---
+export interface StrategyCard {
+  id: string; name: string; description: string; category: string;
+  region: string; period: string; rebalance: string; constituents_count: number;
+  ret_1y: number; ret_5y: number;
+  benchmark_ret_1y: number; benchmark_ret_5y: number;
+  alpha_1y: number; alpha_5y: number;
+  beats_benchmark_1y: boolean; beats_benchmark_5y: boolean;
+  volatility: number; max_drawdown: number; sharpe: number;
+  spark: number[]; benchmark_spark: number[];
+}
+export interface StrategyList { count: number; strategies: StrategyCard[]; }
+export interface StrategyDetail extends StrategyCard { constituents: ScreenerRow[]; }
+
 // --- News ---
 export interface NewsItem {
   id: string;
@@ -250,6 +274,10 @@ export const api = {
     ),
   stock: (symbol: string) =>
     get<StockDetail>(`/api/stock/${encodeURIComponent(symbol)}`),
+  reasoning: (symbol: string) =>
+    get<Reasoning>(`/api/stock/${encodeURIComponent(symbol)}/reasoning`),
+  strategies: () => get<StrategyList>(`/api/strategies`),
+  strategy: (id: string) => get<StrategyDetail>(`/api/strategies/${encodeURIComponent(id)}`),
   news: (category: "all" | "india" | "global", limit: number) =>
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
   events: () => get<EventList>(`/api/impact/events`),

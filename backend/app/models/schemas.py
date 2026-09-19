@@ -268,3 +268,57 @@ class StockDetail(BaseModel):
     fundamentals: Fundamentals
     bull_points: list[ThesisPoint]
     bear_points: list[ThesisPoint]
+
+
+# --- Reasoning (row hover) --- #
+
+class NewsImpactNote(BaseModel):
+    title: str
+    short_term: float
+    long_term: float
+    direction: str
+
+
+class Reasoning(BaseModel):
+    symbol: str
+    verdict: str
+    net_score: float
+    bull: list[ThesisPoint]
+    bear: list[ThesisPoint]
+    news: list[str]                 # headlines mentioning the stock
+    impact: list[NewsImpactNote]    # event-graph impact on the stock
+
+
+# --- Strategies (ProPicks-style baskets) --- #
+
+class StrategyCard(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: str        # sector | cap | theme
+    region: str
+    period: str
+    rebalance: str
+    constituents_count: int
+    ret_1y: float
+    ret_5y: float
+    benchmark_ret_1y: float
+    benchmark_ret_5y: float
+    alpha_1y: float
+    alpha_5y: float
+    beats_benchmark_1y: bool
+    beats_benchmark_5y: bool
+    volatility: float
+    max_drawdown: float
+    sharpe: float
+    spark: list[float]
+    benchmark_spark: list[float]
+
+
+class StrategyList(BaseModel):
+    count: int
+    strategies: list[StrategyCard]
+
+
+class StrategyDetail(StrategyCard):
+    constituents: list[ScreenerRow]

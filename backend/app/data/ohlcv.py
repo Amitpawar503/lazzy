@@ -20,8 +20,8 @@ import pandas as pd
 from app.config import get_settings
 from app.data.cache import cached
 
-# Keep enough history for the longest consumer (seasonal ≈ 780 sessions).
-_KEEP = 820
+# Keep enough history for the longest consumer (5-year backtests ≈ 1250 sessions).
+_KEEP = 1300
 
 
 def _seed(symbol: str) -> int:

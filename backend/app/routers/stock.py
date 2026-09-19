@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import StockDetail
-from app.services.stock import stock_detail
+from app.models.schemas import Reasoning, StockDetail
+from app.services.stock import reasoning, stock_detail
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
 
@@ -14,3 +14,11 @@ def detail(symbol: str) -> StockDetail:
     if d is None:
         raise HTTPException(status_code=404, detail="unknown symbol")
     return d
+
+
+@router.get("/{symbol}/reasoning", response_model=Reasoning, summary="Compact bull/bear + news reasoning (row hover)")
+def stock_reasoning(symbol: str) -> Reasoning:
+    r = reasoning(symbol)
+    if r is None:
+        raise HTTPException(status_code=404, detail="unknown symbol")
+    return r
