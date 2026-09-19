@@ -61,6 +61,27 @@ _ROWS: list[tuple[str, str, str, float, float, float, float]] = [
     ("TITAN", "Titan Company", "Consumer", 300000, 0.7, 1.8, 3.4),
     ("ASIANPAINT", "Asian Paints", "Consumer", 260000, -0.9, -1.8, -4.2),
     ("DMART", "Avenue Supermarts", "Retail", 250000, -0.2, 0.5, -1.0),
+    # Tata entities referenced by the news-impact graph
+    ("TATACONSUM", "Tata Consumer Products", "FMCG", 110000, 0.5, 1.2, 2.8),
+    ("TRENT", "Trent", "Retail", 200000, 1.4, 3.2, 7.0),
+    ("TATAPOWER", "Tata Power", "Power", 130000, 0.9, 2.1, 4.2),
+    ("INDHOTEL", "Indian Hotels", "Consumer", 100000, 0.6, 1.5, 3.9),
+    ("TATAINVEST", "Tata Investment Corp", "Financials", 35000, 1.1, 2.6, 5.5),
+    ("TATACHEM", "Tata Chemicals", "Metals", 26000, 0.4, 1.0, -1.2),
+    # Mid caps (₹5k–20k cr)
+    ("BSE", "BSE Ltd", "Financials", 12000, 0.8, 2.0, 5.0),
+    ("IEX", "Indian Energy Exchange", "Power", 15000, -0.4, 0.5, 1.2),
+    ("CAMS", "Computer Age Management", "Financials", 18000, 0.6, 1.5, 3.0),
+    ("RADICO", "Radico Khaitan", "FMCG", 8000, 0.3, 1.0, 2.5),
+    ("KPITTECH", "KPIT Technologies", "IT", 14000, 1.0, 2.4, 4.8),
+    # Small caps (₹500–5k cr)
+    ("RAILTEL", "RailTel Corp", "Telecom", 4000, 1.2, 2.5, 4.0),
+    ("HFCL", "HFCL", "Telecom", 3000, -0.8, -1.5, 2.0),
+    ("NELCO", "Nelco", "Telecom", 2500, 1.5, 3.0, -2.0),
+    ("GRAVITA", "Gravita India", "Metals", 4500, 0.9, 2.2, 6.0),
+    # Micro caps (< ₹500 cr)
+    ("TI", "Tilaknagar Industries", "FMCG", 420, 1.0, 2.0, 3.0),
+    ("EXCELINDUS", "Excel Industries", "Metals", 300, 0.5, 1.0, 2.0),
 ]
 
 _SECTOR_INDEX = {  # illustrative sector index period returns (%)

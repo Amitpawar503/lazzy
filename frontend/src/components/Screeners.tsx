@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   type Dimension,
+  type GroupedScreener,
   type ScreenerResult,
   type ScreenerRow,
 } from "../api";
 import Controls from "./Controls";
 import AlgoBreakdown from "./AlgoBreakdown";
+import { useStockDetail } from "./StockDetail";
 
 const DIMS: { id: Dimension; label: string; blurb: string }[] = [
-  { id: "sector", label: "Sector-wise", blurb: "Best stocks within a sector by algo consensus" },
-  { id: "cap", label: "Cap-wise", blurb: "Leaders by market-cap class" },
+  { id: "sector", label: "Sector-wise", blurb: "Best stocks grouped into a subsection per sector" },
+  { id: "cap", label: "Cap-wise", blurb: "Best stocks grouped by market-cap class (large / mid / small / micro)" },
   { id: "momentum", label: "Momentum", blurb: "Ranked by 3-month price momentum" },
   { id: "seasonal", label: "Seasonal", blurb: "Strongest in the current calendar month" },
 ];
-const CAPS = ["large", "mid", "small", "micro"];
 
 function verdictClass(v: string) {
   if (v.includes("Strong Buy")) return "v-strong-buy";
@@ -24,7 +25,6 @@ function verdictClass(v: string) {
   return "v-neutral";
 }
 
-// Compact "which algos up / which down and how much" cell.
 function AlgoPills({ r }: { r: ScreenerRow }) {
   return (
     <div className="pills">
@@ -48,35 +48,62 @@ function AlgoPills({ r }: { r: ScreenerRow }) {
   );
 }
 
-export default function Screeners() {
-  const [dim, setDim] = useState<Dimension>("momentum");
-  const [key, setKey] = useState<string | null>(null);
-  const [topN, setTopN] = useState(20);
-  const [sectors, setSectors] = useState<string[]>([]);
-  const [data, setData] = useState<ScreenerResult | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+function RowTable({ rows, metricLabel, showMetric }: { rows: ScreenerRow[]; metricLabel: string; showMetric: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
+  const openStock = useStockDetail();
+  const pct = metricLabel.includes("%");
+  return (
+    <div className="sig-table">
+      <div className="scr-head">
+        <span>Stock</span>
+        <span>{showMetric ? metricLabel : "Net score"}</span>
+        <span>Algos up ▲ / down ▼ (how much)</span>
+        <span>Verdict</span>
+      </div>
+      {rows.map((r) => (
+        <div key={r.symbol} className="sig-rowwrap">
+          <div className="scr-row">
+            <span className="sig-stock link" onClick={() => openStock(r.symbol)} title="Open full thesis">
+              <b>{r.symbol}</b>
+              <span className="sig-name">{r.name} · {r.sector} · {r.cap_class}</span>
+            </span>
+            <span className="metric" onClick={() => setOpen(open === r.symbol ? null : r.symbol)}>
+              {showMetric
+                ? `${r.metric_value >= 0 ? "+" : ""}${r.metric_value}${pct ? "%" : ""}`
+                : `${r.net_score >= 0 ? "+" : ""}${r.net_score}`}
+            </span>
+            <span onClick={() => setOpen(open === r.symbol ? null : r.symbol)}><AlgoPills r={r} /></span>
+            <span onClick={() => setOpen(open === r.symbol ? null : r.symbol)}>
+              <em className={`verdict ${verdictClass(r.verdict)}`}>{r.verdict}</em>
+              <span className="expand">{open === r.symbol ? "▾" : "▸"}</span>
+            </span>
+          </div>
+          {open === r.symbol && <AlgoBreakdown symbol={r.symbol} />}
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    api.meta().then((m) => setSectors(m.sectors)).catch(() => setSectors([]));
-  }, []);
+export default function Screeners() {
+  const [dim, setDim] = useState<Dimension>("sector");
+  const [topN, setTopN] = useState(10);
+  const [flat, setFlat] = useState<ScreenerResult | null>(null);
+  const [grouped, setGrouped] = useState<GroupedScreener | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const isGrouped = dim === "sector" || dim === "cap";
 
   useEffect(() => {
     setErr(null);
-    setData(null);
-    api.screener(dim, topN, key).then(setData).catch((e) => setErr(String(e)));
-  }, [dim, topN, key]);
-
-  // reset key filter when switching to a dimension that doesn't use it
-  useEffect(() => {
-    setKey(null);
-  }, [dim]);
-
-  const keyOptions = useMemo(() => {
-    if (dim === "sector") return sectors;
-    if (dim === "cap") return CAPS;
-    return [];
-  }, [dim, sectors]);
+    setFlat(null);
+    setGrouped(null);
+    if (dim === "sector" || dim === "cap") {
+      api.screenerGrouped(dim, topN).then(setGrouped).catch((e) => setErr(String(e)));
+    } else {
+      api.screener(dim, topN).then(setFlat).catch((e) => setErr(String(e)));
+    }
+  }, [dim, topN]);
 
   return (
     <section>
@@ -84,12 +111,15 @@ export default function Screeners() {
         <div>
           <h2>Best Stocks — Screeners</h2>
           <p className="sub">
-            {DIMS.find((d) => d.id === dim)?.blurb}. Each row shows which
-            algorithms push it up vs down (and by how much). Click a row for the
-            full breakdown.
+            {DIMS.find((d) => d.id === dim)?.blurb}. Each row shows which algos push it up ▲ / down ▼
+            (and by how much). Click a stock name for its full thesis.
           </p>
         </div>
-        <Controls topN={topN} onTopN={setTopN} topNOptions={[10, 20, 50, 100, 200]} />
+        <Controls
+          topN={topN}
+          onTopN={setTopN}
+          topNOptions={isGrouped ? [3, 5, 10, 20] : [10, 20, 50, 100, 200]}
+        />
       </div>
 
       <div className="sig-filters">
@@ -103,55 +133,25 @@ export default function Screeners() {
             ))}
           </div>
         </div>
-        {keyOptions.length > 0 && (
-          <div className="control">
-            <label>{dim === "sector" ? "Sector" : "Cap class"}</label>
-            <select value={key ?? ""} onChange={(e) => setKey(e.target.value || null)}>
-              <option value="">All</option>
-              {keyOptions.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        {isGrouped && <div className="control"><label>&nbsp;</label><span className="hint">showing top {topN} per {dim === "sector" ? "sector" : "cap class"}</span></div>}
       </div>
 
       {err && <div className="error">Failed to load: {err}</div>}
-      {!data && !err && <div className="algo-loading">Running algorithms…</div>}
+      {!flat && !grouped && !err && <div className="algo-loading">Running algorithms…</div>}
 
-      {data && (
-        <div className="sig-table">
-          <div className="scr-head">
-            <span>Stock</span>
-            <span>{data.metric_label}</span>
-            <span>Algos up ▲ / down ▼ (how much)</span>
-            <span>Verdict</span>
+      {/* Grouped: subsection per sector / cap class */}
+      {grouped &&
+        grouped.sections.map((s) => (
+          <div className="grp" key={s.key}>
+            <h3 className="grp-title">
+              {s.label} <span className="grp-count">{s.count} stocks</span>
+            </h3>
+            <RowTable rows={s.rows} metricLabel={grouped.metric_label} showMetric={false} />
           </div>
-          {data.rows.map((r) => (
-            <div key={r.symbol} className="sig-rowwrap">
-              <div className="scr-row" onClick={() => setOpen(open === r.symbol ? null : r.symbol)}>
-                <span className="sig-stock">
-                  <b>{r.symbol}</b>
-                  <span className="sig-name">{r.name} · {r.sector} · {r.cap_class}</span>
-                </span>
-                <span className="metric">
-                  {r.metric_value >= 0 && data.dimension !== "sector" && data.dimension !== "cap" ? "+" : ""}
-                  {r.metric_value}
-                  {data.metric_label.includes("%") ? "%" : ""}
-                </span>
-                <span><AlgoPills r={r} /></span>
-                <span>
-                  <em className={`verdict ${verdictClass(r.verdict)}`}>{r.verdict}</em>
-                  <span className="expand">{open === r.symbol ? "▾" : "▸"}</span>
-                </span>
-              </div>
-              {open === r.symbol && <AlgoBreakdown symbol={r.symbol} />}
-            </div>
-          ))}
-        </div>
-      )}
+        ))}
+
+      {/* Flat: momentum / seasonal */}
+      {flat && <RowTable rows={flat.rows} metricLabel={flat.metric_label} showMetric={true} />}
     </section>
   );
 }

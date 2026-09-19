@@ -6,6 +6,7 @@ import SignalScorecard from "./components/SignalScorecard";
 import Screeners from "./components/Screeners";
 import NewsFeed from "./components/NewsFeed";
 import NewsImpact from "./components/NewsImpact";
+import { StockDetailProvider } from "./components/StockDetail";
 
 type Tab = "360" | "sectors" | "fiidii" | "signals" | "screeners" | "news" | "impact";
 
@@ -22,6 +23,7 @@ const TABS: { id: Tab; label: string }[] = [
 export default function App() {
   const [tab, setTab] = useState<Tab>("360");
   return (
+    <StockDetailProvider>
     <div className="app">
       <header className="topbar">
         <div className="brand">
@@ -52,8 +54,9 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        Not investment advice · data may be delayed or illustrative
+        Not investment advice · data may be delayed or illustrative · click any stock for its full thesis
       </footer>
     </div>
+    </StockDetailProvider>
   );
 }

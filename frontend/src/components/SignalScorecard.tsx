@@ -8,6 +8,7 @@ import {
 } from "../api";
 import Controls from "./Controls";
 import AlgoBreakdown from "./AlgoBreakdown";
+import { useStockDetail } from "./StockDetail";
 
 function verdictClass(v: string) {
   if (v.includes("Strong Buy")) return "v-strong-buy";
@@ -56,6 +57,7 @@ export default function SignalScorecard() {
   const [data, setData] = useState<Scorecard | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const openStock = useStockDetail();
 
   useEffect(() => {
     setErr(null);
@@ -110,19 +112,16 @@ export default function SignalScorecard() {
         </div>
         {data?.rows.map((r) => (
           <div key={r.symbol} className="sig-rowwrap">
-            <div
-              className="sig-row"
-              onClick={() => setOpen(open === r.symbol ? null : r.symbol)}
-            >
-              <span className="sig-stock">
+            <div className="sig-row">
+              <span className="sig-stock link" onClick={() => openStock(r.symbol)} title="Open full thesis">
                 <b>{r.symbol}</b>
                 <span className="sig-name">
                   {r.name} · {r.sector} · {r.cap_class}
                 </span>
               </span>
-              <span><Counts r={r} /></span>
-              <span><ScoreBar score={r.net_score} /></span>
-              <span>
+              <span onClick={() => setOpen(open === r.symbol ? null : r.symbol)}><Counts r={r} /></span>
+              <span onClick={() => setOpen(open === r.symbol ? null : r.symbol)}><ScoreBar score={r.net_score} /></span>
+              <span onClick={() => setOpen(open === r.symbol ? null : r.symbol)}>
                 <em className={`verdict ${verdictClass(r.verdict)}`}>{r.verdict}</em>
                 <span className="expand">{open === r.symbol ? "▾" : "▸"}</span>
               </span>

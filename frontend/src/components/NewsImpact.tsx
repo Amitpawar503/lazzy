@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type EventList, type ImpactedStock, type MarketEvent } from "../api";
+import { useStockDetail } from "./StockDetail";
 
 function dirColor(v: number) {
   return v > 2 ? "#4fb477" : v < -2 ? "#d0645a" : "var(--muted)";
@@ -26,9 +27,10 @@ function ImpactBar({ v }: { v: number }) {
 }
 
 function ImpactRow({ im }: { im: ImpactedStock }) {
+  const openStock = useStockDetail();
   return (
     <div className="imp-row">
-      <span className="imp-stock">
+      <span className="imp-stock link" onClick={() => openStock(im.symbol)} title="Open full thesis">
         <b>{im.symbol}</b>
         <span className="sig-name">{im.name}</span>
       </span>

@@ -141,6 +141,19 @@ class ScreenerResult(BaseModel):
     rows: list[ScreenerRow]
 
 
+class ScreenerSection(BaseModel):
+    key: str
+    label: str
+    count: int
+    rows: list[ScreenerRow]
+
+
+class GroupedScreener(BaseModel):
+    dimension: str        # sector | cap
+    metric_label: str
+    sections: list[ScreenerSection]
+
+
 # --- News feed --- #
 
 class NewsItem(BaseModel):
@@ -188,3 +201,70 @@ class MarketEvent(BaseModel):
 class EventList(BaseModel):
     count: int
     events: list[MarketEvent]
+
+
+# --- Stock detail (bull/bear thesis) --- #
+
+class Quote(BaseModel):
+    last_price: float
+    change_pct_1d: float
+    ret_1w: float
+    ret_1m: float
+    high_52w: float
+    low_52w: float
+    pct_from_52w_high: float
+    pct_from_52w_low: float
+    live: bool
+
+
+class Fundamentals(BaseModel):
+    symbol: str
+    pe: float
+    industry_pe: float
+    pb: float
+    dividend_yield: float
+    eps: float
+    book_value: float
+    roe: float
+    roce: float
+    sales_growth_yoy: float
+    profit_growth_yoy: float
+    operating_margin: float
+    net_profit_margin: float
+    debt_to_equity: float
+    current_ratio: float
+    ocf_positive: bool
+    free_cash_flow_cr: float
+    promoter_holding: float
+    promoter_pledge: float
+    fii_holding: float
+    dii_holding: float
+    public_holding: float
+    high_pledge: bool
+    falling_sales: bool
+    expensive_vs_industry: bool
+    cheap_vs_industry: bool
+
+
+class ThesisPoint(BaseModel):
+    kind: str
+    point: str
+    detail: str
+
+
+class StockDetail(BaseModel):
+    symbol: str
+    name: str
+    sector: str
+    cap_class: str
+    market_cap_cr: float
+    quote: Quote
+    verdict: str
+    net_score: float
+    bullish: int
+    bearish: int
+    neutral: int
+    algos: list[AlgoVote]
+    fundamentals: Fundamentals
+    bull_points: list[ThesisPoint]
+    bear_points: list[ThesisPoint]

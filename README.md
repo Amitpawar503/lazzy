@@ -34,7 +34,7 @@ cd frontend && npm install && npm run dev
 |--------|-------------|---------------|
 | **360° Market** | Treemap: box size = market cap, colour = return over 1d/1w/1m | ✅ `top_n` |
 | **Sector Heatmap** | Market-cap-weighted return per sector, with top gainer/loser | timeframe |
-| **Best Stocks** | Screeners by **sector / cap / momentum / seasonal**, each row showing which algos push it up ▲ / down ▼ and by how much | ✅ `top_n` + dimension/key |
+| **Best Stocks** | Screeners by **sector / cap / momentum / seasonal**; sector & cap show **subsections** (per sector / large-mid-small-micro), each row showing which algos push it up ▲ / down ▼ and by how much | ✅ `top_n` + dimension |
 | **FII/DII Activity** | Net institutional cash flows + stocks added / removed | ✅ `top_n` |
 | **Algo Signals** | 10 algorithms vote per stock — how many are +ve / −ve and the net conviction, with a per-algorithm drilldown | ✅ `top_n` + view/sort |
 | **News** | Aggregated Indian & global headlines, entity-linked + sentiment-tagged | category filter |
@@ -44,6 +44,19 @@ The **Algo Signals** screen runs SMA/EMA crossovers, RSI, MACD, Supertrend,
 Bollinger Bands, ROC momentum, ADX/DI, Donchian breakout, and Stochastic on each
 stock, then reports the bullish/bearish/neutral counts and a net conviction
 score (−100…+100). Click a row for every algorithm's reading.
+
+**Click any stock** (on screeners, signals, or news-impact) → a detail modal with
+a **"why it can go UP / why it can go DOWN"** thesis (each point backed by a
+technical reading or a fundamental figure), a full **fundamentals** grid, the
+52-week range, and the 10-algo technical panel.
+
+**Live data & speed:** off by default (fast synthetic data, no network). Set
+`LIVE_DATA=true` for real quotes + ~1-year history (yfinance), optionally cached
+to JSON on disk (`DATA_STORE_DIR`); a near-live SSE stream (`/api/stream/quotes`)
+buffers quote updates. Zero-delay ticks need a broker websocket (Phase 6). See
+[`docs/LIVE_DATA_AND_COVERAGE.md`](docs/LIVE_DATA_AND_COVERAGE.md) for the data
+sources researched, the performance fixes, and the fundamentals/technicals
+coverage vs Moneycontrol's scanners.
 
 ## Roadmap (see `docs/ANALYSIS_AND_ARCHITECTURE.md`)
 

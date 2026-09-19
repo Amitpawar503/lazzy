@@ -8,14 +8,23 @@ screen.
 from __future__ import annotations
 
 import datetime as _dt
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
+from app.config import get_settings
 from app.data.ohlcv import get_ohlcv
 from app.data.universe import get_universe
-from app.services.signals import compute_signals
+from app.services.signals import compute_signals_cached
 
 CAP_CLASSES = {"large", "mid", "small", "micro"}
+CAP_LABELS = {"large": "Large cap", "mid": "Mid cap", "small": "Small cap", "micro": "Micro cap"}
+
+
+def _parallel(fn, items):
+    workers = max(1, get_settings().compute_workers)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(fn, items))
 
 
 def _split_algos(res: dict):
@@ -57,7 +66,7 @@ def _seasonal_score(symbol: str, drift_hint: float) -> float:
 
 
 def _row(r: dict, metric_label: str, metric_value: float) -> dict:
-    res = compute_signals(r["symbol"], drift_hint=r.get("ret_1m", 0.0))
+    res = compute_signals_cached(r["symbol"], drift_hint=r.get("ret_1m", 0.0))
     up, down = _split_algos(res)
     return {
         "symbol": r["symbol"],
@@ -77,46 +86,41 @@ def _row(r: dict, metric_label: str, metric_value: float) -> dict:
     }
 
 
-def screen(dimension: str, key: str | None = None, top_n: int = 20) -> dict:
+def _all_rows(dimension: str) -> tuple[str, list[dict]]:
+    """Compute every universe row for a dimension (parallel), unsorted."""
     uni = get_universe()
-    dimension = dimension.lower()
-
-    if dimension == "sector":
+    if dimension == "sector" or dimension == "cap":
         label = "Algo net score"
-        cands = [r for r in uni if not key or r["sector"] == key]
-        rows = [_row(r, label, 0.0) for r in cands]
+        rows = _parallel(lambda r: _row(r, label, 0.0), uni)
         for row in rows:
             row["metric_value"] = row["net_score"]
-        rows.sort(key=lambda x: x["net_score"], reverse=True)
-
-    elif dimension == "cap":
-        label = "Algo net score"
-        k = key if key in CAP_CLASSES else None
-        cands = [r for r in uni if not k or r["cap_class"] == k]
-        rows = [_row(r, label, 0.0) for r in cands]
-        for row in rows:
-            row["metric_value"] = row["net_score"]
-        rows.sort(key=lambda x: (x["net_score"]), reverse=True)
-
     elif dimension == "momentum":
         label = "3M momentum %"
-        rows = []
-        for r in uni:
-            m = _momentum_score(r["symbol"], r.get("ret_1m", 0.0))
-            rows.append(_row(r, label, m))
-        rows.sort(key=lambda x: x["metric_value"], reverse=True)
-
+        rows = _parallel(
+            lambda r: _row(r, label, _momentum_score(r["symbol"], r.get("ret_1m", 0.0))),
+            uni,
+        )
     elif dimension == "seasonal":
         label = f"Avg {_dt.date.today():%b} return %"
-        rows = []
-        for r in uni:
-            s = _seasonal_score(r["symbol"], r.get("ret_1m", 0.0))
-            rows.append(_row(r, label, s))
-        rows.sort(key=lambda x: x["metric_value"], reverse=True)
-
+        rows = _parallel(
+            lambda r: _row(r, label, _seasonal_score(r["symbol"], r.get("ret_1m", 0.0))),
+            uni,
+        )
     else:
         raise ValueError(f"unknown dimension: {dimension}")
+    return label, rows
 
+
+def screen(dimension: str, key: str | None = None, top_n: int = 20) -> dict:
+    dimension = dimension.lower()
+    label, rows = _all_rows(dimension)
+
+    if dimension == "sector" and key:
+        rows = [r for r in rows if r["sector"] == key]
+    elif dimension == "cap" and key in CAP_CLASSES:
+        rows = [r for r in rows if r["cap_class"] == key]
+
+    rows.sort(key=lambda x: x["metric_value"], reverse=True)
     return {
         "dimension": dimension,
         "key": key,
@@ -124,3 +128,35 @@ def screen(dimension: str, key: str | None = None, top_n: int = 20) -> dict:
         "count": min(len(rows), max(1, top_n)),
         "rows": rows[: max(1, top_n)],
     }
+
+
+def screen_grouped(dimension: str, per_group: int = 10) -> dict:
+    """Sector → a subsection per sector; cap → subsections large/mid/small/micro.
+    Each subsection holds its top `per_group` stocks by algo net score."""
+    dimension = dimension.lower()
+    if dimension not in ("sector", "cap"):
+        raise ValueError("grouped view supports only 'sector' or 'cap'")
+    label, rows = _all_rows(dimension)
+
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        gkey = r["sector"] if dimension == "sector" else r["cap_class"]
+        groups.setdefault(gkey, []).append(r)
+
+    sections = []
+    for gkey, grows in groups.items():
+        grows.sort(key=lambda x: x["net_score"], reverse=True)
+        sections.append(
+            {
+                "key": gkey,
+                "label": CAP_LABELS.get(gkey, gkey) if dimension == "cap" else gkey,
+                "count": min(len(grows), per_group),
+                "rows": grows[:per_group],
+            }
+        )
+    if dimension == "cap":
+        order = {"large": 0, "mid": 1, "small": 2, "micro": 3}
+        sections.sort(key=lambda s: order.get(s["key"], 9))
+    else:
+        sections.sort(key=lambda s: s["label"])
+    return {"dimension": dimension, "metric_label": label, "sections": sections}

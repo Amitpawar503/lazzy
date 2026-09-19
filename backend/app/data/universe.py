@@ -13,23 +13,25 @@ from app.data.sample_data import sample_universe
 def _load() -> list[dict]:
     settings = get_settings()
     base = sample_universe()
-    # Try live enrichment (delayed quotes). Falls back silently.
-    try:
-        from app.data.providers.yfinance_provider import enrich_universe
+    # Only hit the network when live data is explicitly enabled — otherwise the
+    # app stays instant on cold start.
+    if settings.live_data:
+        try:
+            from app.data.providers.yfinance_provider import enrich_universe
 
-        live = enrich_universe(base)
-        if live:
-            return live
-    except Exception:
-        pass
-    if not settings.allow_sample_fallback:
+            live = enrich_universe(base)
+            if live:
+                return live
+        except Exception:
+            pass
+    if not settings.allow_sample_fallback and settings.live_data:
         raise RuntimeError("live universe unavailable and sample fallback disabled")
     return base
 
 
 def get_universe() -> list[dict]:
     ttl = get_settings().cache_ttl_seconds
-    return cached("universe:v1", ttl, _load)
+    return cached("universe:v2", ttl, _load)
 
 
 def sectors() -> list[str]:

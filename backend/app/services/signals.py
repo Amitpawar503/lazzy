@@ -10,9 +10,13 @@ algos are +ve / -ve and how much" screen.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pandas as pd
 
+from app.config import get_settings
+from app.data.cache import cached
 from app.data.ohlcv import get_ohlcv
 from app.data.universe import get_universe
 
@@ -266,11 +270,34 @@ def compute_signals(symbol: str, drift_hint: float = 0.0) -> dict:
     }
 
 
+def compute_signals_cached(symbol: str, drift_hint: float = 0.0) -> dict:
+    """Per-symbol signal result, cached (shared by screeners / scorecard / detail)."""
+    ttl = get_settings().signal_cache_ttl
+    return cached(
+        f"signals:{symbol}:v2", ttl,
+        lambda: compute_signals(symbol, drift_hint=drift_hint),
+    )
+
+
+def universe_signals() -> dict[str, dict]:
+    """Compute signals for the whole universe in parallel; results are cached
+    per-symbol so repeat calls are instant."""
+    uni = get_universe()
+    workers = max(1, get_settings().compute_workers)
+
+    def _one(r):
+        return r["symbol"], compute_signals_cached(r["symbol"], r.get("ret_1m", 0.0))
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        return dict(ex.map(_one, uni))
+
+
 def scorecard(top_n: int = 20, view: str = "all", sort: str = "score") -> dict:
     uni = get_universe()
+    sigs = universe_signals()
     rows = []
     for r in uni:
-        res = compute_signals(r["symbol"], drift_hint=r.get("ret_1m", 0.0))
+        res = sigs[r["symbol"]]
         rows.append(
             {
                 "symbol": r["symbol"],

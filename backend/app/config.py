@@ -27,7 +27,19 @@ class Settings(BaseSettings):
     # the UI always renders. Set False to surface errors instead.
     allow_sample_fallback: bool = True
     cache_ttl_seconds: int = 300
-    redis_url: Optional[str] = None  # e.g. redis://localhost:6379/0
+    signal_cache_ttl: int = 300          # per-symbol signal cache
+    redis_url: Optional[str] = None      # e.g. redis://localhost:6379/0
+
+    # --- Live data ---
+    # OFF by default: use fast deterministic synthetic OHLCV (no network) so the
+    # app is instant. Turn ON to fetch real quotes/history (yfinance/NSE).
+    live_data: bool = False
+    history_days: int = 400              # ~1 trading year+ retained per symbol
+    # Directory to persist per-symbol OHLCV history as JSON (disk cache). When
+    # set, history is read from disk first and only refreshed when stale.
+    data_store_dir: Optional[str] = None
+    # Max parallel workers for per-symbol computation.
+    compute_workers: int = 8
 
     # --- Free / freemium LLM providers (Phase 4) ---
     groq_api_key: Optional[str] = None

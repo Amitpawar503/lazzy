@@ -124,6 +124,57 @@ export interface ScreenerResult {
   rows: ScreenerRow[];
 }
 
+export interface ScreenerSection {
+  key: string;
+  label: string;
+  count: number;
+  rows: ScreenerRow[];
+}
+export interface GroupedScreener {
+  dimension: string;
+  metric_label: string;
+  sections: ScreenerSection[];
+}
+
+// --- Stock detail ---
+export interface Quote {
+  last_price: number;
+  change_pct_1d: number;
+  ret_1w: number;
+  ret_1m: number;
+  high_52w: number;
+  low_52w: number;
+  pct_from_52w_high: number;
+  pct_from_52w_low: number;
+  live: boolean;
+}
+export interface Fundamentals {
+  symbol: string;
+  pe: number; industry_pe: number; pb: number;
+  dividend_yield: number; eps: number; book_value: number;
+  roe: number; roce: number;
+  sales_growth_yoy: number; profit_growth_yoy: number;
+  operating_margin: number; net_profit_margin: number;
+  debt_to_equity: number; current_ratio: number;
+  ocf_positive: boolean; free_cash_flow_cr: number;
+  promoter_holding: number; promoter_pledge: number;
+  fii_holding: number; dii_holding: number; public_holding: number;
+  high_pledge: boolean; falling_sales: boolean;
+  expensive_vs_industry: boolean; cheap_vs_industry: boolean;
+}
+export interface ThesisPoint { kind: string; point: string; detail: string; }
+export interface StockDetail {
+  symbol: string; name: string; sector: string; cap_class: string;
+  market_cap_cr: number;
+  quote: Quote;
+  verdict: string; net_score: number;
+  bullish: number; bearish: number; neutral: number;
+  algos: AlgoVote[];
+  fundamentals: Fundamentals;
+  bull_points: ThesisPoint[];
+  bear_points: ThesisPoint[];
+}
+
 // --- News ---
 export interface NewsItem {
   id: string;
@@ -193,6 +244,12 @@ export const api = {
       `/api/screener?dimension=${dimension}&top_n=${topN}` +
         (key ? `&key=${encodeURIComponent(key)}` : "")
     ),
+  screenerGrouped: (dimension: "sector" | "cap", perGroup: number) =>
+    get<GroupedScreener>(
+      `/api/screener/grouped?dimension=${dimension}&per_group=${perGroup}`
+    ),
+  stock: (symbol: string) =>
+    get<StockDetail>(`/api/stock/${encodeURIComponent(symbol)}`),
   news: (category: "all" | "india" | "global", limit: number) =>
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
   events: () => get<EventList>(`/api/impact/events`),
