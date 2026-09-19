@@ -17,7 +17,7 @@ def health() -> dict:
 def meta() -> dict:
     uni = get_universe()
     s = get_settings()
-    return {
+    out = {
         "universe_size": len(uni),
         "sectors": sectors(),
         "timeframes": ["1d", "1w", "1m"],
@@ -25,3 +25,11 @@ def meta() -> dict:
         "provider": s.provider(),
         "live": s.provider() != "sample",
     }
+    if s.provider() == "dhan":
+        try:
+            from app.data import dhan_feed
+
+            out["dhan_feed"] = dhan_feed.status()
+        except Exception:
+            pass
+    return out

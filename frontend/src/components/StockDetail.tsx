@@ -1,6 +1,50 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type Factor, type StockDetail as SD } from "../api";
+import { api, type Factor, type MarketDepth, type StockDetail as SD } from "../api";
 import { fmtPct, fmtCr } from "../color";
+
+// Live 20-level Full Market Depth (Dhan websocket feed). Polls the depth cache;
+// renders nothing until a live book is available so it stays quiet off-provider.
+function DepthLadder({ symbol }: { symbol: string }) {
+  const [book, setBook] = useState<MarketDepth | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => api.depth(symbol).then((b) => alive && setBook(b)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [symbol]);
+
+  if (!book || !book.live || (book.buy.length === 0 && book.sell.length === 0)) return null;
+  const maxQ = Math.max(
+    1, ...book.buy.map((l) => l.quantity), ...book.sell.map((l) => l.quantity)
+  );
+  const rows = Math.min(20, Math.max(book.buy.length, book.sell.length));
+  return (
+    <div className="sd-section">
+      <h3>Full Market Depth <span className="live-dot">● LIVE</span> <span className="depth-sub">(20-level order book · Dhan)</span></h3>
+      <div className="depth">
+        <div className="depth-head"><span>Bid Qty</span><span>Bid</span><span>Ask</span><span>Ask Qty</span></div>
+        {Array.from({ length: rows }).map((_, i) => {
+          const b = book.buy[i]; const a = book.sell[i];
+          return (
+            <div className="depth-row" key={i}>
+              <span className="dq">
+                {b && <i className="dbar buy" style={{ width: `${(b.quantity / maxQ) * 100}%` }} />}
+                <em>{b ? b.quantity.toLocaleString() : ""}</em>
+              </span>
+              <span className="dp buy">{b ? `₹${b.price}` : ""}</span>
+              <span className="dp sell">{a ? `₹${a.price}` : ""}</span>
+              <span className="dq">
+                {a && <i className="dbar sell" style={{ width: `${(a.quantity / maxQ) * 100}%` }} />}
+                <em>{a ? a.quantity.toLocaleString() : ""}</em>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function FactorBox({ title, cls, items }: { title: string; cls: string; items: Factor[] }) {
   return (
@@ -121,6 +165,8 @@ function Modal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
                 )}
               </div>
             )}
+
+            {d.quote.live && <DepthLadder symbol={d.symbol} />}
 
             {f && (
               <div className="sd-section">

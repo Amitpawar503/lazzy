@@ -11,9 +11,10 @@ import asyncio
 import json
 import random
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from app.config import get_settings
 from app.data.live_quotes import get_quote
 
 router = APIRouter(prefix="/api", tags=["quotes"])
@@ -29,12 +30,45 @@ def quotes(symbols: str = Query(..., description="Comma-separated symbols")) -> 
     return {"quotes": [get_quote(s) for s in syms]}
 
 
+@router.get("/depth/{symbol}", summary="20-level Full Market Depth (Dhan live feed)")
+def depth(symbol: str) -> dict:
+    """Live 20-level order book from Dhan's Full Market Depth websocket feed.
+
+    Returns empty ladders unless DATA_PROVIDER=dhan with valid creds and the
+    websocket feed is connected (20-level depth is websocket-only)."""
+    symbol = symbol.upper()
+    if get_settings().provider() != "dhan":
+        return {"symbol": symbol, "buy": [], "sell": [], "live": False,
+                "note": "Set DATA_PROVIDER=dhan (with a demat account) for live depth."}
+    try:
+        from app.data import dhan_feed
+
+        dhan_feed.ensure_started([symbol])
+        book = dhan_feed.get_depth(symbol)
+        if book:
+            return {"symbol": symbol, **book, "live": True}
+        return {"symbol": symbol, "buy": [], "sell": [], "live": False,
+                "note": "Depth feed warming up or symbol not subscribed."}
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=503, detail=str(e))
+
+
 @router.get("/stream/quotes", summary="SSE near-live quote stream")
 async def stream_quotes(
     symbols: str = Query(..., description="Comma-separated symbols"),
     interval: float = Query(2.0, ge=0.5, le=10.0),
 ) -> StreamingResponse:
     syms = _parse(symbols)
+
+    # Start the Dhan realtime feed (websocket push + poller) for these symbols so
+    # each SSE tick reflects the latest live price (no-op unless provider=dhan).
+    if get_settings().provider() == "dhan":
+        try:
+            from app.data import dhan_feed
+
+            dhan_feed.ensure_started(syms)
+        except Exception:
+            pass
 
     async def gen():
         # seed prices

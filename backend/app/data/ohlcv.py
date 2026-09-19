@@ -111,6 +111,13 @@ def _full_history(symbol: str, drift_hint: float) -> list[dict]:
                 recs = fmp_history(symbol, _KEEP)
             except Exception:
                 recs = None
+        elif prov == "dhan":
+            try:
+                from app.data.dhan_provider import dhan_history
+
+                recs = dhan_history(symbol, _KEEP)
+            except Exception:
+                recs = None
         else:  # yfinance
             df = _live_yf(symbol)
             recs = _records_from_df(df) if df is not None else None

@@ -62,6 +62,25 @@ def get_quote(symbol: str) -> dict:
                         prev = float(q["prev_close"])
             except Exception:
                 pass
+        elif prov == "dhan":
+            try:
+                from app.data import dhan_feed
+                from app.data.dhan_provider import dhan_quote
+
+                dhan_feed.ensure_started([symbol])
+                tick = dhan_feed.get_tick(symbol)   # websocket / poller push cache
+                if tick and tick.get("price"):
+                    price = float(tick["price"])
+                    if tick.get("prev_close"):
+                        prev = float(tick["prev_close"])
+                else:                               # cold cache → one REST quote
+                    q = dhan_quote(symbol)
+                    if q and q.get("price"):
+                        price = float(q["price"])
+                        if q.get("prev_close"):
+                            prev = float(q["prev_close"])
+            except Exception:
+                pass
         elif prov == "yfinance":
             live = _live_price(symbol)
             if live:

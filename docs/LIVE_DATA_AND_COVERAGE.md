@@ -38,7 +38,8 @@ Result (sample universe, cold → warm): momentum **~1.3s → ~0.1s**, scorecard
 | **londonstrategicedge/lse-data** | — | US/FX/crypto only | yes (WS) | — | **No NSE/BSE** → not useful |
 | **livetennisapi/polymarket-tennis** | — | — | — | — | Unrelated (tennis betting) |
 | **Perplexity Finance** | yes | yes | — | via partners | Sources via **Zerodha/Paytm** partnerships, **not a public free API** |
-| **Broker websockets** (Zerodha Kite, Fyers, Upstox, Dhan) | **tick, zero-delay** | yes | **yes (WS)** | needs paid API + login | The only true no-delay path (Phase 6) |
+| **DhanHQ v2 Data APIs** | **tick, zero-delay** | 1y+ daily/intraday | **yes (WS)** | **free with a demat a/c** | **Implemented** — Live Feed + 20-level Full Depth + Daily Historical |
+| **Broker websockets** (Zerodha Kite, Fyers, Upstox) | **tick, zero-delay** | yes | **yes (WS)** | needs paid API + login | Other true no-delay paths (adapter pattern = Dhan) |
 
 \*Unofficial; respect ToS and rate limits.
 
@@ -55,9 +56,12 @@ Result (sample universe, cold → warm): momentum **~1.3s → ~0.1s**, scorecard
 3. **Streaming / buffering** — `/api/stream/quotes?symbols=…` is a **Server-Sent
    Events** stream that pushes buffered quote updates on an interval (near-live,
    seconds). Demo jitter when offline so movement is visible.
-4. **Zero-delay ticks** — a broker websocket adapter (Kite/Fyers/Upstox/Dhan) is
-   the Phase-6 add-on; those need an API key + daily login (creds already in
-   `.env.example`). No free source gives true tick data without a broker.
+4. **Zero-delay ticks** — shipped for **Dhan** (`DATA_PROVIDER=dhan`): the
+   DhanHQ v2 **Live Market Feed** websocket pushes tick-by-tick prices and the
+   **Full Market Depth** websocket pushes the 20-level book, both into a shared
+   cache the SSE and `/api/depth/{symbol}` read. Kite/Fyers/Upstox can follow the
+   same adapter shape. All need a broker login (free with a Dhan demat account);
+   no free source gives true tick data without a broker.
 
 **To turn on live data locally:**
 
@@ -73,7 +77,39 @@ full-exchange quotes (1-day change); per-symbol EOD history comes from
 `historical-price-full`. This gives the **complete NSE market** (up to
 `UNIVERSE_LIMIT` names) instead of the ~149 bundled samples.
 
-Option B — **yfinance (per-symbol):**
+Option B — **DhanHQ v2 (live NSE/BSE, free with a demat account — recommended for realtime):**
+```env
+DATA_PROVIDER=dhan
+DHAN_CLIENT_ID=<your client id>
+DHAN_ACCESS_TOKEN=<your data-API token>   # web.dhan.co → DhanHQ Trading APIs
+DATA_STORE_DIR=./data_store               # optional: cache history as JSON
+```
+This wires all three DhanHQ v2 data APIs from
+[docs.dhanhq.co/api/v2/data-apis](https://docs.dhanhq.co/api/v2/data-apis):
+
+1. **Get Daily Historical Data** (`POST /v2/charts/historical`) → the per-symbol
+   OHLCV series (cached to JSON, refreshed daily), powering every screener,
+   backtest and the stock-detail chart.
+2. **Live Market Feed** (websocket) → real-time last-traded price pushed into a
+   shared tick cache that feeds `/api/quotes` and the `/api/stream/quotes` SSE
+   (true tick-by-tick, not a poll). If the `dhanhq` SDK isn't installed, a REST
+   **batch market-quote** poller (`POST /v2/marketfeed/quote`, ≤1000 instruments/
+   call, one call for the whole visible set) keeps prices seconds-fresh.
+3. **Full Market Depth** (websocket, 20-level) → the live order book at
+   `GET /api/depth/{symbol}` (20 bid + 20 ask levels with qty & order count).
+
+Dhan's data-API limits (verified): **REST** ~5 req/sec, ~100k/day, no monthly
+cap; the **websocket** carries ~5000 instruments per connection with no per-call
+cost — so the feed, not per-symbol polling, is the scalable path for the full
+market. A **symbol → `security_id`** map is built once from Dhan's public
+scrip-master CSV (no auth). `pip install dhanhq` enables the websocket push +
+20-level depth; without it the REST poller still gives live prices.
+
+> Sector and market-cap aren't in Dhan's data feed, so the curated instrument
+> metadata (sector + cap class) is retained and **live prices/history are overlaid
+> from Dhan** — heatmaps keep their sectors while every price is live.
+
+Option C — **yfinance (per-symbol):**
 ```env
 LIVE_DATA=true                 # == DATA_PROVIDER=yfinance
 DATA_STORE_DIR=./data_store

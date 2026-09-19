@@ -24,6 +24,15 @@ def _load() -> list[dict]:
                 return rows
         except Exception:
             pass
+    elif prov == "dhan":
+        try:
+            from app.data.dhan_provider import dhan_universe
+
+            rows = dhan_universe()
+            if rows:
+                return rows
+        except Exception:
+            pass
     elif prov == "yfinance":
         try:
             from app.data.providers.yfinance_provider import enrich_universe

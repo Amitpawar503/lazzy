@@ -67,13 +67,19 @@ Deep Value, Growth, Cash-flow, Quality, Institutional-favourites, GARP),
 *how it picks*, and is backtested with return + risk vs the benchmark. Filter by
 category and search by investor/strategy name.
 
-**Live data & speed:** off by default (fast synthetic data, no network). For the
-**complete NSE market**, set `DATA_PROVIDER=fmp` + `FMP_API_KEY` (Financial
-Modeling Prep — full universe via screener + quotes + EOD history, `UNIVERSE_LIMIT`
-names by market cap); or `LIVE_DATA=true` for per-symbol yfinance. History is
-cached to JSON (`DATA_STORE_DIR`); a near-live SSE stream (`/api/stream/quotes`)
-buffers quotes. Everything falls back to sample data if the feed/key is missing.
-Zero-delay ticks need a broker websocket (Phase 6). See
+**Live data & speed:** off by default (fast synthetic data, no network). Three
+live providers via `DATA_PROVIDER`:
+- **`dhan`** — DhanHQ v2 (free with a demat account): **Live Market Feed** +
+  **20-level Full Market Depth** (websockets) + **Daily Historical** data. Set
+  `DHAN_CLIENT_ID` + `DHAN_ACCESS_TOKEN`. Real tick-by-tick prices feed
+  `/api/stream/quotes`; the live order book is at `/api/depth/{symbol}`.
+- **`fmp`** — Financial Modeling Prep + `FMP_API_KEY`: full NSE universe via
+  screener + quotes + EOD history (`UNIVERSE_LIMIT` names by market cap).
+- **`yfinance`** (`LIVE_DATA=true`) — per-symbol Yahoo Finance.
+
+History is cached to JSON (`DATA_STORE_DIR`); a near-live SSE stream
+(`/api/stream/quotes`) buffers quotes. Everything falls back to sample data if
+the feed/key is missing. See
 [`docs/LIVE_DATA_AND_COVERAGE.md`](docs/LIVE_DATA_AND_COVERAGE.md) for the data
 sources researched, the performance fixes, and the fundamentals/technicals
 coverage vs Moneycontrol's scanners.
@@ -86,7 +92,9 @@ coverage vs Moneycontrol's scanners.
 - **Phase 4** — multi-agent AI layer (analysts → bull/bear debate → synthesis) on free LLMs.
   _(Provider registry live at `/api/ai/providers`; agents next.)_
 - **Phase 5** — VectorBT backtests + tearsheets.
-- **Phase 6** — broker abstraction + paper/live trading.
+- **Phase 6** — broker abstraction + paper/live trading. _(DhanHQ v2 live
+  websocket feed + 20-level full depth + daily historical shipped as
+  `DATA_PROVIDER=dhan`; Kite/Fyers/Upstox follow the same adapter.)_
 
 ## Notes
 

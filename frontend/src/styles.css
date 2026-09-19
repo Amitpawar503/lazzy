@@ -253,6 +253,25 @@ select {
 
 .sd-section { margin-top: 16px; }
 .sd-section h3 { margin: 0 0 10px; font-size: 14px; }
+
+/* Full Market Depth (Dhan 20-level live order book) */
+.depth-sub { color: var(--muted); font-weight: 400; font-size: 11px; }
+.depth { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-variant-numeric: tabular-nums; }
+.depth-head, .depth-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; align-items: center; }
+.depth-head { background: var(--panel-2); color: var(--muted); font-size: 11px; padding: 6px 10px; }
+.depth-head span:nth-child(2), .depth-head span:nth-child(3) { text-align: center; }
+.depth-head span:last-child { text-align: right; }
+.depth-row { padding: 3px 10px; font-size: 12px; border-top: 1px solid var(--line); }
+.depth-row .dp { text-align: center; font-weight: 600; }
+.depth-row .dp.buy { color: var(--up, #16a34a); }
+.depth-row .dp.sell { color: var(--dn, #dc2626); }
+.depth-row .dq { position: relative; display: flex; align-items: center; }
+.depth-row .dq:first-child { justify-content: flex-start; }
+.depth-row .dq:last-child { justify-content: flex-end; }
+.depth-row .dq em { position: relative; font-style: normal; z-index: 1; }
+.depth-row .dbar { position: absolute; top: 2px; bottom: 2px; opacity: 0.16; border-radius: 3px; }
+.depth-row .dbar.buy { left: 0; background: var(--up, #16a34a); }
+.depth-row .dbar.sell { right: 0; background: var(--dn, #dc2626); }
 .fund-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .fund { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
 .fund-k { color: var(--muted); font-size: 11px; }

@@ -217,6 +217,16 @@ export interface StyleSection {
 }
 export interface StyleSections { section_count: number; sections: StyleSection[]; }
 
+// --- Full Market Depth (Dhan 20-level live order book) ---
+export interface DepthLevel { price: number; quantity: number; orders: number; }
+export interface MarketDepth {
+  symbol: string;
+  buy: DepthLevel[];
+  sell: DepthLevel[];
+  live: boolean;
+  note?: string;
+}
+
 // --- News ---
 export interface NewsItem {
   id: string;
@@ -300,6 +310,7 @@ export const api = {
   news: (category: "all" | "india" | "global", limit: number) =>
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
   events: () => get<EventList>(`/api/impact/events`),
+  depth: (symbol: string) => get<MarketDepth>(`/api/depth/${encodeURIComponent(symbol)}`),
   meta: () =>
     get<{ universe_size: number; sectors: string[]; timeframes: string[]; provider?: string; live?: boolean }>(
       `/meta`

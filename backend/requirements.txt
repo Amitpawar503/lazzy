@@ -13,6 +13,9 @@ numpy>=1.26
 # Optional India data sources (graceful-degrade if missing/offline)
 yfinance>=0.2.40 ; python_version >= "3.9"
 jugaad-data>=0.26 ; python_version >= "3.9"
+# DhanHQ v2 live feed (websocket push + 20-level full depth). REST works without
+# it; this SDK enables the realtime websocket path for DATA_PROVIDER=dhan.
+dhanhq>=2.0.0 ; python_version >= "3.9"
 
 # Caching (optional; falls back to in-memory)
 redis>=5.0

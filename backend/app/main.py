@@ -62,5 +62,8 @@ def root() -> dict:
             "/api/news",
             "/api/impact/events",
             "/api/ai/providers",
+            "/api/quotes?symbols=RELIANCE,TCS",
+            "/api/stream/quotes?symbols=RELIANCE",
+            "/api/depth/{symbol}",
         ],
     }

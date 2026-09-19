@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # Which market-data provider powers the universe/quotes/history:
     #   sample   -> bundled deterministic data (default, offline)
     #   fmp      -> Financial Modeling Prep REST (needs FMP_API_KEY; full NSE market)
+    #   dhan     -> DhanHQ v2 (needs a demat account: DHAN_CLIENT_ID + DHAN_ACCESS_TOKEN)
+    #               Live Market Feed + 20-level Full Depth (websocket) + Daily Historical
     #   yfinance -> Yahoo Finance per-symbol (needs a symbol universe; slower)
     data_provider: str = "sample"
     fmp_base_url: str = "https://financialmodelingprep.com/api/v3"
@@ -69,6 +71,11 @@ class Settings(BaseSettings):
     # --- Data / news providers (optional free tiers) ---
     tapetide_token: Optional[str] = None
     fmp_api_key: Optional[str] = None        # Financial Modeling Prep (full NSE market)
+    # --- DhanHQ v2 (live NSE/BSE via a demat account) ---
+    dhan_client_id: Optional[str] = None
+    dhan_access_token: Optional[str] = None
+    dhan_base_url: str = "https://api.dhan.co/v2"
+    dhan_scrip_master_url: str = "https://images.dhan.co/api-data/api-scrip-master.csv"
     alphavantage_api_key: Optional[str] = None
     finnhub_api_key: Optional[str] = None
     newsapi_key: Optional[str] = None
