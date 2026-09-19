@@ -30,6 +30,46 @@ def quotes(symbols: str = Query(..., description="Comma-separated symbols")) -> 
     return {"quotes": [get_quote(s) for s in syms]}
 
 
+@router.get("/dhan/diagnostics", summary="Dhan connectivity self-test (why is it sample?)")
+def dhan_diagnostics(symbol: str = Query("RELIANCE")) -> dict:
+    """Actively probe each Dhan data API and report exactly what works / fails, so
+    you can see in one call why live data isn't showing. Watch the terminal too:
+    every probe logs a [dhan] line."""
+    s = get_settings()
+    out: dict = {
+        "provider_effective": s.provider(),
+        "dhan_client_id_set": bool(s.dhan_client_id),
+        "dhan_access_token_set": bool(s.dhan_access_token),
+        "base_url": s.dhan_base_url,
+        "scrip_master_url": s.dhan_scrip_master_url,
+    }
+    if s.provider() != "dhan":
+        out["hint"] = "Set DATA_PROVIDER=dhan in your .env, then restart the backend."
+        return out
+    if not s.dhan_access_token:
+        out["hint"] = "DHAN_ACCESS_TOKEN is empty → set it in .env (web.dhan.co → DhanHQ APIs)."
+        return out
+    try:
+        from app.data import dhan_feed, dhan_provider as dh
+
+        sid = dh.security_id(symbol)
+        out["scrip_master_symbols"] = len(dh._SYM_TO_ID)
+        out["security_id"] = sid
+        out["quote"] = dh.dhan_quote(symbol)
+        hist = dh.dhan_history(symbol, 5)
+        out["history_bars"] = len(hist) if hist else 0
+        out["history_sample"] = hist[-1] if hist else None
+        dhan_feed.ensure_started([symbol])
+        out["feed"] = dhan_feed.status()
+        out["ok"] = bool(out.get("quote") or out.get("history_bars"))
+        if not out["ok"]:
+            out["hint"] = ("Creds set but Dhan returned nothing — check the terminal [dhan] "
+                           "lines for HTTP 401/403 (bad/expired token) or network egress.")
+    except Exception as e:  # pragma: no cover
+        out["error"] = str(e)
+    return out
+
+
 @router.get("/depth/{symbol}", summary="20-level Full Market Depth (Dhan live feed)")
 def depth(symbol: str) -> dict:
     """Live 20-level order book from Dhan's Full Market Depth websocket feed.

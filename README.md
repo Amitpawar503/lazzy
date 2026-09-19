@@ -79,7 +79,20 @@ live providers via `DATA_PROVIDER`:
 
 History is cached to JSON (`DATA_STORE_DIR`); a near-live SSE stream
 (`/api/stream/quotes`) buffers quotes. Everything falls back to sample data if
-the feed/key is missing. See
+the feed/key is missing.
+
+**Live news:** on by default (`NEWS_LIVE=true`) — real headlines from free RSS
+feeds (Moneycontrol, Economic Times, Livemint, Business Standard, Google News,
+Reuters, CNBC, MarketWatch) plus Finnhub (`FINNHUB_API_KEY`, optional), each
+entity-linked to the universe and sentiment-tagged. **No login needed** (RSS is
+public); it falls back to sample only when offline.
+
+**Seeing sample data instead of live?** The backend now logs every provider hit
+and every fallback reason to the terminal (`[dhan] …`, `[news] …`), and prints a
+startup banner naming the active provider. Hit **`GET /api/dhan/diagnostics`**
+for a one-call self-test that tells you exactly what's missing (token, network,
+scrip master, etc.). A `403`/`401` in the log means a bad/expired token; RSS/Dhan
+`403`s in a sandbox mean egress is blocked (runs fine on your machine). See
 [`docs/LIVE_DATA_AND_COVERAGE.md`](docs/LIVE_DATA_AND_COVERAGE.md) for the data
 sources researched, the performance fixes, and the fundamentals/technicals
 coverage vs Moneycontrol's scanners.

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     data_store_dir: Optional[str] = None
     # Max parallel workers for per-symbol computation.
     compute_workers: int = 8
+    # Fetch live news from free RSS feeds + Finnhub (falls back to sample offline).
+    news_live: bool = True
 
     # --- Free / freemium LLM providers (Phase 4) ---
     groq_api_key: Optional[str] = None

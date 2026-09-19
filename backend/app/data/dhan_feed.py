@@ -23,12 +23,15 @@ cached EOD quote. Creds live ONLY in .env.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Optional
 
 from app.config import get_settings
 from app.data import dhan_provider as dh
+
+log = logging.getLogger("lazzy.dhan.feed")
 
 # --- shared caches ------------------------------------------------------------
 _LOCK = threading.Lock()
@@ -74,6 +77,7 @@ def _set_depth(symbol: str, buy: list[dict], sell: list[dict]) -> None:
 
 # --- REST poller (always-available fallback) ----------------------------------
 def _rest_poll_loop(interval: float = 3.0) -> None:
+    log.info("[dhan.feed] REST quote poller started (interval=%.1fs)", interval)
     while True:
         with _LOCK:
             syms = list(_SUBSCRIBED)
@@ -82,8 +86,10 @@ def _rest_poll_loop(interval: float = 3.0) -> None:
                 quotes = dh.dhan_quotes_batch(syms)
                 for sym, q in quotes.items():
                     _set_tick(sym, q["price"], q["prev_close"])
-            except Exception:
-                pass
+                if quotes:
+                    log.info("[dhan.feed] REST poll refreshed %d live ticks", len(quotes))
+            except Exception as e:
+                log.warning("[dhan.feed] REST poll failed: %s", e)
         time.sleep(interval)
 
 
@@ -107,6 +113,8 @@ def _ws_loop(symbols: list[str]) -> None:
     try:
         from dhanhq import marketfeed  # type: ignore
     except Exception:
+        log.info("[dhan.feed] dhanhq SDK not installed → websocket disabled, "
+                 "using REST poller only (pip install dhanhq for tick push + 20-level depth)")
         return  # SDK missing → REST poller only
 
     instruments = []
@@ -121,15 +129,19 @@ def _ws_loop(symbols: list[str]) -> None:
 
     while True:
         try:
+            log.info("[dhan.feed] connecting Live Market Feed websocket (%d instruments, "
+                     "Full packet = quote + 20-level depth)", len(instruments))
             feed = marketfeed.DhanFeed(s.dhan_client_id, s.dhan_access_token, instruments)
             _WS_OK = True
+            log.info("[dhan.feed] websocket CONNECTED — streaming live ticks + depth")
             while True:
                 feed.run_forever()
                 msg = feed.get_data()
                 if isinstance(msg, dict):
                     _handle_ws_message(msg)
-        except Exception:
+        except Exception as e:
             _WS_OK = False
+            log.warning("[dhan.feed] websocket dropped (%s) → reconnecting in 5s", e)
             time.sleep(5)  # backoff then reconnect
 
 
@@ -157,6 +169,7 @@ def _handle_ws_message(msg: dict) -> None:
         sell = _norm_ladder(depth.get("sell") or depth.get("ask") or [])
         if buy or sell:
             _set_depth(sym, buy, sell)
+            log.debug("[dhan.feed] DEPTH %s: %d bid / %d ask levels", sym, len(buy), len(sell))
 
 
 def _norm_ladder(levels: list) -> list[dict]:
@@ -195,6 +208,7 @@ def ensure_started(symbols: Optional[list[str]] = None) -> None:
         _STARTED = True
         syms = list(_SUBSCRIBED)
 
+    log.info("[dhan.feed] starting realtime layer for %d symbols", len(syms))
     # REST poller: always on (guarantees live-ish ticks even without the SDK).
     threading.Thread(target=_rest_poll_loop, daemon=True, name="dhan-rest").start()
     # Websocket: best-effort push + 20-level depth.

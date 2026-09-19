@@ -5,6 +5,8 @@ Docs: http://localhost:8000/docs
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,7 +17,34 @@ from app.routers import (
     strategies, stream, style,
 )
 
+# Show INFO logs (Dhan/news hits + fallbacks) in the terminal.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 settings = get_settings()
+
+# Loud startup banner so it's obvious which data provider is actually active and
+# why — the #1 reason for "still showing sample data" is a missing token.
+_prov = settings.provider()
+_log = logging.getLogger("lazzy")
+_log.info("=" * 64)
+_log.info("Lazzy Markets starting — DATA_PROVIDER=%s (effective: %s)",
+          settings.data_provider, _prov)
+if _prov == "dhan":
+    if not settings.dhan_access_token:
+        _log.warning("DHAN_ACCESS_TOKEN is NOT set → Dhan calls will be skipped and "
+                     "the app will serve SAMPLE data. Set DHAN_CLIENT_ID + "
+                     "DHAN_ACCESS_TOKEN in .env to get live data.")
+    else:
+        _log.info("Dhan creds present (client_id=%s). Live feed/history/depth will be "
+                  "hit on demand — watch for [dhan] log lines.",
+                  "set" if settings.dhan_client_id else "MISSING")
+elif _prov == "fmp" and not settings.fmp_api_key:
+    _log.warning("DATA_PROVIDER=fmp but FMP_API_KEY is not set → serving SAMPLE data.")
+_log.info("=" * 64)
 
 app = FastAPI(
     title=settings.app_name,

@@ -30,6 +30,7 @@ from __future__ import annotations
 import csv
 import datetime as _dt
 import io
+import logging
 import threading
 from typing import Optional
 
@@ -37,6 +38,8 @@ import httpx
 
 from app.config import get_settings
 from app.data.sample_data import cap_class, sample_universe
+
+log = logging.getLogger("lazzy.dhan")
 
 _TIMEOUT = 30.0
 _EXCH_SEGMENT = "NSE_EQ"      # NSE cash-equity segment
@@ -76,6 +79,7 @@ def _load_scrip_master() -> None:
         if _SCRIP_LOADED:  # re-check inside the lock
             return
         s = get_settings()
+        log.info("[dhan] loading scrip master: %s", s.dhan_scrip_master_url)
         try:
             r = httpx.get(s.dhan_scrip_master_url, timeout=_TIMEOUT, follow_redirects=True)
             r.raise_for_status()
@@ -97,9 +101,10 @@ def _load_scrip_master() -> None:
                 if is_nse and is_equity and is_eq_series:
                     _SYM_TO_ID.setdefault(sym, sid)
                     _ID_TO_SYM.setdefault(sid, sym)
-        except Exception:
+            log.info("[dhan] scrip master loaded: %d NSE equity symbols mapped", len(_SYM_TO_ID))
+        except Exception as e:
             # leave maps empty → callers fall back to sample
-            pass
+            log.warning("[dhan] scrip master load FAILED (%s) → will fall back to sample", e)
         finally:
             _SCRIP_LOADED = True
 
@@ -117,13 +122,22 @@ def symbol_for_id(sid: str | int) -> Optional[str]:
 def _post(path: str, body: dict) -> Optional[dict]:
     h = _headers()
     if h is None:
+        log.warning("[dhan] %s skipped: DHAN_ACCESS_TOKEN not set", path)
         return None
     s = get_settings()
+    url = f"{s.dhan_base_url}{path}"
     try:
-        r = httpx.post(f"{s.dhan_base_url}{path}", json=body, headers=h, timeout=_TIMEOUT)
+        log.info("[dhan] POST %s", url)
+        r = httpx.post(url, json=body, headers=h, timeout=_TIMEOUT)
         r.raise_for_status()
+        log.info("[dhan] POST %s → %s OK", path, r.status_code)
         return r.json()
-    except Exception:
+    except httpx.HTTPStatusError as e:
+        log.warning("[dhan] POST %s → HTTP %s: %s", path, e.response.status_code,
+                    e.response.text[:300])
+        return None
+    except Exception as e:
+        log.warning("[dhan] POST %s FAILED: %s", path, e)
         return None
 
 
@@ -166,6 +180,7 @@ def dhan_quotes_batch(symbols: list[str]) -> dict[str, dict]:
                 "prev_close": float(prev) if prev else float(price),
                 "change_pct": change_pct,
             }
+    log.info("[dhan] LIVE quotes: requested %d, resolved %d symbols", len(ids), len(out))
     return out
 
 
@@ -185,7 +200,9 @@ def dhan_history(symbol: str, days: int) -> Optional[list[dict]]:
     """
     sid = security_id(symbol)
     if not sid:
+        log.warning("[dhan] HISTORY %s: no security_id (scrip master empty/miss)", symbol)
         return None
+    log.info("[dhan] HISTORY %s (security_id=%s, days=%d)", symbol, sid, days)
     today = _dt.date.today()
     # pad calendar days generously — ~250 trading days per ~365 calendar days
     from_date = today - _dt.timedelta(days=int(days * 1.6) + 10)
@@ -232,6 +249,7 @@ def dhan_history(symbol: str, days: int) -> Optional[list[dict]]:
             "close": c,
             "volume": _at(vols, i, 0) or 0,
         })
+    log.info("[dhan] HISTORY %s → %d daily bars", symbol, len(recs))
     # already chronological (oldest → newest); keep the last `days`
     return recs[-days:] if len(recs) > days else recs or None
 
@@ -248,11 +266,14 @@ def dhan_universe() -> Optional[list[dict]]:
     """
     _load_scrip_master()
     if not _SYM_TO_ID:
+        log.warning("[dhan] universe: scrip master empty → falling back to sample")
         return None
     base = sample_universe()
     quotes = dhan_quotes_batch([r["symbol"] for r in base])
     if not quotes:
+        log.warning("[dhan] universe: no live quotes returned → falling back to sample")
         return None
+    log.info("[dhan] universe: overlaying live prices on %d curated symbols", len(base))
     rows = []
     for r in base:
         q = quotes.get(r["symbol"].upper())
