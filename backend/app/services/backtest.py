@@ -22,7 +22,7 @@ _YEAR = 252
 
 def _daily(symbol: str, drift: float, days: int) -> pd.Series:
     df = get_ohlcv(symbol, days=days, drift_hint=drift)
-    return df["close"].astype(float).reset_index(drop=True).pct_change()
+    return df["close"].astype(float).reset_index(drop=True).pct_change(fill_method=None)
 
 
 def _basket(symbols: list[str], meta: dict, days: int) -> pd.Series:

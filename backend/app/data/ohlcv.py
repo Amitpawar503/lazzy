@@ -52,7 +52,12 @@ def _live_yf(symbol: str) -> pd.DataFrame | None:
     try:
         import yfinance as yf  # type: ignore
 
-        yf_sym = f"{symbol.replace('&', '')}.NS"
+        from app.data.yf_symbols import quiet_yfinance_logging, yf_ticker
+
+        quiet_yfinance_logging()
+        yf_sym = yf_ticker(symbol)
+        if not yf_sym:                       # known-delisted → skip (use synthetic)
+            return None
         df = yf.download(
             yf_sym, period="2y", interval="1d", auto_adjust=True, progress=False
         )

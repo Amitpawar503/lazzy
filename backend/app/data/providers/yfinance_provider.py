@@ -7,6 +7,7 @@ bundled sample data. NSE symbols use the `.NS` suffix.
 from __future__ import annotations
 
 from app.data.sample_data import cap_class
+from app.data.yf_symbols import quiet_yfinance_logging, yf_ticker
 
 
 def enrich_universe(rows: list[dict]) -> list[dict] | None:
@@ -15,8 +16,11 @@ def enrich_universe(rows: list[dict]) -> list[dict] | None:
         import pandas as pd  # noqa: F401
     except Exception:
         return None
+    quiet_yfinance_logging()
 
-    symbols = [f"{r['symbol'].replace('&', '')}.NS" for r in rows]
+    # Map to Yahoo tickers, skipping known-dead symbols (they keep sample rows).
+    tickers = {r["symbol"]: yf_ticker(r["symbol"]) for r in rows}
+    symbols = [t for t in tickers.values() if t]
     try:
         data = yf.download(
             symbols, period="1mo", interval="1d", group_by="ticker",
@@ -29,8 +33,10 @@ def enrich_universe(rows: list[dict]) -> list[dict] | None:
 
     out: list[dict] = []
     for r in rows:
-        yf_sym = f"{r['symbol'].replace('&', '')}.NS"
+        yf_sym = tickers.get(r["symbol"])
         try:
+            if not yf_sym:
+                raise ValueError("skipped symbol")
             close = data[yf_sym]["Close"].dropna()
             if len(close) < 2:
                 raise ValueError("insufficient history")

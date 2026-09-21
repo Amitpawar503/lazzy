@@ -103,7 +103,7 @@ _EXTRA = [
     ("EMAMILTD", "Emami", "FMCG", 18000), ("DEEPAKNTR", "Deepak Nitrite", "Pharma", 14000),
     ("AARTIIND", "Aarti Industries", "Pharma", 6000), ("MANAPPURAM", "Manappuram Finance", "Financials", 15000),
     ("CANFINHOME", "Can Fin Homes", "Financials", 9000), ("MCX", "Multi Commodity Exchange", "Financials", 18000),
-    ("ANGELONE", "Angel One", "Financials", 19000), ("IEXTEND", "IIFL Finance", "Financials", 12000),
+    ("ANGELONE", "Angel One", "Financials", 19000), ("IIFL", "IIFL Finance", "Financials", 12000),
     ("RAMCOCEM", "Ramco Cements", "Cement", 17000), ("GUJGASLTD", "Gujarat Gas", "Energy", 16000),
     ("MGL", "Mahanagar Gas", "Energy", 12000), ("GSPL", "Gujarat State Petronet", "Energy", 8000),
     # --- Small cap (₹500–5k cr) ---
@@ -122,9 +122,9 @@ _EXTRA = [
     ("AEGISLOG", "Aegis Logistics", "Energy", 4900), ("KFINTECH", "KFin Technologies", "Financials", 4900),
     ("UTIAMC", "UTI AMC", "Financials", 4800), ("PNBHOUSING", "PNB Housing Finance", "Financials", 4900),
     ("RITES", "RITES", "Infrastructure", 4200), ("IRCON", "Ircon International", "Infrastructure", 4900),
-    ("NBCC", "NBCC India", "Infrastructure", 4800), ("HFCLEXT", "GTL Infrastructure", "Telecom", 900),
+    ("NBCC", "NBCC India", "Infrastructure", 4800), ("GTLINFRA", "GTL Infrastructure", "Telecom", 900),
     # --- Micro cap (< ₹500 cr) ---
-    ("NELCOEXT", "Shaily Engineering", "Metals", 480), ("SALSTEEL", "SAL Steel", "Metals", 120),
+    ("SHAILY", "Shaily Engineering", "Metals", 480), ("SALSTEEL", "SAL Steel", "Metals", 120),
     ("SHANKARA", "Shankara Building", "Infrastructure", 450), ("PATELENG", "Patel Engineering", "Infrastructure", 470),
     ("AHLUCONT", "Ahluwalia Contracts", "Infrastructure", 490), ("UNIVCABLES", "Universal Cables", "Metals", 400),
     ("ORIENTCEM", "Orient Cement", "Cement", 480), ("SANGHIIND", "Sanghi Industries", "Cement", 300),
@@ -137,7 +137,7 @@ _EXTRA = [
     ("MARKSANS", "Marksans Pharma", "Pharma", 450), ("MOREPENLAB", "Morepen Labs", "Pharma", 250),
     ("KOPRAN", "Kopran", "Pharma", 150), ("SASTASUNDR", "Sastasundar Ventures", "Healthcare", 200),
     ("ONMOBILE", "OnMobile Global", "IT", 350), ("SUBEXLTD", "Subex", "IT", 200),
-    ("TAKE", "Take Solutions", "IT", 120), ("BLSINTL", "BLS International", "Consumer", 480),
+    ("TAKE", "Take Solutions", "IT", 120), ("BLS", "BLS International", "Consumer", 480),
 ]
 
 _SECTOR_INDEX = {  # illustrative sector index period returns (%)

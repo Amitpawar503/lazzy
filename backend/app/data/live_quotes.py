@@ -32,7 +32,13 @@ def _live_price(symbol: str) -> float | None:
     try:
         import yfinance as yf  # type: ignore
 
-        t = yf.Ticker(f"{symbol.replace('&', '')}.NS")
+        from app.data.yf_symbols import quiet_yfinance_logging, yf_ticker
+
+        quiet_yfinance_logging()
+        yf_sym = yf_ticker(symbol)
+        if not yf_sym:
+            return None
+        t = yf.Ticker(yf_sym)
         fi = getattr(t, "fast_info", None)
         if fi:
             p = fi.get("last_price") or fi.get("lastPrice")

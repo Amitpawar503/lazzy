@@ -203,7 +203,8 @@ def fetch_live_news() -> list[dict]:
     """Fetch + normalise live headlines from all free sources. Empty on total
     failure (offline) so the caller falls back to sample."""
     idx = _ticker_index()
-    india = {"Moneycontrol", "Economic Times", "Livemint", "Business Standard",
+    india = {"Moneycontrol", "Economic Times", "ET Markets (GN)", "Livemint",
+             "Business Standard", "CNBC-TV18", "NDTV Profit",
              "Google News (India markets)"}
     out: list[dict] = []
     for name, url in RSS_FEEDS.items():

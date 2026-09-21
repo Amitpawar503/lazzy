@@ -7,19 +7,31 @@ drop-in that falls back to this list.
 """
 from __future__ import annotations
 
-# Free/public RSS feeds (poll politely + cache). Wired in a later phase.
+# Free/public RSS feeds (polled live in services/news.py, cached).
+#
+# Direct portal RSS often blocks datacenter IPs or changes URLs, so for the
+# portals that lack a reliable public feed (Moneycontrol, CNBC-TV18, NDTV Profit)
+# we use Google News' site-filtered RSS — free, reliable, and returns those
+# outlets' own articles (each item links straight to the source). Direct feeds
+# are kept for the ones that usually serve (ET, Livemint, Business Standard).
+_GN = "https://news.google.com/rss/search?q={q}&hl=en-IN&gl=IN&ceid=IN:en"
+
 RSS_FEEDS: dict[str, str] = {
-    # India
-    "Moneycontrol": "https://www.moneycontrol.com/rss/latestnews.xml",
+    # --- India: source-specific (via Google News site filter) ---
+    "Moneycontrol": _GN.format(q="site:moneycontrol.com+when:3d"),
     "Economic Times": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+    "ET Markets (GN)": _GN.format(q="site:economictimes.indiatimes.com+markets+when:3d"),
     "Livemint": "https://www.livemint.com/rss/markets",
     "Business Standard": "https://www.business-standard.com/rss/markets-106.rss",
+    "CNBC-TV18": _GN.format(q="site:cnbctv18.com+market+when:3d"),
+    "NDTV Profit": _GN.format(q="site:ndtvprofit.com+when:3d"),
     "Google News (India markets)":
-        "https://news.google.com/rss/search?q=NSE+BSE+Indian+stock+market&hl=en-IN&gl=IN&ceid=IN:en",
-    # Global
-    "Reuters Business": "https://www.reutersagency.com/feed/?best-topics=business-finance",
+        _GN.format(q="NSE+OR+BSE+OR+Sensex+OR+Nifty+stock+market+when:2d"),
+    # --- Global ---
+    "Reuters (GN)": _GN.format(q="site:reuters.com+markets+when:2d"),
     "CNBC Markets": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
     "MarketWatch": "https://feeds.marketwatch.com/marketwatch/topstories/",
+    "Bloomberg (GN)": _GN.format(q="site:bloomberg.com+markets+when:2d"),
 }
 
 # id, source, title, url, published, summary, tickers, sentiment, score, category
