@@ -23,10 +23,15 @@ def _row_for(symbol: str) -> dict | None:
 
 def _quote(symbol: str, row: dict) -> dict:
     df = get_ohlcv(symbol, days=260, drift_hint=row.get("ret_1m", 0.0))
-    close = df["close"].astype(float)
-    last = float(close.iloc[-1])
+    close = df["close"].astype(float).dropna()
+    last = float(close.iloc[-1]) if len(close) else float(row.get("last_price") or 0.0)
     high_52w = float(df["high"].astype(float).max())
     low_52w = float(df["low"].astype(float).min())
+    # guard against thin/NaN live history
+    if not (high_52w == high_52w):  # NaN check
+        high_52w = last
+    if not (low_52w == low_52w):
+        low_52w = last
     return {
         "last_price": round(last, 2),
         "change_pct_1d": row.get("ret_1d", 0.0),

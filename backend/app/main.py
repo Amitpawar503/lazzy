@@ -5,10 +5,37 @@ Docs: http://localhost:8000/docs
 """
 from __future__ import annotations
 
+import json
 import logging
+import math
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+
+
+def _json_safe(o: Any) -> Any:
+    """Recursively replace non-finite floats (NaN / Infinity) with None so the
+    response is valid JSON. These sneak in from live data with gaps (e.g. a thin
+    yfinance history) and otherwise crash serialization with a 500."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    return o
+
+
+class SafeJSONResponse(JSONResponse):
+    """Default response: tolerant of NaN/Inf (rendered as null) instead of 500."""
+
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            _json_safe(content), ensure_ascii=False, allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
 from app import __version__
 from app.config import get_settings
@@ -50,6 +77,7 @@ app = FastAPI(
     title=settings.app_name,
     version=__version__,
     description="Indian market intelligence platform — heatmaps, FII/DII activity, and more.",
+    default_response_class=SafeJSONResponse,
 )
 
 app.add_middleware(
