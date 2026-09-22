@@ -1,0 +1,116 @@
+:root {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --ink: #111827;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --brand: #2563eb;
+  --brand-ink: #1d4ed8;
+  --accent: #0f172a;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+.app { max-width: 1180px; margin: 0 auto; padding: 0 16px 64px; }
+
+/* Top bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 0; position: sticky; top: 0; background: var(--bg); z-index: 5;
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-size: 22px; font-weight: 800; color: var(--brand-ink); }
+.brand-sub { color: var(--muted); font-weight: 600; }
+.topbar-right { display: flex; gap: 8px; align-items: center; }
+
+.pill { font-size: 12px; padding: 3px 8px; border-radius: 999px; font-weight: 600; }
+.pill-on { background: #dcfce7; color: #166534; }
+.pill-off { background: #f3f4f6; color: #6b7280; border: 1px solid var(--line); }
+
+/* Buttons */
+.btn {
+  border: 1px solid var(--line); background: #fff; color: var(--ink);
+  padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { border-color: #cbd5e1; }
+.btn-primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+.btn-apply { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-ghost { background: #fff; }
+.btn-tiny { padding: 2px 8px; font-size: 12px; }
+.full { width: 100%; margin-top: 6px; }
+
+/* Resume panel */
+.resume-panel {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 16px; margin: 16px 0;
+}
+.resume-empty, .resume-loaded { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.skills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+.muted { color: var(--muted); font-size: 13px; }
+
+/* Live strip */
+.live-strip {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46;
+  padding: 8px 12px; border-radius: 10px; margin-bottom: 12px; font-size: 13px;
+}
+.live-item { background: #fff; border-radius: 6px; padding: 2px 8px; }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; background: #10b981; animation: pulse 1.4s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+.banner { background: #fef9c3; border: 1px solid #fde68a; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 6px; align-items: center; margin: 6px 0 16px; flex-wrap: wrap; }
+.tab { border: 1px solid var(--line); background: #fff; padding: 8px 14px; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 14px; }
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.count { margin-left: auto; color: var(--muted); font-size: 14px; }
+
+/* Layout */
+.layout { display: grid; grid-template-columns: 240px 1fr; gap: 20px; }
+@media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+/* Filters */
+.filters { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; height: fit-content; }
+.filter-group { margin-bottom: 14px; }
+.filter-group label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .03em; }
+.filter-group input, .filter-group select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
+
+/* Job cards */
+.results { display: flex; flex-direction: column; gap: 14px; }
+.job-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.job-card-head { display: flex; justify-content: space-between; gap: 12px; }
+.job-title { margin: 0 0 4px; font-size: 18px; }
+.job-company { color: var(--muted); font-size: 14px; }
+.match-badge { border: 2px solid; border-radius: 10px; padding: 4px 10px; text-align: center; min-width: 54px; }
+.match-badge span { font-size: 20px; font-weight: 800; display: block; line-height: 1; }
+.match-badge small { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.job-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.tag { background: #f1f5f9; color: #334155; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 600; }
+.tag-remote { background: #dbeafe; color: #1e40af; }
+.tag-wfh { background: #fef3c7; color: #92400e; }
+.tag-salary { background: #dcfce7; color: #166534; }
+.tag-source { background: #f5f3ff; color: #6d28d9; }
+.match-reason { color: #0f766e; font-size: 13px; margin: 4px 0 10px; }
+.job-actions { display: flex; align-items: center; gap: 10px; }
+.job-date { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+.loading, .empty { background: var(--card); border: 1px dashed var(--line); border-radius: 12px; padding: 30px; text-align: center; color: var(--muted); }
+.error { color: #b91c1c; font-size: 13px; margin-top: 6px; }
+
+/* Modal */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 20; }
+.modal { background: #fff; border-radius: 14px; max-width: 680px; width: 100%; max-height: 85vh; overflow: auto; padding: 20px 24px; }
+.modal-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.modal-head h2 { margin: 0; font-size: 20px; }
+.modal-body section { margin-top: 16px; }
+.modal-body h4 { margin: 0 0 6px; font-size: 14px; text-transform: uppercase; color: var(--muted); letter-spacing: .03em; }
+.ai-flag { margin-top: 12px; font-size: 13px; color: var(--brand-ink); font-weight: 600; }
+.cover { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-family: inherit; font-size: 14px; }

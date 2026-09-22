@@ -1,0 +1,23 @@
+[
+  {"provider": "remotive",   "slug": "remotive",   "display_name": "Remotive (remote board)"},
+  {"provider": "remoteok",   "slug": "remoteok",   "display_name": "RemoteOK (remote board)"},
+
+  {"provider": "greenhouse", "slug": "stripe",     "display_name": "Stripe"},
+  {"provider": "greenhouse", "slug": "airbnb",     "display_name": "Airbnb"},
+  {"provider": "greenhouse", "slug": "gitlab",     "display_name": "GitLab"},
+  {"provider": "greenhouse", "slug": "databricks", "display_name": "Databricks"},
+  {"provider": "greenhouse", "slug": "coinbase",   "display_name": "Coinbase"},
+  {"provider": "greenhouse", "slug": "dropbox",    "display_name": "Dropbox"},
+  {"provider": "greenhouse", "slug": "cloudflare", "display_name": "Cloudflare"},
+  {"provider": "greenhouse", "slug": "razorpaysoftwareprivatelimited", "display_name": "Razorpay"},
+
+  {"provider": "lever",      "slug": "netflix",    "display_name": "Netflix"},
+  {"provider": "lever",      "slug": "swiggy",     "display_name": "Swiggy"},
+  {"provider": "lever",      "slug": "postman",    "display_name": "Postman"},
+  {"provider": "lever",      "slug": "spotify",    "display_name": "Spotify"},
+
+  {"provider": "ashby",      "slug": "openai",     "display_name": "OpenAI"},
+  {"provider": "ashby",      "slug": "ramp",       "display_name": "Ramp"},
+  {"provider": "ashby",      "slug": "linear",     "display_name": "Linear"},
+  {"provider": "ashby",      "slug": "runwayml",   "display_name": "Runway"}
+]
