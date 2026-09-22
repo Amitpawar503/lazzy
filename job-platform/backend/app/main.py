@@ -71,6 +71,39 @@ def health():
     }
 
 
-@app.get("/")
-def root():
-    return {"service": f"{settings.app_name} API", "docs": "/docs", "health": "/api/health"}
+# --- Optionally serve the built frontend from the same origin ---------------
+# If the frontend has been built (frontend/dist exists), mount it so the whole
+# app is reachable on a single localhost URL (e.g. http://localhost:8000).
+# During development you'd instead run the Vite dev server on :5173.
+from pathlib import Path  # noqa: E402
+
+from fastapi.responses import FileResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/")
+    def spa_root():
+        return FileResponse(_DIST / "index.html")
+
+    @app.get("/{full_path:path}")
+    def spa_catch_all(full_path: str):
+        # Serve real files if they exist, otherwise fall back to index.html
+        # so client-side routing works. /api/* is handled by routers above.
+        candidate = _DIST / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(_DIST / "index.html")
+else:
+    @app.get("/")
+    def root():
+        return {
+            "service": f"{settings.app_name} API",
+            "docs": "/docs",
+            "health": "/api/health",
+            "hint": "Build the frontend (cd frontend && npm run build) to serve the UI here, "
+                    "or run the Vite dev server on :5173.",
+        }
