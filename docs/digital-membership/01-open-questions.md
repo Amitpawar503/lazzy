@@ -104,6 +104,14 @@ dangerous ones, because the PRD reads as "decided" when it is not.
 ### Q17 [P1] — Same customer, multiple concurrent events
 - **Meeting:** confirmed entitlements are **per event/campaign** (`C1` has its own DB entries); winning Event A grants nothing at Event B; a customer holding entitlements for two same-day events is admitted at each. Design handles this natively (entitlement keyed by event). **Confirm no "one event per day per customer" global rule** is wanted.
 
+### Q22 [P0] — `deviceId` semantics: whose device, and what does it protect?
+- **From the 4-API spec:** both API 3 (entry) and API 4 (QR generate) collect `deviceId`, and API 3 uses it to split a repeat entry into `DUPLICATE_ENTRY` (same device) vs. `ALREADY_ENTERED_OTHER_DEVICE` (different device, returns the first deviceId).
+- **Ambiguity:** is `deviceId` the **customer's** device (the phone that generated/shows the QR) or the **staff scanner** device? The design assumes **customer device, carried inside the signed token** (the only reading where API 4 collecting it makes sense).
+- **Consequence to confirm:**
+  - If customer-device: a shared *screenshot* carries the **original** deviceId, so a second scan of a screenshot reads as `DUPLICATE_ENTRY` (same device), **not** other-device — the "other device" branch only fires if the customer re-generates a QR on a genuinely different phone. Confirm that's the intended anti-fraud behavior.
+  - `deviceId` must be a **stable** identifier the app can produce (install id / keychain-backed), not one that resets on every app launch — otherwise a legitimate customer's own second scan looks like a different device.
+- **Recommendation:** confirm customer-device semantics + a stable device id source, and decide whether `ALREADY_ENTERED_OTHER_DEVICE` should hard-deny or route to manual staff judgement (it can be a legitimate customer on a new phone).
+
 ### Q18 [P2] — Multiple entitlements / multi-admit within one event
 - Is an entitlement always "1 admission + 1 goodie," or can a winner have a quantity (e.g. +1 guest)? PRD implies exactly one per checkpoint. Confirm; if guests are ever needed, model entitlement with a **count**, not a boolean, from day one.
 

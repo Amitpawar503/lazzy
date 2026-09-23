@@ -57,9 +57,20 @@ erDiagram
 `entitlement_id (PK)`, `event_id (FK)`, `customer_ref`, `created_at`.
 **Unique:** `(event_id, customer_ref)`. Rows created by the winner-list load. Absence ⇒ `NOT_ENTITLED`.
 
-### `redemption` — the exactly-once anchor
-`redemption_id (PK)`, `entitlement_id (FK)`, `checkpoint (ENTRY|GOODIE)`, `status (UNUSED|USED)`, `redeemed_at`, `redeemed_by_staff_id`, `scan_request_id`.
-**Unique:** `(entitlement_id, checkpoint)`.
+### `redemption` — the exactly-once anchor (device-aware)
+`redemption_id (PK)`, `entitlement_id (FK)`, `msisdn`, `event_id`, `checkpoint (ENTRY|GOODIE)`, `status (USED)`, `device_id`, `redeemed_at`, `redeemed_by_staff_id`, `scan_request_id`.
+**Unique:** `(event_id, msisdn, checkpoint)` — this is the dedup key from API 3. The row stores the
+`device_id` of the **first** entry, which powers the `DUPLICATE_ENTRY` vs.
+`ALREADY_ENTERED_OTHER_DEVICE` split:
+
+```
+on API 3 claim, after winner + TTL + signature checks:
+  INSERT (event_id, msisdn, checkpoint, device_id, ...) ON CONFLICT (event_id,msisdn,checkpoint) DO NOTHING
+  inserted 1 row      -> ENTRY_ALLOWED
+  inserted 0 rows     -> SELECT stored device_id:
+                           stored device_id == incoming -> DUPLICATE_ENTRY
+                           stored device_id != incoming -> ALREADY_ENTERED_OTHER_DEVICE (+ stored device_id)
+```
 
 Two build options (either satisfies FR25 — pick per DB ergonomics):
 - **(a) Pre-seed + conditional UPDATE:** create a `UNUSED` row per `(entitlement, checkpoint)` at winner load; redeem = `UPDATE … WHERE status='UNUSED'`.
@@ -149,7 +160,8 @@ stateDiagram-v2
 | Callback | When | Admit? | Color | Entitlement | Scanner resumes |
 |---|---|---|---|---|---|
 | `ENTRY_ALLOWED` | first valid scan at checkpoint | ✅ | Green | → USED (this checkpoint) | yes |
-| `ALREADY_USED` | duplicate at same checkpoint | ❌ | Red | unchanged | yes |
+| `DUPLICATE_ENTRY` | repeat at same checkpoint, **same** deviceId | ❌ | Red | unchanged | yes |
+| `ALREADY_ENTERED_OTHER_DEVICE` | repeat at same checkpoint, **different** deviceId (returns first deviceId) | ❌ | Red | unchanged | yes |
 | `NOT_ENTITLED` | valid member, not a winner for this event | ❌ | Red | unchanged | yes |
 | `INVALID_QR` | malformed/forged/non-Airtel/bad `ver`/bad sig | ❌ | Red | unchanged | yes |
 | `QR_EXPIRED` | past TTL or superseded (`jti≠latest`) | ❌ (refresh) | Grey | unchanged | yes |
@@ -161,42 +173,54 @@ stateDiagram-v2
 **Every result carries explicit text** (never color-only) — NFR accessibility.
 `CAMERA_PERMISSION_DENIED` and `QR_NOT_DETECTED` are **local scanner states** with no backend call.
 
-## 7. API contracts (representative)
+## 7. API contracts — the four endpoints
 
-### Customer app ↔ QR Token service (authenticated as the customer)
-```
-POST /v1/membership/qr/issue        -> { qrToken, expiresAt }
-POST /v1/membership/qr/refresh      -> { qrToken, expiresAt }   # supersedes previous jti
-```
-Gated on eligibility; rate-limited per Q2.
+These are the four APIs the build introduces. (Admin winner-load + scan-history are supporting
+endpoints on the same admin surface as API 1.)
 
-### Microsite ↔ Staff Auth
+### API 1 — `POST /v1/staff/whitelist` (admin / eng only)
 ```
-POST /v1/staff/otp/request   { eventId, msisdn }
-   -> 200 { message: "If authorized for this event, an OTP has been sent." }   # generic, always (Q11)
-POST /v1/staff/otp/verify    { eventId, msisdn, otp }
-   -> 200 { sessionId(set as HttpOnly cookie), event:{id,name,venue,window}, checkpoints:[...] }
-   -> 401 generic on bad/expired/exhausted OTP
-POST /v1/staff/logout
+body: { msisdn, deviceId, eventId, checkpoints:["ENTRY"|"GOODIE"...] }
+-> 200 { whitelistId, status:"UPSERTED" }
 ```
-
-### Microsite ↔ Validation service (authenticated by session cookie)
-```
-POST /v1/scan
-  body: { qrToken, scanRequestId, checkpoint }   # checkpoint validated against session's authorized set
-  -> 200 { callback: "<code>", holderMasked?: "Amit ••••• 3210",
-           firstClaimAt?: "<iso>", displayColor, message }
-```
-Event, staff id, venue, and **server timestamp** are derived from the session — not read from the body.
-
-### Admin / Setup + Audit (engineering-only, secured)
+Idempotent upsert; unique `(eventId, msisdn)`; supports mid-event appends. Also on this surface:
 ```
 POST /v1/admin/events                          create event (returns eventId)
 POST /v1/admin/events/{id}/winners:bulkUpsert  load/append entitlements (idempotent)
-POST /v1/admin/events/{id}/staff:bulkUpsert    whitelist { msisdn, checkpoints[] } (idempotent)
-GET  /v1/admin/scan-history?msisdn=...          full chronological history:
-       [ { eventId, checkpoint, callback, serverTs, staffMsisdn } ]   (FR35)
+GET  /v1/admin/scan-history?msisdn=...          full chronological history (FR35):
+       [ { eventId, checkpoint, callback, serverTs, staffMsisdn, deviceId } ]
 ```
+
+### API 2 — `GET /v1/staff/validate` (deeplink landing → session)
+```
+GET  /v1/staff/validate?msisdn=...&deviceId=...
+   -> if whitelisted: triggers OTP; on OTP verify returns
+        { sessionId(HttpOnly cookie), events:[{id,name,venue,window,checkpoints[]}] }
+   -> if not: generic "not authorized" (no event data leaked)
+POST /v1/staff/validate/otp   { msisdn, deviceId, otp }   # possession proof (PRD requires OTP)
+```
+`(msisdn, deviceId)` must both match an active whitelist row. New session revokes any prior
+session for `msisdn` (single-active, FR21).
+
+### API 3 — `POST /v1/entry` (post-scan; authenticated by session cookie)
+```
+body: { msisdn, deviceId, eventId, checkpoint, qrToken, scanRequestId }
+-> 200 { callback, holderMasked?, firstClaimAt?, otherDeviceId?, displayColor, message }
+```
+- `eventId`/`checkpoint` are validated against the **session's** authorized set (not trusted blindly).
+- `msisdn` + `deviceId` are taken from the **verified token**, not the raw body, where present (body copies are cross-checked; mismatch ⇒ `INVALID_QR`).
+- **Server timestamp authoritative**; `scanRequestId` gives idempotent retries (§5).
+- Callback ∈ `{ ENTRY_ALLOWED, DUPLICATE_ENTRY, ALREADY_ENTERED_OTHER_DEVICE, NOT_ENTITLED, QR_EXPIRED, INVALID_QR, SERVICE_UNAVAILABLE }`.
+
+### API 4 — `POST /v1/qr/generate` (customer app; authenticated as the customer)
+```
+body: { msisdn, deviceId, timestamp }
+-> 200 { qrToken, expiresAt }         # eligibility-gated; supersedes previous jti (single-active)
+```
+Resolves the events this `msisdn` is a winner for, mints a **signed** token carrying an opaque
+`sub` (msisdn ref), `deviceId`, `iat`, `jti`; sets `latestJti[msisdn]`; TTL = `«5–10m»`.
+Refresh = call again (rate-limited per Q2). The token is customer-identity + device; it does **not**
+enumerate the winning events into the QR — event resolution happens at API 3 against the session.
 
 ## 8. Scanner (microsite) client behavior
 
