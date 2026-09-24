@@ -68,15 +68,15 @@ dangerous ones, because the PRD reads as "decided" when it is not.
 
 ## C. Staff microsite, auth & sessions
 
-### Q10 [P0] — OTP policy specifics
-- **PRD:** FR20 "in line with Airtel app login OTP." That's a pointer, not a spec.
-- **Need concrete:** OTP length, validity (propose 5 min), max verify attempts (propose 5 then lock), resend cooldown (propose 30s) + daily cap, and **generic failure messaging** (never reveal whether a number is whitelisted — see Q11).
-- **Recommendation:** Reuse the Airtel app's OTP provider/config values verbatim; document the resolved numbers here once confirmed.
+### Q10 [P0] — Staff auth is whitelist-only (OTP DROPPED) — accept the tradeoff?
+- **Decision taken:** login is `eventId + whitelisted MSISDN` → session, with **no OTP** (removed from all flows per review).
+- **Security tradeoff to accept explicitly:** possession of the number is **not** proven. Anyone who knows a whitelisted MSISDN + its eventId can open a scanning session. Mitigations still in place: single-active session per MSISDN, 24h session TTL, per-scan audit (staff id on every scan), checkpoint-scoping. This diverges from PRD FR18–FR20, which mandate OTP — **product/security must sign off** on dropping it, or plan to add OTP / device-binding before go-live.
+- **Recommendation:** ship whitelist-only for the pilot if signed off; keep OTP as a fast-follow option (the deeplink can add an OTP step without changing anything downstream).
 
-### Q11 [P0] — Non-whitelisted (event, mobile): confirm "no OTP initiated" + generic error
-- **PRD/AC:** for a non-whitelisted pair, **no OTP is initiated**; a number whitelisted for Event A must not get an OTP for Event B.
+### Q11 [P1] — Non-whitelisted (event, mobile): generic "not authorized" messaging
+- A number whitelisted for Event A must not open a session for Event B; a non-whitelisted pair gets a **single generic** "not authorized" with **no event data leaked**.
 - **Loophole if messaging leaks:** distinct errors let an attacker enumerate valid staff numbers/events.
-- **Recommendation:** Confirm the response is a **single generic** "If this number is authorized for this event, an OTP has been sent" regardless of whitelist status. (Design already assumes this — needs product sign-off on copy.)
+- **Recommendation:** confirm the generic-response copy with product. (Now applies to the `validate` response rather than an OTP-send response.)
 
 ### Q12 [P1] — "One active session per mobile number" vs. staff wanting two devices
 - **PRD:** FR21 — a new login **revokes** the prior session (prior session gets `STAFF_SESSION_INVALID`).
@@ -104,13 +104,12 @@ dangerous ones, because the PRD reads as "decided" when it is not.
 ### Q17 [P1] — Same customer, multiple concurrent events
 - **Meeting:** confirmed entitlements are **per event/campaign** (`C1` has its own DB entries); winning Event A grants nothing at Event B; a customer holding entitlements for two same-day events is admitted at each. Design handles this natively (entitlement keyed by event). **Confirm no "one event per day per customer" global rule** is wanted.
 
-### Q22 [P0] — `deviceId` semantics: whose device, and what does it protect?
-- **From the 4-API spec:** both API 3 (entry) and API 4 (QR generate) collect `deviceId`, and API 3 uses it to split a repeat entry into `DUPLICATE_ENTRY` (same device) vs. `ALREADY_ENTERED_OTHER_DEVICE` (different device, returns the first deviceId).
-- **Ambiguity:** is `deviceId` the **customer's** device (the phone that generated/shows the QR) or the **staff scanner** device? The design assumes **customer device, carried inside the signed token** (the only reading where API 4 collecting it makes sense).
-- **Consequence to confirm:**
-  - If customer-device: a shared *screenshot* carries the **original** deviceId, so a second scan of a screenshot reads as `DUPLICATE_ENTRY` (same device), **not** other-device — the "other device" branch only fires if the customer re-generates a QR on a genuinely different phone. Confirm that's the intended anti-fraud behavior.
-  - `deviceId` must be a **stable** identifier the app can produce (install id / keychain-backed), not one that resets on every app launch — otherwise a legitimate customer's own second scan looks like a different device.
-- **Recommendation:** confirm customer-device semantics + a stable device id source, and decide whether `ALREADY_ENTERED_OTHER_DEVICE` should hard-deny or route to manual staff judgement (it can be a legitimate customer on a new phone).
+### Q22 [P1] — `deviceId` semantics (RESOLVED to customer device) — remaining points
+- **Resolved:** `deviceId` is the **customer's** device (the phone that generated the QR), carried inside the signed token. **Staff whitelisting is MSISDN-only — no deviceId** on the staff side.
+- **Still to confirm:**
+  - A shared *screenshot* carries the **original** deviceId, so a second scan of a screenshot reads as `DUPLICATE_ENTRY` (same device), **not** other-device — the `ALREADY_ENTERED_OTHER_DEVICE` branch only fires when the customer re-generates a QR on a genuinely different phone. Confirm that's the intended anti-fraud behavior.
+  - `deviceId` must be a **stable** identifier (install id / keychain-backed), not one that resets each launch, or a legitimate customer's own second scan looks like a different device.
+  - Decide whether `ALREADY_ENTERED_OTHER_DEVICE` hard-denies or routes to manual staff judgement (it can be a legitimate customer on a new phone).
 
 ### Q18 [P2] — Multiple entitlements / multi-admit within one event
 - Is an entitlement always "1 admission + 1 goodie," or can a winner have a quantity (e.g. +1 guest)? PRD implies exactly one per checkpoint. Confirm; if guests are ever needed, model entitlement with a **count**, not a boolean, from day one.
@@ -140,4 +139,4 @@ These read as "decided" in the PRD but were left open (or are platform-infeasibl
 | Screenshot **blocked** on iOS (FR13) | iOS can only **detect**, not block (Q5) |
 | Icon switch with no user friction (FR1) | iOS forces a system alert; Android launcher quirks (Q6) |
 | Hamburger: click **or** 5 launches, "whichever **later**" (FR4) | Likely means "whichever **first**"; confirm wording (Q7) |
-| OTP "in line with app" (FR20) | No concrete values yet (Q10) |
+| OTP required for staff login (FR18–FR20) | **Dropped** in review — staff auth is now whitelist-only; needs sign-off (Q10) |

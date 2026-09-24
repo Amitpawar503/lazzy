@@ -14,11 +14,18 @@ Encoded into the QR as a plain string (not a URL).
 |---|---|
 | `ver` | token schema version (enables clean upgrades; unknown ⇒ `INVALID_QR`) |
 | `sub` | **opaque customer reference** — never the raw MSISDN (Q3) |
+| `dev` | **deviceId** of the customer device that generated the QR (Q22) — powers the API 3 duplicate vs. other-device split |
+| `events` | **array of won `eventId`s** for this customer, resolved from the **contest tables** at generation (see §7 API 4). If the customer won multiple events, all ride here. Entry check is `session.eventId ∈ events` |
 | `jti` | unique id for *this* issuance — the single-active anchor |
 | `iat` | issued-at (server clock) |
 | `exp` | `iat + «TTL=5m»` (defense-in-depth; server re-checks against `latestJti` too) |
 | `iss` | issuing service id |
 | signature | detached signature over the header+payload with the backend signing key |
+
+> Because `events` is **inside the signature**, the scanner/app cannot add or edit an eventId to
+> force an admit. A win declared *after* the QR was issued isn't in the token — the customer's next
+> refresh (or a natural re-issue within the ~5m TTL) picks it up. Entry MAY additionally re-check
+> the contest tables server-side for defense in depth; the token's `events` is the primary check.
 
 **Signing:** asymmetric (e.g. ES256/EdDSA). Private key in KMS/HSM, backend-only. The validation
 service verifies with the public key. Support **key rotation** via a `kid` header.
@@ -42,23 +49,29 @@ This gives forgery-proofing (signature) + instant supersede (latest pointer) + h
 
 ```mermaid
 erDiagram
-  EVENT ||--o{ ENTITLEMENT : has
+  EVENT ||--o{ CONTEST : has
+  CONTEST ||--o{ CONTEST_WINNER : declares
   EVENT ||--o{ STAFF_WHITELIST : has
   EVENT ||--o{ STAFF_SESSION : has
-  ENTITLEMENT ||--o{ REDEMPTION : "per checkpoint"
-  ENTITLEMENT ||--o{ SCAN_LOG : "produces"
+  CONTEST_WINNER ||--o{ REDEMPTION : "per checkpoint"
   STAFF_SESSION ||--o{ SCAN_LOG : "records"
 ```
 
 ### `event`
 `event_id (PK, e.g. ARTLPPAZK)`, `name`, `venue`, `starts_at`, `ends_at`, `status (DRAFT|ACTIVE|CLOSED)`, `checkpoints_enabled (ENTRY,GOODIE)`, `created_by`, `created_at`.
 
-### `entitlement`
-`entitlement_id (PK)`, `event_id (FK)`, `customer_ref`, `created_at`.
-**Unique:** `(event_id, customer_ref)`. Rows created by the winner-list load. Absence ⇒ `NOT_ENTITLED`.
+### `contest` + `contest_winner` — winner source of truth
+The **only** authority on who won what. QR generation (API 4) reads these to build the token's
+`events[]`.
+
+- **`contest`**: `contest_id (PK)`, `event_id (FK)`, `name`, `created_at`.
+- **`contest_winner`**: `contest_winner_id (PK)`, `contest_id (FK)`, `event_id (FK, denormalized for fast lookup)`, `msisdn`, `created_at`. **Unique:** `(event_id, msisdn)`.
+
+Winner check = "does a `contest_winner` row exist for `(event_id, msisdn)`?" Absence ⇒ `NOT_ENTITLED`.
+Rows loaded/appended via the admin winner-load endpoint (§7).
 
 ### `redemption` — the exactly-once anchor (device-aware)
-`redemption_id (PK)`, `entitlement_id (FK)`, `msisdn`, `event_id`, `checkpoint (ENTRY|GOODIE)`, `status (USED)`, `device_id`, `redeemed_at`, `redeemed_by_staff_id`, `scan_request_id`.
+`redemption_id (PK)`, `msisdn`, `event_id`, `checkpoint (ENTRY|GOODIE)`, `status (USED)`, `device_id`, `redeemed_at`, `redeemed_by_staff_id`, `scan_request_id`.
 **Unique:** `(event_id, msisdn, checkpoint)` — this is the dedup key from API 3. The row stores the
 `device_id` of the **first** entry, which powers the `DUPLICATE_ENTRY` vs.
 `ALREADY_ENTERED_OTHER_DEVICE` split:
@@ -73,12 +86,13 @@ on API 3 claim, after winner + TTL + signature checks:
 ```
 
 Two build options (either satisfies FR25 — pick per DB ergonomics):
-- **(a) Pre-seed + conditional UPDATE:** create a `UNUSED` row per `(entitlement, checkpoint)` at winner load; redeem = `UPDATE … WHERE status='UNUSED'`.
-- **(b) Insert-on-conflict:** no pre-seed; redeem = `INSERT (entitlement, checkpoint, …)` guarded by the unique constraint; first insert wins, duplicate = already used.
+- **(a) Pre-seed + conditional UPDATE:** create a `UNUSED` row per `(event_id, msisdn, checkpoint)` at winner load; redeem = `UPDATE … WHERE status='UNUSED'`.
+- **(b) Insert-on-conflict:** no pre-seed; redeem = `INSERT (event_id, msisdn, checkpoint, …)` guarded by the unique constraint; first insert wins, duplicate = already used.
 
-### `staff_whitelist`
+### `staff_whitelist` — MSISDN-whitelisted (no deviceId)
 `event_id (FK)`, `msisdn`, `checkpoints (set of ENTRY|GOODIE)`, `staff_ref`, `active`, `created_by`.
-**Unique:** `(event_id, msisdn)`. The only pairs that can request an OTP.
+**Unique:** `(event_id, msisdn)`. The only pairs that can open a session (API 2). **No `deviceId`** —
+device is a customer-side concept only (Q22).
 
 ### `staff_session`
 `session_id (PK)`, `event_id`, `msisdn`, `staff_ref`, `checkpoints[]`, `created_at`, `expires_at (=created_at+«24h»)`, `revoked (bool)`, `device_info`.
@@ -91,34 +105,37 @@ Two build options (either satisfies FR25 — pick per DB ergonomics):
 
 ## 3. Atomic redemption (reference SQL)
 
-Option (a), conditional update inside a transaction:
+Option (a), conditional update inside a transaction (rows pre-seeded at winner load):
 
 ```sql
 -- attempt redemption; rows_affected tells us who won
 UPDATE redemption
    SET status = 'USED',
+       device_id = :device_id,
        redeemed_at = :server_ts,
        redeemed_by_staff_id = :staff_id,
        scan_request_id = :scan_request_id
- WHERE entitlement_id = :entitlement_id
+ WHERE event_id = :event_id
+   AND msisdn = :msisdn
    AND checkpoint = :checkpoint
    AND status = 'UNUSED';
--- rows_affected = 1  -> ENTRY_ALLOWED
--- rows_affected = 0  -> already USED: SELECT redeemed_at,... for first-claim time -> ALREADY_USED
+-- rows_affected = 1 -> ENTRY_ALLOWED
+-- rows_affected = 0 -> already USED: SELECT device_id, redeemed_at for the device split + first-claim time
 ```
 
 Option (b), insert-on-conflict (Postgres flavor):
 
 ```sql
-INSERT INTO redemption (entitlement_id, checkpoint, status, redeemed_at,
-                        redeemed_by_staff_id, scan_request_id)
-VALUES (:entitlement_id, :checkpoint, 'USED', :server_ts, :staff_id, :scan_request_id)
-ON CONFLICT (entitlement_id, checkpoint) DO NOTHING;
--- inserted 1 row -> ENTRY_ALLOWED ; 0 rows -> ALREADY_USED (SELECT existing for first-claim)
+INSERT INTO redemption (event_id, msisdn, checkpoint, status, device_id,
+                        redeemed_at, redeemed_by_staff_id, scan_request_id)
+VALUES (:event_id, :msisdn, :checkpoint, 'USED', :device_id, :server_ts, :staff_id, :scan_request_id)
+ON CONFLICT (event_id, msisdn, checkpoint) DO NOTHING;
+-- inserted 1 row -> ENTRY_ALLOWED
+-- 0 rows -> SELECT existing device_id: same -> DUPLICATE_ENTRY ; different -> ALREADY_ENTERED_OTHER_DEVICE
 ```
 
 Both make **two concurrent scans of the same QR at the same checkpoint** resolve to exactly one
-`ENTRY_ALLOWED` + one `ALREADY_USED` (FR25/AC). ENTRY and GOODIE are separate rows, so a QR
+`ENTRY_ALLOWED` + one already-claimed result (FR25/AC). ENTRY and GOODIE are separate rows, so a QR
 redeemed at ENTRY still redeems once at GOODIE (FR28).
 
 ## 4. Backend validation chain (FR / §8.11 order)
@@ -132,20 +149,22 @@ For every scan, short-circuit on first failure:
 | 3 | token structure & `ver` supported | `INVALID_QR` |
 | 4 | signature valid | `INVALID_QR` |
 | 5 | within TTL **and** `jti == latest` | `QR_EXPIRED` |
-| 6 | resolve `customer_ref`; entitlement exists for `(event, customer)` | `NOT_ENTITLED` |
-| 7 | atomic redeem `(entitlement, checkpoint)` | 1 row → `ENTRY_ALLOWED`; 0 rows → `ALREADY_USED` |
+| 6 | `session.eventId ∈ token.events` (won-events from contest tables; optional server re-check of `contest_winner`) | `NOT_ENTITLED` |
+| 7 | atomic redeem `(event_id, msisdn, checkpoint)` storing `device_id` | 1 row → `ENTRY_ALLOWED`; 0 rows → `DUPLICATE_ENTRY` (same device) / `ALREADY_ENTERED_OTHER_DEVICE` (different device) |
 | 8 | write scan_log (always, including denials) | — |
 | — | infra/exception at any point | `SERVICE_UNAVAILABLE` (never auto-allow, do **not** mark used) |
 
 **Server timestamp is authoritative** everywhere (TTL, audit). Client-supplied time is ignored.
+Note the event under check comes from the **session**, and the winner proof comes from the
+**token's `events`** (built from contest tables at issue) — the client never supplies either.
 
-State machine per `(entitlement, checkpoint)`:
+State machine per `(event_id, msisdn, checkpoint)`:
 
 ```mermaid
 stateDiagram-v2
   [*] --> UNUSED
   UNUSED --> USED: first valid scan (ENTRY_ALLOWED)
-  USED --> USED: subsequent scan (ALREADY_USED, no state change)
+  USED --> USED: subsequent scan (DUPLICATE_ENTRY / ALREADY_ENTERED_OTHER_DEVICE, no state change)
 ```
 
 ## 5. Idempotency (`scanRequestId`)
@@ -162,7 +181,7 @@ stateDiagram-v2
 | `ENTRY_ALLOWED` | first valid scan at checkpoint | ✅ | Green | → USED (this checkpoint) | yes |
 | `DUPLICATE_ENTRY` | repeat at same checkpoint, **same** deviceId | ❌ | Red | unchanged | yes |
 | `ALREADY_ENTERED_OTHER_DEVICE` | repeat at same checkpoint, **different** deviceId (returns first deviceId) | ❌ | Red | unchanged | yes |
-| `NOT_ENTITLED` | valid member, not a winner for this event | ❌ | Red | unchanged | yes |
+| `NOT_ENTITLED` | valid member, but `session.eventId` not in the QR's won events | ❌ | Red | unchanged | yes |
 | `INVALID_QR` | malformed/forged/non-Airtel/bad `ver`/bad sig | ❌ | Red | unchanged | yes |
 | `QR_EXPIRED` | past TTL or superseded (`jti≠latest`) | ❌ (refresh) | Grey | unchanged | yes |
 | `STAFF_SESSION_INVALID` | session revoked/expired/unauth | ❌ | Red | n/a | **no** (re-login) |
@@ -180,35 +199,35 @@ endpoints on the same admin surface as API 1.)
 
 ### API 1 — `POST /v1/staff/whitelist` (admin / eng only)
 ```
-body: { msisdn, deviceId, eventId, checkpoints:["ENTRY"|"GOODIE"...] }
+body: { msisdn, eventId, checkpoints:["ENTRY"|"GOODIE"...] }     # MSISDN-whitelisted, no deviceId
 -> 200 { whitelistId, status:"UPSERTED" }
 ```
 Idempotent upsert; unique `(eventId, msisdn)`; supports mid-event appends. Also on this surface:
 ```
 POST /v1/admin/events                          create event (returns eventId)
-POST /v1/admin/events/{id}/winners:bulkUpsert  load/append entitlements (idempotent)
+POST /v1/admin/contests/{eventId}/winners:bulkUpsert  load/append contest_winner rows (idempotent)
 GET  /v1/admin/scan-history?msisdn=...          full chronological history (FR35):
        [ { eventId, checkpoint, callback, serverTs, staffMsisdn, deviceId } ]
 ```
 
-### API 2 — `GET /v1/staff/validate` (deeplink landing → session)
+### API 2 — `GET /v1/staff/validate` (deeplink landing → session; **no OTP**)
 ```
-GET  /v1/staff/validate?msisdn=...&deviceId=...
-   -> if whitelisted: triggers OTP; on OTP verify returns
-        { sessionId(HttpOnly cookie), events:[{id,name,venue,window,checkpoints[]}] }
+GET  /v1/staff/validate?eventId=...&msisdn=...
+   -> if (eventId, msisdn) whitelisted & active:
+        { sessionId(HttpOnly cookie), event:{id,name,venue,window}, checkpoints:[...] }
    -> if not: generic "not authorized" (no event data leaked)
-POST /v1/staff/validate/otp   { msisdn, deviceId, otp }   # possession proof (PRD requires OTP)
 ```
-`(msisdn, deviceId)` must both match an active whitelist row. New session revokes any prior
-session for `msisdn` (single-active, FR21).
+A whitelisted `(eventId, msisdn)` opens a session directly. New session revokes any prior session
+for `msisdn` (single-active, FR21). Possession-of-number is **not** proven — see Q10.
 
 ### API 3 — `POST /v1/entry` (post-scan; authenticated by session cookie)
 ```
-body: { msisdn, deviceId, eventId, checkpoint, qrToken, scanRequestId }
+body: { qrToken, checkpoint, scanRequestId }     # eventId comes from the SESSION, not the body
 -> 200 { callback, holderMasked?, firstClaimAt?, otherDeviceId?, displayColor, message }
 ```
-- `eventId`/`checkpoint` are validated against the **session's** authorized set (not trusted blindly).
-- `msisdn` + `deviceId` are taken from the **verified token**, not the raw body, where present (body copies are cross-checked; mismatch ⇒ `INVALID_QR`).
+- `checkpoint` is validated against the **session's** authorized set; `eventId` is the session's event.
+- `msisdn`, `deviceId`, and the won `events[]` are read from the **verified token** (inside the signature).
+- Winner check = `session.eventId ∈ token.events` (optional server re-check against `contest_winner`).
 - **Server timestamp authoritative**; `scanRequestId` gives idempotent retries (§5).
 - Callback ∈ `{ ENTRY_ALLOWED, DUPLICATE_ENTRY, ALREADY_ENTERED_OTHER_DEVICE, NOT_ENTITLED, QR_EXPIRED, INVALID_QR, SERVICE_UNAVAILABLE }`.
 
@@ -217,10 +236,13 @@ body: { msisdn, deviceId, eventId, checkpoint, qrToken, scanRequestId }
 body: { msisdn, deviceId, timestamp }
 -> 200 { qrToken, expiresAt }         # eligibility-gated; supersedes previous jti (single-active)
 ```
-Resolves the events this `msisdn` is a winner for, mints a **signed** token carrying an opaque
-`sub` (msisdn ref), `deviceId`, `iat`, `jti`; sets `latestJti[msisdn]`; TTL = `«5–10m»`.
-Refresh = call again (rate-limited per Q2). The token is customer-identity + device; it does **not**
-enumerate the winning events into the QR — event resolution happens at API 3 against the session.
+1. Eligibility check via **User Profile Service** (Advantage Club member?).
+2. Query the **contest tables** (`contest_winner`) for **all** `eventId`s this `msisdn` has won.
+3. Mint a **signed** token carrying `sub` (opaque msisdn ref), `dev` (deviceId), `events` (won `eventId`s),
+   `iat`, `jti`; set `latestJti[msisdn]`; TTL = `«5–10m»`.
+
+If the customer won multiple events, **all** their `eventId`s are in the one token. Refresh = call
+again (rate-limited per Q2); a win declared after issue is picked up on the next refresh/re-issue.
 
 ## 8. Scanner (microsite) client behavior
 
@@ -245,12 +267,12 @@ enumerate the winning events into the QR — event resolution happens at API 3 a
 - Scan validation **< 2s** end-to-end (NFR); the chain is a signature verify + a couple of indexed lookups + one atomic write — comfortably within budget.
 - Eligibility read on cold start is **cache-only**, no blocking network (Q8).
 - Redemption path is the only strongly-consistent write; everything else can tolerate eventual consistency.
-- Idempotency + atomic redemption together guarantee **exactly-once admission per (entitlement, checkpoint)** under retries, races, and duplicate scans.
+- Idempotency + atomic redemption together guarantee **exactly-once admission per (event_id, msisdn, checkpoint)** under retries, races, and duplicate scans.
 
 ## 11. Build sequencing (suggested)
 
-1. **Backend core first** — token service (issue/refresh/verify + single-active), event/entitlement/redemption model, validation chain, idempotency, audit + history API. This is where correctness lives.
-2. **Staff microsite** — login/OTP/session, camera scan, decision UI, against the live backend.
-3. **Admin/setup** — event creation, winner + staff bulk load, readiness check.
+1. **Backend core first** — token service (issue/refresh/verify + single-active + won-events from contest tables), event/contest/redemption model, validation chain, idempotency, audit + history API. This is where correctness lives.
+2. **Staff microsite** — whitelist-based login/session (no OTP), camera scan, decision UI, against the live backend.
+3. **Admin/setup** — event creation, contest-winner + staff bulk load, readiness check.
 4. **Customer app surfaces** — QR card + refresh (depends on token service), then tile, splash, icon, hamburger, walkthrough (these are independent and can parallelize once eligibility gating is agreed).
 5. **Harden** — rate limits, key rotation, dashboards/alerts, device-matrix test for icon-switch + screenshot behavior, load test the concurrent-scan race.
