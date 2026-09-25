@@ -3,9 +3,10 @@
 Concrete enough to build against. Values shown as `«config»` are environment-tunable
 (see open questions Q1, Q2, Q10, Q13, Q20).
 
-**Service ownership (see HLD §4–5):** the token is minted by the **User Profile Service**
-(which also owns eligibility, the agent whitelist, and agent sessions); winners come from the
-**Contest Service**; scans are validated by the **Entry Validation Service**. Both the customer
+**Service ownership (see HLD §4–6):** the backend is **one microservice — the User Profile
+Service**. Its internal components: **QR Generation** mints the token, **Eligibility** and **Agent
+Whitelist & Session** gate it, **Contest** is the winner source of truth, and **Entry Validation**
+validates scans. They are modules of the one deployable, not separate services. Both the customer
 QR and the agent scanner live **inside the Airtel Thanks App** — there is no microsite.
 
 ## 1. QR token

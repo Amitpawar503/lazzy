@@ -96,25 +96,30 @@ flowchart TB
   end
 
   subgraph Backend["Backend"]
-    UPS["User Profile Service\neligibility · agent whitelist · agent session · QR generation"]
-    CTS["Contest Service\ncontest · contest_winner"]
-    EVS["Entry Validation Service\nverify · authorize · atomic redeem · audit"]
+    subgraph UPS["User Profile Service (microservice)"]
+      QRG["QR Generation\nsign · single-active"]
+      ELIG["Eligibility"]
+      WLC["Agent Whitelist & Session"]
+      CTS["Contest\ncontest · contest_winner"]
+      EVS["Entry Validation\nverify · authorize · atomic redeem · audit"]
+    end
     KMS[("Signing key\nKMS / HSM")]
     DB[(Databases)]
   end
 
-  TILE -->|eligibility| UPS
-  QRC -->|generate / refresh QR| UPS
-  PICK -->|validate agent whitelist| UPS
+  TILE -->|eligibility| ELIG
+  QRC -->|generate / refresh QR| QRG
+  PICK -->|validate agent whitelist| WLC
   SCAN -->|qrToken + scanRequestId| EVS
   EVS --> RESULT
 
-  UPS -->|read won events| CTS
-  UPS -->|sign token| KMS
-  UPS --- DB
-  CTS --- DB
+  QRG --> ELIG
+  QRG -->|read won events| CTS
+  QRG -->|sign token| KMS
+  EVS -->|authorize agent| WLC
+  EVS -->|winner check| CTS
   EVS -->|verify signature| KMS
-  EVS --- DB
+  UPS --- DB
 ```
 
 ### API ↔ owning-service wiring
@@ -127,11 +132,11 @@ flowchart LR
     AAGENT[Thanks App — Agent mode]
   end
 
-  subgraph Endpoints
-    A1["1 · POST /v1/agents/whitelist\n(User Profile Service)"]
-    A2["2 · GET /v1/agents/validate\n(User Profile Service)"]
-    A3["3 · POST /v1/entry\n(Entry Validation Service)"]
-    A4["4 · POST /v1/qr/generate\n(User Profile Service)"]
+  subgraph Endpoints["Endpoints — all on the User Profile Service microservice"]
+    A1["1 · POST /v1/agents/whitelist\n(Agent Whitelist component)"]
+    A2["2 · GET /v1/agents/validate\n(Agent Whitelist & Session component)"]
+    A3["3 · POST /v1/entry\n(Entry Validation component)"]
+    A4["4 · POST /v1/qr/generate\n(QR Generation component)"]
   end
 
   subgraph Data["DB tables"]
@@ -154,20 +159,29 @@ flowchart LR
 
 ## 4. Component Responsibilities
 
+The backend is **one microservice — the User Profile Service**. Contest, Entry Validation, QR
+Generation, Eligibility, and Agent Whitelist & Session are **components (modules) inside it**, not
+separate deployables.
+
 | Component | Responsibility |
 |---|---|
 | **Airtel Thanks App — Customer mode** | Renders the membership surfaces (icon, tile, splash, walkthrough) gated on eligibility, and the **QR Card**. Requests a QR from the **User Profile Service** and displays it; applies screenshot mitigation (Android `FLAG_SECURE`, iOS detect/obscure). Holds **no** event or winner logic. |
-| **Airtel Thanks App — Agent mode** | Available **only** to MSISDNs whitelisted as event agents. After the **User Profile Service** validates the whitelist, the agent picks an **authorized event + checkpoint**, opens the camera, decodes a customer QR, and posts it to the **Entry Validation Service**. Renders the returned decision. **Decides nothing — the backend decides.** |
-| **User Profile Service** | The customer- and agent-identity authority. It owns: (a) **membership eligibility** (active Postpaid + Fastlane / Advantage Club); (b) the **agent whitelist** — which **events** and which **checkpoints** (ENTRY / GOODIE / both) each agent MSISDN may scan; (c) **agent scanning-session validation**; and (d) **QR generation** — on request it checks eligibility, reads the customer's won events from the **Contest Service**, and returns a **signed, short-TTL** token. |
-| **Contest Service** | Owns the **contest tables** (`contest`, `contest_winner`). Sole source of truth for "**which events has this MSISDN won?**" Read by the User Profile Service at QR generation. Winners are loaded/appended by engineering before and during the event. |
-| **Entry Validation Service** | The **gate authority**. On each scan it verifies the token (signature, structure, TTL), confirms the **agent is authorized** for the session's **event + checkpoint**, checks the session's event is **among the QR's won events**, performs the **atomic per-checkpoint redemption**, writes the **audit log**, and returns a **callback code**. Also serves the **scan-history** API for dispute resolution. |
-| **Admin / Engineering tooling** | Not a UI role. Creates events, loads **contest winners** (Contest Service) and **agent whitelist** rows (User Profile Service), and retrieves **scan history** (Entry Validation Service). |
+| **Airtel Thanks App — Agent mode** | Available **only** to MSISDNs whitelisted as event agents. After the **User Profile Service** validates the whitelist, the agent picks an **authorized event + checkpoint**, opens the camera, decodes a customer QR, and posts it to the **Entry Validation component**. Renders the returned decision. **Decides nothing — the backend decides.** |
+| **User Profile Service (microservice)** | The single backend deployable and the customer- and agent-identity authority. It hosts all the components below and owns their data. |
+| ├ **Eligibility component** | Membership status — active Postpaid + Fastlane / Advantage Club. Gates the customer surfaces and QR generation. |
+| ├ **Agent Whitelist & Session component** | The **agent whitelist** — which **events** and which **checkpoints** (ENTRY / GOODIE / both) each agent MSISDN may scan — and **agent scanning-session** validation. |
+| ├ **QR Generation component** | On request, checks eligibility, reads the customer's won events from the **Contest component**, and returns a **signed, short-TTL** token (single-active per customer). |
+| ├ **Contest component** | Owns the **contest tables** (`contest`, `contest_winner`). Sole source of truth for "**which events has this MSISDN won?**" Read at QR generation and re-checkable at entry. Winners are loaded/appended by engineering before and during the event. |
+| └ **Entry Validation component** | The **gate authority**. On each scan it verifies the token (signature, structure, TTL), confirms the **agent is authorized** for the session's **event + checkpoint**, checks the session's event is **among the QR's won events**, performs the **atomic per-checkpoint redemption**, writes the **audit log**, and returns a **callback code**. Also serves the **scan-history** API. |
+| **Admin / Engineering tooling** | Not a UI role. Against the User Profile Service, it creates events, loads **contest winners** (Contest component) and **agent whitelist** rows (Agent Whitelist component), and retrieves **scan history** (Entry Validation component). |
 
 ---
 
 ## 5. Service Layering (Controller / Service / Repository)
 
-Each backend service follows the same three layers. Naming is explicit so the LLD and code line up:
+Inside the **User Profile Service microservice**, each component is layered the same way (its
+`@Service` beans below are components of that one deployable). Naming is explicit so the LLD and
+code line up:
 
 ```mermaid
 flowchart LR
@@ -180,7 +194,7 @@ flowchart LR
 | Layer | Role | Example names |
 |---|---|---|
 | **Controller (API boundary)** | Accepts/returns **DTOs** only — never DB entities | `QrGenerateRequest` / `QrGenerateResponse`, `AgentValidateResponse`, `EntryScanRequest` / `EntryScanResponse`, `WhitelistUpsertRequest` |
-| **Service (business logic)** | Eligibility, whitelist checks, token mint/verify, redemption orchestration | `UserProfileService`, `ContestService`, `EntryValidationService` |
+| **Service (business logic)** | Eligibility, whitelist checks, token mint/verify, redemption orchestration — all `@Service` components of the one microservice | `EligibilityService`, `ContestService`, `EntryValidationService`, `QrTokenService` |
 | **Repository (persistence)** | Maps **JPA entities** ↔ **DB tables** | `AgentWhitelistRepository`→`agent_whitelist`, `ContestWinnerRepository`→`contest_winner`, `RedemptionRepository`→`redemption`, `ScanLogRepository`→`scan_log` |
 
 - **DTOs never leak DB entities** to the client (and never carry raw PII beyond what a screen needs — see Q14).
@@ -191,6 +205,10 @@ flowchart LR
 
 ## 6. Trust Boundaries
 
+The **backend is one microservice — the User Profile Service** — and everything the gate trusts
+lives inside it: the **QR Generation**, **Eligibility**, **Agent Whitelist & Session**, **Contest**,
+and **Entry Validation** components are modules of that one microservice, not separate deployables.
+
 ```mermaid
 flowchart TB
   subgraph Client["Airtel Thanks App — semi-trusted (untrusted for decisions)"]
@@ -199,22 +217,29 @@ flowchart TB
   end
 
   subgraph Trusted["Backend — trusted"]
-    UPS[User Profile Service]
-    EVS[Entry Validation Service]
-    CTS[Contest Service]
+    subgraph UPS["User Profile Service (microservice)"]
+      QRG[QR Generation]
+      ELIG[Eligibility]
+      WLC[Agent Whitelist & Session]
+      CTS[Contest component]
+      EVS[Entry Validation component]
+    end
     KMS[("KMS / HSM\nsigning key")]
   end
 
-  CUST -->|generate / refresh QR| UPS
-  AGT -->|validate agent whitelist| UPS
+  CUST -->|generate / refresh QR| QRG
+  AGT -->|validate agent whitelist| WLC
   AGT -->|scan: qrToken + scanRequestId| EVS
-  EVS --> UPS
+  QRG --> ELIG
+  QRG --> CTS
+  EVS --> WLC
   EVS --> CTS
-  UPS --- KMS
+  QRG --- KMS
+  EVS --- KMS
 ```
 
 - **The app is semi-trusted** — it can request a QR and ask the User Profile Service to validate an agent, but neither the token nor the whitelist result lets the app decide anything at the gate.
-- **Agent mode is untrusted for decisions** — it captures the customer QR and shows a verdict, but the **Entry Validation Service** makes the call server-side. Event, checkpoint, agent identity, and timestamp are derived from the **validated agent session**, never accepted from the client body.
+- **Agent mode is untrusted for decisions** — it captures the customer QR and shows a verdict, but the **Entry Validation component** (inside the User Profile Service) makes the call server-side. Event, checkpoint, agent identity, and timestamp are derived from the **validated agent session**, never accepted from the client body.
 - **The signing key lives only in the backend** (KMS/HSM). Compromising the app cannot forge tokens nor fabricate the won-events list — that list is **inside the signature**.
 
 ---
@@ -434,12 +459,15 @@ sequenceDiagram
 
 ## 9. API Surface — the Four Endpoints
 
-| # | Method / Endpoint | Owning service | Caller | Purpose | Key inputs | Success output |
+All four endpoints are exposed by the **User Profile Service microservice**; the "Owning component"
+column names the internal module that handles each.
+
+| # | Method / Endpoint | Owning component (in User Profile Service) | Caller | Purpose | Key inputs | Success output |
 |---|---|---|---|---|---|---|
-| 1 | `POST /v1/agents/whitelist` | User Profile Service | Admin / eng | Whitelist an agent **MSISDN** for an event with its checkpoints | `msisdn`, `eventId`, `checkpoints[]` | whitelist row created/updated |
-| 2 | `GET /v1/agents/validate` | User Profile Service | Thanks App (agent) | Confirm the agent MSISDN is whitelisted; return authorized **events + checkpoints**; open session | agent `msisdn` (from app auth) | authorized events + checkpoints + agent session |
-| 3 | `POST /v1/entry` | Entry Validation Service | Thanks App (agent) | Record an entry after scanning | `qrToken`, `checkpoint`, `scanRequestId` (event from session) | `ENTRY_ALLOWED` / duplicate / other-device / expired |
-| 4 | `POST /v1/qr/generate` | User Profile Service | Thanks App (customer) | Generate the signed QR carrying **won `eventId`s** | `msisdn`, `deviceId`, `timestamp` | signed `qrToken` (+ `expiresAt`) |
+| 1 | `POST /v1/agents/whitelist` | Agent Whitelist | Admin / eng | Whitelist an agent **MSISDN** for an event with its checkpoints | `msisdn`, `eventId`, `checkpoints[]` | whitelist row created/updated |
+| 2 | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | Confirm the agent MSISDN is whitelisted; return authorized **events + checkpoints**; open session | agent `msisdn` (from app auth) | authorized events + checkpoints + agent session |
+| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | Record an entry after scanning | `qrToken`, `checkpoint`, `scanRequestId` (event from session) | `ENTRY_ALLOWED` / duplicate / other-device / expired |
+| 4 | `POST /v1/qr/generate` | QR Generation | Thanks App (customer) | Generate the signed QR carrying **won `eventId`s** | `msisdn`, `deviceId`, `timestamp` | signed `qrToken` (+ `expiresAt`) |
 
 **Notes**
 - **No microsite** — API 2 and API 3 are called by the **Airtel Thanks App in agent mode**; the agent's MSISDN is already authenticated by the app.
