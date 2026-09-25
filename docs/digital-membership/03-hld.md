@@ -403,24 +403,31 @@ sequenceDiagram
   App->>App: render colour + text; resume scanning
 ```
 
-### 8.4 Expired-token recovery
+### 8.4 Customer refreshes the QR (independent of the agent)
+
+Refresh is purely a **customer ↔ User Profile Service** action — the agent is **not** part of it.
+The customer taps **Refresh** (proactively, or because the agent said the QR looked expired — a
+verbal, out-of-band nudge, never a system call), the app calls `POST /v1/qr/generate`, and the
+User Profile Service returns a fresh token whose new `jti` supersedes the old one. The agent's
+next scan is then just an ordinary scan of whatever QR is on screen (flow §8.3).
 
 ```mermaid
 sequenceDiagram
   autonumber
   participant CApp as Thanks App (customer)
-  participant AApp as Thanks App (agent)
-  participant EVS as Entry Validation Service
   participant UPS as User Profile Service
+  participant CTS as Contest Service
+  participant Store as qr_issuance (fast store)
 
-  AApp->>EVS: scan (stale token)
-  EVS-->>AApp: QR_EXPIRED (grey)
-  AApp->>CApp: agent: "tap Refresh, show again"
-  CApp->>UPS: POST /v1/qr/generate (refresh)
-  UPS-->>CApp: new qrToken (new jti supersedes old)
+  Note over CApp: Customer taps "Refresh QR"
+  CApp->>UPS: POST /v1/qr/generate (refresh) { msisdn, deviceId, timestamp }
+  UPS->>UPS: eligibility check
+  UPS->>CTS: won events for this msisdn
+  CTS-->>UPS: wonEventIds[]
+  UPS->>Store: set latestJti[customer] = new jti (supersedes old)
+  UPS-->>CApp: { qrToken, expiresAt }
   CApp->>CApp: render fresh QR
-  AApp->>EVS: scan (fresh token)
-  EVS-->>AApp: ENTRY_ALLOWED
+  Note over CApp: The agent later scans the on-screen QR — ordinary scan (§8.3)
 ```
 
 ---
