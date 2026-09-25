@@ -11,6 +11,7 @@ These documents translate the PRD, the Figma flows, and the review meeting into 
 | [`03-hld.md`](./03-hld.md) | High-level design: components, boundaries, the core "identity-QR + session-bound event" model, and the main sequence flows. |
 | [`04-lld.md`](./04-lld.md) | Low-level design: token schema, data model, API contracts, the atomic-redemption + idempotency mechanics, callback matrix, and the validation state machine. |
 | [`05-detailed-lld-eventpass.md`](./05-detailed-lld-eventpass.md) | Build-ready, code-level LLD matching the existing `contest` module conventions, with the reference implementation in [`reference-impl/eventpass/`](./reference-impl/eventpass) (atomic entry save + contest winner check). |
+| [`lld.md`](./lld.md) | **Authoritative code-level LLD** — every file/class change, per-branch condition tables, and method-level sequence diagrams for all four APIs. |
 
 ## The one idea the whole design rests on
 
