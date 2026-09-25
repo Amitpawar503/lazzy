@@ -63,7 +63,7 @@ Legend for controls (defined once, referenced throughout):
 - **Stops it:** **C9** — only a logged-in, whitelisted MSISDN opens agent mode; non-whitelisted attempts get a generic "not an event agent" (no enumeration) + per-IP/per-number rate limits. A leaked whitelisted number cannot by itself open a session, since app login proves identity (Q10).
 
 ## 13. Contest-winner list not loaded (or partially loaded) at event start
-- **Stops it:** **default-deny** — no `contest_winner` row ⇒ the event isn't in `token.events` ⇒ `NOT_ENTITLED`. The system fails safe (no accidental admits), never fails open. Ops mitigations: a pre-event **readiness check** (list loaded? counts match?) and support for **mid-event appends**, which customers pick up on their next QR refresh (Q15).
+- **Stops it:** **default-deny** — no winning `contest_entries` row (`winnerInfo` unset) ⇒ the event isn't in `token.events` ⇒ `NOT_ENTITLED`. The system fails safe (no accidental admits), never fails open. Ops mitigations: a pre-event **readiness check** (draw run? winner counts match?) and support for **late winners** from the contest draw, which customers pick up on their next QR refresh (Q15).
 
 ## 14. Backend down / venue connectivity drops at the gate
 - **Stops it:** `SERVICE_UNAVAILABLE` — **never auto-allow**, entitlement **not** marked used from the client, staff retries; final call is a **manual, recorded** on-ground Airtel decision (Q19). We never trade the exactly-once guarantee for uptime.

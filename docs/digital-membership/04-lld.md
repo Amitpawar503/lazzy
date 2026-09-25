@@ -43,7 +43,8 @@ previous QR **immediately**" (FR12) and "an old shared screenshot stops working"
 *within* the TTL, the QR service keeps a per-customer pointer:
 
 ```
-KV (fast store, e.g. Redis):  qr:latest:{customerRef} = { jti, iat }   TTL = «TTL»
+KV (fast store — Aerospike, as the contest module uses; Redis equivalent):
+  qr:latest:{msisdn} = { jti }   TTL = «TTL»          // QrIssuanceStore (lld.md §8)
 ```
 
 - **Issue/refresh:** mint token, overwrite `qr:latest:{customerRef}`.
@@ -55,101 +56,83 @@ This gives forgery-proofing (signature) + instant supersede (latest pointer) + h
 
 ## 2. Data model
 
-All tables map to JPA entities via repositories (HLD §5); the API boundary uses DTOs, never these
-entities.
+All collections map to Mongo `@Document`s via DAO + `MongoTemplate` (HLD §5); the API boundary
+uses DTOs, never these documents. Winners are read from the existing `contest_entries`.
 
 ```mermaid
 erDiagram
-  EVENT ||--o{ CONTEST : has
-  CONTEST ||--o{ CONTEST_WINNER : declares
-  EVENT ||--o{ AGENT_WHITELIST : has
-  AGENT_WHITELIST ||--o| AGENT_SESSION : opens
-  CONTEST_WINNER ||--o{ REDEMPTION : "per checkpoint"
-  AGENT_SESSION ||--o{ SCAN_LOG : "records"
+  CONTEST_ENTRIES ||--o{ EVENT_REDEMPTIONS : "winner (winnerInfo) redeems"
+  EVENT_AGENT_WHITELIST ||--o| EVENT_AGENT_SESSIONS : opens
+  EVENT_AGENT_SESSIONS ||--o{ EVENT_SCAN_LOGS : "records"
 ```
 
 ### `event`
 `event_id (PK, e.g. ARTLPPAZK)`, `name`, `venue`, `starts_at`, `ends_at`, `status (DRAFT|ACTIVE|CLOSED)`, `checkpoints_enabled (ENTRY,GOODIE)`, `created_by`, `created_at`.
 
-### `contest` + `contest_winner` — winner source of truth
-The **only** authority on who won what. QR generation (API 4) reads these to build the token's
-`events[]`.
+### Winner source of truth — existing `contest_entries` (`winnerInfo`)
+The store is **MongoDB**, matching the existing contest module. There is **no separate
+`contest_winner` table**: a winner is an existing **`contest_entries`** document whose
+**`winnerInfo`** field is set (exactly how `DrawServiceImpl` marks winners), and a live **event
+maps to a contest `programId`**. QR generation (API 4) reads these to build the token's `events[]`.
 
-- **`contest`**: `contest_id (PK)`, `event_id (FK)`, `name`, `created_at`.
-- **`contest_winner`**: `contest_winner_id (PK)`, `contest_id (FK)`, `event_id (FK, denormalized for fast lookup)`, `msisdn`, `created_at`. **Unique:** `(event_id, msisdn)`.
+- Winner check = "is there a `contest_entries` doc with `msisdn == ? AND winnerInfo exists (AND programId == eventId)`?" — see `WinnerLookupService` in [`lld.md`](./lld.md) §10.
+- Winners are produced by the **existing contest draw**, not loaded by this feature. Absence ⇒ `NOT_ENTITLED`.
+- Open item **Q23** (HLD): confirm event ↔ contest `programId` (vs `campaignId` / multi-contest).
 
-Winner check = "does a `contest_winner` row exist for `(event_id, msisdn)`?" Absence ⇒ `NOT_ENTITLED`.
-Rows loaded/appended via the admin winner-load endpoint (§7).
-
-### `redemption` — the exactly-once anchor (device-aware)
-`redemption_id (PK)`, `msisdn`, `event_id`, `checkpoint (ENTRY|GOODIE)`, `status (USED)`, `device_id`, `redeemed_at`, `redeemed_by_agent_msisdn`, `scan_request_id`.
-**Unique:** `(event_id, msisdn, checkpoint)` — this is the dedup key from API 3. The row stores the
-`device_id` of the **first** entry, which powers the `DUPLICATE_ENTRY` vs.
-`ALREADY_ENTERED_OTHER_DEVICE` split:
+### `event_redemptions` — the exactly-once anchor (device-aware)
+`id (PK)`, `msisdn`, `eventId`, `checkpoint (ENTRY|GOODIE)`, `deviceId`, `redeemedAt`, `redeemedByAgentMsisdn`, `scanRequestId`.
+**Unique compound index:** `(eventId, msisdn, checkpoint)` — the dedup key from API 3; **unique sparse** `scanRequestId`.
+The row stores the `deviceId` of the **first** entry, which powers the `DUPLICATE_ENTRY` vs.
+`ALREADY_ENTERED_OTHER_DEVICE` split. The store is **MongoDB**, so the redeem is an insert guarded
+by the unique index (`DuplicateKeyException` on conflict) — the same pattern `contest` uses for
+`orderId`. Concrete impl: `EventRedemptionDaoImpl.tryRedeem` in [`lld.md`](./lld.md) §9.
 
 ```
-on API 3 claim, after winner + TTL + signature checks:
-  INSERT (event_id, msisdn, checkpoint, device_id, ...) ON CONFLICT (event_id,msisdn,checkpoint) DO NOTHING
-  inserted 1 row      -> ENTRY_ALLOWED
-  inserted 0 rows     -> SELECT stored device_id:
-                           stored device_id == incoming -> DUPLICATE_ENTRY
-                           stored device_id != incoming -> ALREADY_ENTERED_OTHER_DEVICE (+ stored device_id)
+on API 3 claim, after session + token + winner checks:
+  mongoTemplate.insert(redemption)      // unique (eventId,msisdn,checkpoint)
+    success                 -> ENTRY_ALLOWED
+    DuplicateKeyException    -> read existing row's deviceId:
+                                 stored deviceId == incoming -> DUPLICATE_ENTRY
+                                 stored deviceId != incoming -> ALREADY_ENTERED_OTHER_DEVICE (+ stored deviceId)
 ```
 
-Two build options (either satisfies FR25 — pick per DB ergonomics):
-- **(a) Pre-seed + conditional UPDATE:** create a `UNUSED` row per `(event_id, msisdn, checkpoint)` at winner load; redeem = `UPDATE … WHERE status='UNUSED'`.
-- **(b) Insert-on-conflict:** no pre-seed; redeem = `INSERT (event_id, msisdn, checkpoint, …)` guarded by the unique constraint; first insert wins, duplicate = already used.
+### `event_agent_whitelist` — agent MSISDN + per-event checkpoints
+`id (PK)`, `eventId`, `msisdn`, `checkpoints (set of ENTRY|GOODIE — ENTRY only, GOODIE only, or both)`, `active`, `createdBy`, `createdAt`, `updatedAt`.
+**Unique compound index:** `(eventId, msisdn)`. One agent MSISDN can hold **many** rows (many events),
+each with its own checkpoint set — the authority API 2 reads. **No `deviceId`** — device is a
+customer-side concept only (Q22). The agent's *identity* is proven by the Thanks App's own login.
 
-### `agent_whitelist` — agent MSISDN + per-event checkpoints (owned by User Profile Service)
-`event_id (FK)`, `msisdn`, `checkpoints (set of ENTRY|GOODIE — ENTRY only, GOODIE only, or both)`, `active`, `created_by`, `created_at`.
-**Unique:** `(event_id, msisdn)`. One agent MSISDN can hold **many** rows (many events), each with its
-own checkpoint set. This is the authority API 2 reads to list what an agent may scan. **No `deviceId`** —
-device is a customer-side concept only (Q22). The agent's *identity* is proven by the Thanks App's
-own login (the whitelist grants scanning authority, not identity).
-
-### `agent_session` — active scanning session (owned by User Profile Service)
-`session_id (PK)`, `msisdn`, `event_id`, `checkpoint`, `created_at`, `expires_at (=created_at+«24h»)`, `revoked (bool)`, `device_info`.
+### `event_agent_sessions` — active scanning session
+`id (PK)`, `msisdn (indexed)`, `eventId`, `checkpoint`, `createdAt`, `expiresAt (=createdAt+«24h»)`, `revoked (bool)`, `deviceInfo`.
 Bound to one `(msisdn, eventId, checkpoint)`. **Single-active:** opening a new session revokes prior
-non-expired sessions for `msisdn`. An agent authorized for both checkpoints re-opens the session to
-switch checkpoint (or the session carries the allowed set and the client sends the active one).
+non-expired sessions for `msisdn`. An agent authorized for both checkpoints opens a new session to
+switch checkpoint.
 
-### `scan_log` — append-only audit (FR34/FR35)
-`scan_id (PK)`, `scan_request_id`, `event_id`, `checkpoint`, `agent_msisdn`, `customer_ref (nullable if unresolved)`, `callback_code`, `server_ts`, `token_jti (nullable)`.
-**Index:** by `customer_ref`, by `agent_msisdn`, and by `event_id` for the history API.
-`scan_request_id` unique → idempotency (see §5).
+### `event_scan_logs` — append-only audit (FR34/FR35)
+`id (PK)`, `scanRequestId (unique sparse)`, `eventId`, `checkpoint`, `agentMsisdn (indexed)`, `customerMsisdn (indexed, nullable if unresolved)`, `deviceId`, `callback`, `serverTs`, `tokenJti (nullable)`.
+`scanRequestId` unique → idempotency (see §5).
 
-## 3. Atomic redemption (reference SQL)
+## 3. Atomic redemption
 
-Option (a), conditional update inside a transaction (rows pre-seeded at winner load):
+**Chosen store: MongoDB** (matching the contest module). The redeem is an **insert guarded by the
+unique compound index** `(eventId, msisdn, checkpoint)` — the DB, not app logic, is the
+concurrency guarantee; no read-then-write window. This is the same `DuplicateKeyException` pattern
+`contest` uses for `orderId`. Concrete impl: `EventRedemptionDaoImpl.tryRedeem` ([`lld.md`](./lld.md) §9).
 
-```sql
--- attempt redemption; rows_affected tells us who won
-UPDATE redemption
-   SET status = 'USED',
-       device_id = :device_id,
-       redeemed_at = :server_ts,
-       redeemed_by_agent_msisdn = :agent_msisdn,
-       scan_request_id = :scan_request_id
- WHERE event_id = :event_id
-   AND msisdn = :msisdn
-   AND checkpoint = :checkpoint
-   AND status = 'UNUSED';
--- rows_affected = 1 -> ENTRY_ALLOWED
--- rows_affected = 0 -> already USED: SELECT device_id, redeemed_at for the device split + first-claim time
+```java
+try {
+    mongoTemplate.insert(redemption);            // unique (eventId, msisdn, checkpoint)
+    return new RedeemOutcome(true, redemption);  // inserted → ENTRY_ALLOWED
+} catch (DuplicateKeyException dup) {
+    var existing = find(eventId, msisdn, checkpoint).orElseThrow(() -> dup);
+    return new RedeemOutcome(false, existing);   // conflict → device split from existing.deviceId
+}
 ```
 
-Option (b), insert-on-conflict (Postgres flavor):
+Equivalent on a relational store (if ever migrated): `INSERT … ON CONFLICT (event_id, msisdn,
+checkpoint) DO NOTHING`, or a pre-seeded `UPDATE … WHERE status='UNUSED'`.
 
-```sql
-INSERT INTO redemption (event_id, msisdn, checkpoint, status, device_id,
-                        redeemed_at, redeemed_by_agent_msisdn, scan_request_id)
-VALUES (:event_id, :msisdn, :checkpoint, 'USED', :device_id, :server_ts, :agent_msisdn, :scan_request_id)
-ON CONFLICT (event_id, msisdn, checkpoint) DO NOTHING;
--- inserted 1 row -> ENTRY_ALLOWED
--- 0 rows -> SELECT existing device_id: same -> DUPLICATE_ENTRY ; different -> ALREADY_ENTERED_OTHER_DEVICE
-```
-
-Both make **two concurrent scans of the same QR at the same checkpoint** resolve to exactly one
+Either way, **two concurrent scans of the same QR at the same checkpoint** resolve to exactly one
 `ENTRY_ALLOWED` + one already-claimed result (FR25/AC). ENTRY and GOODIE are separate rows, so a QR
 redeemed at ENTRY still redeems once at GOODIE (FR28).
 
@@ -164,14 +147,14 @@ For every scan, short-circuit on first failure:
 | 3 | token structure & `ver` supported | `INVALID_QR` |
 | 4 | signature valid | `INVALID_QR` |
 | 5 | within TTL **and** `jti == latest` | `QR_EXPIRED` |
-| 6 | `session.eventId ∈ token.events` (won-events from contest tables; optional server re-check of `contest_winner`) | `NOT_ENTITLED` |
-| 7 | atomic redeem `(event_id, msisdn, checkpoint)` storing `device_id` | 1 row → `ENTRY_ALLOWED`; 0 rows → `DUPLICATE_ENTRY` (same device) / `ALREADY_ENTERED_OTHER_DEVICE` (different device) |
-| 8 | write scan_log (always, including denials) | — |
+| 6 | `session.eventId ∈ token.events` (won-events from `contest_entries.winnerInfo`; optional server re-check via `WinnerLookupService.isWinner`) | `NOT_ENTITLED` |
+| 7 | atomic redeem `(eventId, msisdn, checkpoint)` storing `deviceId` (Mongo insert / `DuplicateKeyException`) | inserted → `ENTRY_ALLOWED`; conflict → `DUPLICATE_ENTRY` (same device) / `ALREADY_ENTERED_OTHER_DEVICE` (different device) |
+| 8 | write `event_scan_logs` (always, including denials) | — |
 | — | infra/exception at any point | `SERVICE_UNAVAILABLE` (never auto-allow, do **not** mark used) |
 
 **Server timestamp is authoritative** everywhere (TTL, audit). Client-supplied time is ignored.
 Note the event under check comes from the **session**, and the winner proof comes from the
-**token's `events`** (built from contest tables at issue) — the client never supplies either.
+**token's `events`** (built from `contest_entries.winnerInfo` at issue) — the client never supplies either.
 
 State machine per `(event_id, msisdn, checkpoint)`:
 
@@ -185,9 +168,9 @@ stateDiagram-v2
 ## 5. Idempotency (`scanRequestId`)
 
 - Scanner generates a UUID `scanRequestId` per **decoded QR** and **reuses it on retry** (contract, Q20).
-- Backend, before the chain: `SELECT` prior `scan_log` by `scan_request_id`; if a **terminal** result exists, **replay it** (no re-redeem).
+- Backend, before the chain: look up prior `event_scan_logs` by `scanRequestId`; if a **terminal** result exists, **replay it** (no re-redeem).
 - `SERVICE_UNAVAILABLE` is **not** terminal → a retry re-runs the chain.
-- Because redemption also stamps `scan_request_id`, a crash between "committed redeem" and "returned response" is safe: the retry finds the redemption already carries this `scanRequestId` and returns `ENTRY_ALLOWED`, not `ALREADY_USED`.
+- Because the redemption row also stamps `scanRequestId`, a crash between "committed redeem" and "returned response" is safe: the retry finds the log (or re-derives from the redemption row) and returns the original `ENTRY_ALLOWED`, never a second admission.
 
 ## 6. Callback codes (authoritative matrix)
 
@@ -219,48 +202,51 @@ body: { msisdn, eventId, checkpoints:["ENTRY"|"GOODIE"...] }     # MSISDN + per-
 -> 200 { whitelistId, status:"UPSERTED" }
 ```
 Idempotent upsert; unique `(eventId, msisdn)`; one MSISDN may be whitelisted for many events;
-supports mid-event appends. Supporting admin endpoints:
+supports mid-event appends. Supporting admin endpoint:
 ```
-POST /v1/admin/events                                  create event (returns eventId)   [Admin]
-POST /v1/admin/contests/{eventId}/winners:bulkUpsert   load/append contest_winner rows   [Contest Service]
-GET  /v1/admin/scan-history?msisdn=...                  full chronological history (FR35) [Entry Validation Service]:
+GET  /v1/admin/scan-history?msisdn=...   full chronological history (FR35) [Entry Validation component]:
        [ { eventId, checkpoint, callback, serverTs, agentMsisdn, deviceId } ]
 ```
+> **Winners are NOT loaded here.** They are produced by the existing **contest draw**
+> (`contest_entries.winnerInfo`); this feature only reads them. Events are contest `programId`s (Q23).
 
-### API 2 — `GET /v1/agents/validate` — **User Profile Service** (no OTP, no microsite)
-DTO `AgentValidateResponse`
+### API 2 — validate then open session — **User Profile Service** (no OTP, no microsite)
+DTO `AgentValidateResponse`. Two calls:
 ```
-GET  /v1/agents/validate            # agent msisdn taken from the Thanks App's authenticated session
-   -> if whitelisted & active:
-        { agentSessionId, events:[ { eventId, name, venue, window, checkpoints:[...] } ... ] }
-   -> if not: "not an event agent" (no event data leaked)
-```
-Called by the **Thanks App in agent mode**. The agent's identity is already proven by app login; the
-whitelist grants scanning authority. The agent picks one authorized `event + checkpoint`, which opens
-an `agent_session` (single-active per msisdn — a new one revokes the prior, FR21).
+GET  /v1/agents/validate            # agent msisdn from the Thanks App's authenticated session (IV_USER)
+   -> if whitelisted & active: { authorized:true, events:[ { eventId, name?, venue?, checkpoints:[...] } ... ] }
+   -> else:                    { authorized:false }        # "not an event agent" (no event data leaked)
 
-### API 3 — `POST /v1/entry` — **Entry Validation Service** (authenticated by agent session)
+POST /v1/agents/session   { eventId, checkpoint }          # agent picks one authorized event+checkpoint
+   -> 200 { agentSessionId }                                # single-active per msisdn (revokes prior, FR21)
+```
+Called by the **Thanks App in agent mode**; identity is already proven by app login, the whitelist
+grants scanning authority.
+
+### API 3 — `POST /v1/entry` — **Entry Validation component** (agent session via header)
 DTO `EntryScanRequest` / `EntryScanResponse`
 ```
-body: { qrToken, checkpoint, scanRequestId }     # eventId comes from the AGENT SESSION, not the body
--> 200 { callback, holderMasked?, firstClaimAt?, otherDeviceId?, displayColor, message }
+Header: X-Agent-Session: <agentSessionId>
+body:   { qrToken, checkpoint, scanRequestId }   # eventId comes from the AGENT SESSION, not the body
+-> 200  { callback, admit, displayColor, message, holderMasked?, firstClaimAt?, otherDeviceId? }
 ```
-- `checkpoint` validated against the agent's authorized set; `eventId` is the session's event.
+- `checkpoint` validated against the session's authorized checkpoint; `eventId` is the session's event.
 - `msisdn`, `deviceId`, and the won `events[]` are read from the **verified token** (inside the signature).
-- Winner check = `session.eventId ∈ token.events` (optional server re-check against `contest_winner`).
-- **Server timestamp authoritative**; `scanRequestId` gives idempotent retries (§5).
-- Callback ∈ `{ ENTRY_ALLOWED, DUPLICATE_ENTRY, ALREADY_ENTERED_OTHER_DEVICE, NOT_ENTITLED, QR_EXPIRED, INVALID_QR, SERVICE_UNAVAILABLE }`.
+- Winner check = `session.eventId ∈ token.events` (optional server re-check via `WinnerLookupService.isWinner`).
+- **Every decision is HTTP 200 + callback** (INVALID_QR / QR_EXPIRED / STAFF_SESSION_INVALID included); `scanRequestId` gives idempotent retries (§5).
+- Callback ∈ `{ ENTRY_ALLOWED, DUPLICATE_ENTRY, ALREADY_ENTERED_OTHER_DEVICE, NOT_ENTITLED, QR_EXPIRED, INVALID_QR, STAFF_SESSION_INVALID, SERVICE_UNAVAILABLE }`.
 
-### API 4 — `POST /v1/qr/generate` — **User Profile Service** (customer, authenticated)
+### API 4 — `POST /v1/membership/qr` — **User Profile Service** (customer, authenticated)
 DTO `QrGenerateRequest` / `QrGenerateResponse`
 ```
-body: { msisdn, deviceId, timestamp }
--> 200 { qrToken, expiresAt }         # eligibility-gated; supersedes previous jti (single-active)
+Header: IV_USER: <customer msisdn>
+body:   { deviceId, timestamp }
+-> 200  { qrToken, expiresAt }        # eligibility-gated; supersedes previous jti (single-active)
 ```
-1. Eligibility check (Advantage Club member?).
-2. Read the **Contest Service** (`contest_winner`) for **all** `eventId`s this `msisdn` has won.
+1. Eligibility check (Advantage Club member?) — else 400 (non-members get no QR).
+2. Read `contest_entries` (where `winnerInfo` set) for **all** `programId`s (= eventIds) this `msisdn` has won.
 3. Mint a **signed** token carrying `sub` (opaque msisdn ref), `dev` (deviceId), `events` (won `eventId`s),
-   `iat`, `jti`; set `latestJti[msisdn]`; TTL = `«5–10m»`.
+   `ver`, `iat`, `jti`; set `latestJti[msisdn]`; TTL = `«5m»`.
 
 If the customer won multiple events, **all** their `eventId`s are in the one token. Refresh = call
 again (rate-limited per Q2); a win declared after issue is picked up on the next refresh/re-issue.
