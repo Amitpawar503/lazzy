@@ -15,19 +15,21 @@ These documents translate the PRD, the Figma flows, and the review meeting into 
 
 > **The Membership QR is a customer *identity + won-events* credential, not an event ticket.**
 > It carries **who** (customer + deviceId) and **which events they have won** — the winning
-> `eventId`s are read from the **contest tables** at generation and **signed into the token**.
-> The **checkpoint** (ENTRY / GOODIE) and the **event being scanned** come from the
-> **authenticated staff session**. Entry is allowed when `session.eventId ∈ token.wonEvents`
-> **and** that `(customer, event, checkpoint)` hasn't already been redeemed.
+> `eventId`s are read from the **Contest Service** at generation and **signed into the token** by
+> the **User Profile Service**, then shown in the Airtel Thanks App. The **checkpoint**
+> (ENTRY / GOODIE) and the **event being scanned** come from the **agent's validated scanning
+> session** (the agent scans *inside the same Thanks App*). Entry is allowed when
+> `session.eventId ∈ token.wonEvents` **and** that `(customer, event, checkpoint)` hasn't already
+> been redeemed.
 
 This grows from what Tushar landed on in the meeting ("*we will generate it for all postpaid
 customers … basis that Ankur resolve … customer is particular event ABC eligible*"). A single,
 always-available QR serves every event the customer has won, plus goodie distribution, without the
-app ever driving event logic. **Staff auth is whitelist-only (MSISDN), no OTP** — see Q10 for the
-accepted security tradeoff.
+app ever driving event logic. **Agents authenticate by their Thanks App login + the User Profile
+Service whitelist (which events + checkpoints); no OTP, no microsite** — see Q10.
 
 ## Scope split
 
 - **Customer side** — inside the Airtel Thanks app (native iOS/Android): app icon, hamburger animation, membership tile, QR card, splash, walkthrough.
-- **Staff side** — a **standalone microsite** (e.g. `airtel-events.example`), *not* inside the Airtel app, used by on-ground staff on their own phone browsers.
-- **Backend** — the User Profile service, the QR/token service, the Contest service (winner source of truth), the Validation & Entry service, and the admin/setup + audit surface used by the engineering team.
+- **Agent side** — **inside the same Airtel Thanks App**, in an *agent mode* unlocked only for MSISDNs whitelisted for an event. The agent scans customer QRs from the app — **there is no separate microsite**.
+- **Backend** — the **User Profile Service** (eligibility, agent whitelist + session, and QR generation/signing), the **Contest Service** (winner source of truth), the **Entry Validation Service** (scan verification, redemption, audit), plus the admin/setup surface used by engineering.

@@ -32,8 +32,8 @@ dangerous ones, because the PRD reads as "decided" when it is not.
 - **Recommendation:** QR encodes a **signed opaque token** whose subject is an **internal customer reference** (or a per-issue random `jti` that resolves to the customer server-side), **never the raw mobile number**. See LLD §Token.
 
 ### Q4 [P2] — Is the QR a functional deep link or an opaque string?
-- **Meeting:** deep-link idea was discussed and then dropped ("don't want external apps in the chain … staff microsite captures the QR string and posts to backend").
-- **Recommendation:** **Opaque string** (not a URL). The staff microsite's scanner reads the string and POSTs it; nothing should "open" when a random camera app scans it. Confirmed direction.
+- **Meeting:** deep-link idea was discussed and then dropped ("don't want external apps in the chain … the scanner captures the QR string and posts to backend").
+- **Recommendation:** **Opaque string** (not a URL). The Thanks App agent-mode scanner reads the string and POSTs it to the Entry Validation Service; nothing should "open" when a random camera app scans it. Confirmed direction.
 
 ---
 
@@ -66,12 +66,12 @@ dangerous ones, because the PRD reads as "decided" when it is not.
 
 ---
 
-## C. Staff microsite, auth & sessions
+## C. Agent mode (in Thanks App), auth & sessions
 
-### Q10 [P0] — Staff auth is whitelist-only (OTP DROPPED) — accept the tradeoff?
-- **Decision taken:** login is `eventId + whitelisted MSISDN` → session, with **no OTP** (removed from all flows per review).
-- **Security tradeoff to accept explicitly:** possession of the number is **not** proven. Anyone who knows a whitelisted MSISDN + its eventId can open a scanning session. Mitigations still in place: single-active session per MSISDN, 24h session TTL, per-scan audit (staff id on every scan), checkpoint-scoping. This diverges from PRD FR18–FR20, which mandate OTP — **product/security must sign off** on dropping it, or plan to add OTP / device-binding before go-live.
-- **Recommendation:** ship whitelist-only for the pilot if signed off; keep OTP as a fast-follow option (the deeplink can add an OTP step without changing anything downstream).
+### Q10 [P1] — Agent auth = Thanks App login + whitelist (OTP dropped, no microsite) — confirm sufficient
+- **Decision taken:** the agent scans **inside the Airtel Thanks App**. Their MSISDN identity is already proven by the app's own login; the **User Profile Service whitelist** then grants scanning authority for specific events + checkpoints. **No separate OTP, no microsite.**
+- **Why this is stronger than the earlier microsite plan:** possession of the number *is* proven — by the app login — so the "anyone who knows a whitelisted number gets in" risk is gone. Remaining controls: single-active agent session per MSISDN, 24h session TTL, per-scan audit (agent MSISDN on every scan), checkpoint-scoping.
+- **To confirm:** is app-login + whitelist acceptable to security (vs. PRD FR18–FR20 which described an event-ID + mobile + OTP microsite login)? If an extra step is ever wanted, an in-app agent PIN/OTP can be added without changing anything downstream.
 
 ### Q11 [P1] — Non-whitelisted (event, mobile): generic "not authorized" messaging
 - A number whitelisted for Event A must not open a session for Event B; a non-whitelisted pair gets a **single generic** "not authorized" with **no event data leaked**.

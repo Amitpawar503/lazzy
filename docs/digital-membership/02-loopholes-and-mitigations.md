@@ -13,9 +13,9 @@ Legend for controls (defined once, referenced throughout):
 - **C4 — Atomic single redemption:** redemption is a single conditional DB write, unique per `(event_id, msisdn, checkpoint)`; concurrent scans → exactly one winner.
 - **C5 — Idempotency key:** `scanRequestId` makes a retried scan return the *original* result, never a second redemption.
 - **C6 — Server-only decision:** only the backend admits; the client/UI can never manufacture an allow; redemption is committed *before* `ENTRY_ALLOWED` is returned.
-- **C7 — Session binding:** scans carry a server-side staff session → the event, checkpoint, staff id, and venue are derived server-side, never trusted from the client.
+- **C7 — Agent session binding:** scans carry a server-side agent session → the event, checkpoint, and agent identity are derived server-side, never trusted from the client.
 - **C8 — FLAG_SECURE / screenshot mitigation:** Android blocks screenshots; iOS detects + obscures.
-- **C9 — Staff whitelist + single-active session:** only pre-approved `(event, MSISDN)` pairs can open a session; single active session per number. **No OTP** (dropped — see Q10; possession not proven).
+- **C9 — App login + agent whitelist + single-active session:** the agent scans inside the Thanks App, so their MSISDN is proven by app login; the **User Profile Service whitelist** then grants scanning authority for specific events + checkpoints; single active agent session per number. No OTP, no microsite (see Q10).
 
 ---
 
@@ -49,18 +49,18 @@ Legend for controls (defined once, referenced throughout):
 ## 8. Client tampering — faking `ENTRY_ALLOWED` in the scanner UI
 - **Stops it:** **C6** — the decision and the redemption are server-side; the UI only renders what the backend returned. Staff are trained: a green screen is meaningless unless it's the server's response (and the redemption is already committed when it's returned). No client state, callback, or DOM edit can admit anyone or flip entitlement status. Satisfies FR27.
 
-## 9. Unauthorized person accesses the scanner / staff account sharing
-- **Stops it:** **C9** — a session opens only for a whitelisted `(eventId, MSISDN)`; a non-whitelisted pair gets a generic "not authorized" with no event data (prevents number/event enumeration — Q11). Single active session per number (FR21) limits sharing; a fresh login elsewhere invalidates the old session (`STAFF_SESSION_INVALID`).
-- **Residual:** with **OTP dropped (Q10)**, anyone who knows a whitelisted MSISDN + eventId can open a session — possession isn't proven. Bounded by session TTL (Q13), audit trail (every scan carries staff id), and checkpoint-scoping. **Flagged for product/security sign-off**; OTP is a clean fast-follow if rejected.
+## 9. Unauthorized person accesses the scanner / agent account sharing
+- **Stops it:** **C9** — agent mode opens only inside the Thanks App for a **logged-in MSISDN that is whitelisted** for the event; a non-whitelisted agent gets a generic "not an event agent" with no event data (Q11). Single active agent session per number (FR21) limits sharing; a fresh session elsewhere invalidates the old one (`STAFF_SESSION_INVALID`).
+- **Residual:** a whitelisted agent could still hand their unlocked phone to someone. Bounded by session TTL (Q13), audit trail (every scan carries the agent MSISDN), and checkpoint-scoping. Because identity is proven by app login, a *leaked number alone* is **not** enough — a real improvement over the earlier microsite plan.
 
 ## 10. Scanning the wrong checkpoint / claiming goodie as entry
-- **Stops it:** **C7** — checkpoint is bound to the session and sent on every scan; redemption is tracked **per checkpoint**. A staffer only sees ingresses they're whitelisted for (ENTRY / GOODIE / both). ENTRY and GOODIE are independent single-redemptions, so one QR = one entry **and** one goodie, never two entries. Satisfies FR28–FR29.
+- **Stops it:** **C7** — checkpoint is bound to the agent session and sent on every scan; redemption is tracked **per checkpoint**. An agent only sees ingresses they're whitelisted for (ENTRY / GOODIE / both). ENTRY and GOODIE are independent single-redemptions, so one QR = one entry **and** one goodie, never two entries. Satisfies FR28–FR29.
 
 ## 11. MITM / replayed scan API calls
-- **Stops it:** TLS everywhere + **C7** (session token, not client-supplied identity) + **C1** (short token life) + **C5** (idempotency dedups replays) + **server-authoritative timestamp** (client time is ignored for TTL — closes clock-skew and client-clock-tampering).
+- **Stops it:** TLS everywhere + **C7** (agent session, not client-supplied identity) + **C1** (short token life) + **C5** (idempotency dedups replays) + **server-authoritative timestamp** (client time is ignored for TTL — closes clock-skew and client-clock-tampering).
 
-## 12. Staff-login abuse (enumeration / session spam)
-- **Stops it:** **C9** — only whitelisted `(eventId, MSISDN)` pairs open a session; non-whitelisted attempts get a generic "not authorized" (no enumeration) + per-IP/per-number rate limits. **Note (Q10):** with OTP dropped, a leaked whitelisted MSISDN is enough to log in — this is the main reason to keep OTP on the fast-follow list.
+## 12. Agent-access abuse (enumeration / session spam)
+- **Stops it:** **C9** — only a logged-in, whitelisted MSISDN opens agent mode; non-whitelisted attempts get a generic "not an event agent" (no enumeration) + per-IP/per-number rate limits. A leaked whitelisted number cannot by itself open a session, since app login proves identity (Q10).
 
 ## 13. Contest-winner list not loaded (or partially loaded) at event start
 - **Stops it:** **default-deny** — no `contest_winner` row ⇒ the event isn't in `token.events` ⇒ `NOT_ENTITLED`. The system fails safe (no accidental admits), never fails open. Ops mitigations: a pre-event **readiness check** (list loaded? counts match?) and support for **mid-event appends**, which customers pick up on their next QR refresh (Q15).
