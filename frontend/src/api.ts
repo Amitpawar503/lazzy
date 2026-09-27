@@ -311,6 +311,10 @@ export const api = {
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
   events: () => get<EventList>(`/api/impact/events`),
   depth: (symbol: string) => get<MarketDepth>(`/api/depth/${encodeURIComponent(symbol)}`),
+  stockNews: (symbol: string, limit = 20) =>
+    get<{ symbol: string; count: number; items: NewsItem[] }>(
+      `/api/stock/${encodeURIComponent(symbol)}/news?limit=${limit}`
+    ),
   meta: () =>
     get<{ universe_size: number; sectors: string[]; timeframes: string[]; provider?: string; live?: boolean }>(
       `/meta`

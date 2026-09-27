@@ -38,3 +38,6 @@ frontend/.vite/
 npm-debug.log*
 
 frontend/tsconfig.tsbuildinfo
+
+# Moneycontrol persisted login session (cookies)
+.mc_session.json

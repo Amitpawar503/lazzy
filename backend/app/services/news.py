@@ -32,6 +32,24 @@ def _load() -> list[dict]:
     return items
 
 
+def stock_news(symbol: str, name: str = "", limit: int = 20) -> dict:
+    """News for one stock: Moneycontrol (logged-in when configured) first, then
+    fall back to the ticker-filtered live feed (which includes the Google-News
+    Moneycontrol site feed)."""
+    symbol = symbol.upper()
+    items: list[dict] = []
+    try:
+        from app.data.moneycontrol import stock_news as mc_news
+
+        items = mc_news(symbol, name, limit)
+    except Exception as e:
+        log.warning("[news] moneycontrol stock news failed (%s)", e)
+    if not items:
+        feed = get_news(category="all", ticker=symbol, limit=limit)
+        items = feed["items"]
+    return {"symbol": symbol, "count": len(items), "items": items[:limit]}
+
+
 def get_news(category: str = "all", ticker: str | None = None, limit: int = 50) -> dict:
     ttl = get_settings().cache_ttl_seconds
     items = cached("news:v2", ttl, _load)

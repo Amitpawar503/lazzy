@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
+from app.data.universe import get_universe
 from app.models.schemas import Reasoning, StockDetail
+from app.services.news import stock_news as stock_news_svc
 from app.services.stock import reasoning, stock_detail
 
 router = APIRouter(prefix="/api/stock", tags=["stock"])
@@ -22,3 +24,10 @@ def stock_reasoning(symbol: str) -> Reasoning:
     if r is None:
         raise HTTPException(status_code=404, detail="unknown symbol")
     return r
+
+
+@router.get("/{symbol}/news", summary="Per-stock news (Moneycontrol logged-in + live feed)")
+def stock_news(symbol: str, limit: int = Query(20, ge=1, le=50)) -> dict:
+    symbol = symbol.upper()
+    name = next((r.get("name", "") for r in get_universe() if r["symbol"] == symbol), "")
+    return stock_news_svc(symbol, name, limit)

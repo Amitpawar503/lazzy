@@ -254,6 +254,18 @@ select {
 .sd-section { margin-top: 16px; }
 .sd-section h3 { margin: 0 0 10px; font-size: 14px; }
 
+/* Per-stock news list */
+.sn-list { display: flex; flex-direction: column; gap: 6px; }
+.sn-item { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline;
+  gap: 8px; padding: 7px 10px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; text-decoration: none; color: inherit; }
+.sn-item:hover { border-color: var(--accent, #4b9fff); }
+.sn-dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; background: var(--muted); }
+.sn-dot.positive { background: var(--up, #16a34a); }
+.sn-dot.negative { background: var(--dn, #dc2626); }
+.sn-title { font-size: 13px; }
+.sn-src { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
 /* Full Market Depth (Dhan 20-level live order book) */
 .depth-sub { color: var(--muted); font-weight: 400; font-size: 11px; }
 .depth { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-variant-numeric: tabular-nums; }

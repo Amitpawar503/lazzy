@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     screener_password: Optional[str] = None
     moneycontrol_username: Optional[str] = None
     moneycontrol_password: Optional[str] = None
+    # Scrape per-stock news from Moneycontrol. Public news works without login;
+    # set MONEYCONTROL_LOGIN=true (+ username/password) to also pull Pro content
+    # via a persisted logged-in browser session (needs Playwright + Chromium).
+    moneycontrol_login: bool = False
+    moneycontrol_state_path: str = ".mc_session.json"   # persisted cookies (git-ignore!)
 
     def cors_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

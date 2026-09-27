@@ -1,6 +1,33 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type Factor, type MarketDepth, type StockDetail as SD } from "../api";
+import { api, type Factor, type MarketDepth, type NewsItem, type StockDetail as SD } from "../api";
 import { fmtPct, fmtCr } from "../color";
+
+// Per-stock news — Moneycontrol (logged-in when configured) + live feed.
+function StockNews({ symbol }: { symbol: string }) {
+  const [items, setItems] = useState<NewsItem[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setItems(null);
+    api.stockNews(symbol, 15).then((r) => alive && setItems(r.items)).catch(() => alive && setItems([]));
+    return () => { alive = false; };
+  }, [symbol]);
+  if (items && items.length === 0) return null;
+  return (
+    <div className="sd-section">
+      <h3>Latest news <span className="depth-sub">(Moneycontrol + market feeds)</span></h3>
+      {!items && <div className="algo-loading">Loading news…</div>}
+      <div className="sn-list">
+        {(items || []).map((n) => (
+          <a className="sn-item" key={n.id} href={n.url || "#"} target="_blank" rel="noreferrer">
+            <span className={`sn-dot ${n.sentiment}`} />
+            <span className="sn-title">{n.title}</span>
+            <span className="sn-src">{n.source}{n.published ? ` · ${n.published}` : ""}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Live 20-level Full Market Depth (Dhan websocket feed). Polls the depth cache;
 // renders nothing until a live book is available so it stays quiet off-provider.
@@ -167,6 +194,8 @@ function Modal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
             )}
 
             {d.quote.live && <DepthLadder symbol={d.symbol} />}
+
+            <StockNews symbol={d.symbol} />
 
             {f && (
               <div className="sd-section">
