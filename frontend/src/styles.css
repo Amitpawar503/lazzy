@@ -301,6 +301,12 @@ select {
 .gr-inst h3 { margin: 0 0 4px; font-size: 15px; }
 .gr-inst-row { display: grid; grid-template-columns: 1.4fr auto 1.6fr; gap: 8px; align-items: center;
   padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.gr-cat { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-left: 6px;
+  vertical-align: middle; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+.gr-cat.cat-fii { color: #b07cff; border-color: #b07cff; }
+.gr-cat.cat-govt { color: #4b9fff; border-color: #4b9fff; }
+.gr-cat.cat-domestic { color: #16a34a; border-color: #16a34a; }
+.gr-cat.cat-star { color: #e0a13c; border-color: #e0a13c; }
 
 /* Per-stock news list */
 .sn-list { display: flex; flex-direction: column; gap: 6px; }

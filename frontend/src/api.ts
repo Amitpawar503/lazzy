@@ -279,7 +279,13 @@ export interface GovtHolding {
   holding_pct: number; stance: string; action: string;
 }
 export interface InstHolding { symbol: string; name: string; action: string; detail: string; }
-export interface Institution { name: string; type: string; note: string; holdings: InstHolding[]; }
+export interface Institution {
+  name: string; type: string; category?: string; note: string; holdings: InstHolding[];
+}
+export interface SuperstarHolding { symbol: string; name: string; detail: string; }
+export interface Superstar {
+  name: string; style: string; portfolio_cr: number; holdings: SuperstarHolding[];
+}
 export interface GovtPick {
   symbol: string; name: string; sector: string; score: number;
   verdict: string; reasons: string[];
@@ -288,7 +294,9 @@ export interface GovtRadar {
   policy_sectors: PolicySector[];
   govt_holdings: GovtHolding[];
   institutions: Institution[];
+  superstars: Superstar[];
   picks: GovtPick[];
+  live?: boolean;
 }
 export interface EventList {
   count: number;

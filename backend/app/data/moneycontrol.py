@@ -235,3 +235,49 @@ def stock_news(symbol: str, name: str = "", limit: int = 20) -> list[dict]:
              " (logged-in)" if cookies else "")
     _NEWS_CACHE[key] = (now + ttl, items)
     return items
+
+
+# --- investor portfolios (President of India, Government Pension Fund Global…) --
+_PORTFOLIO_CACHE: dict[str, tuple[float, list[dict]]] = {}
+# rows in these pages link company pages and carry a holding value/percentage
+_MC_CO_LINK = re.compile(
+    r'<a[^>]+href="([^"]*(?:/stockpricequote/|/company/)[^"]*)"[^>]*>(.*?)</a>', re.I | re.S)
+
+
+def investor_portfolio(slug: str, limit: int = 60) -> list[dict]:
+    """Scrape a Moneycontrol india-investors-portfolio page → holdings.
+
+    slug e.g. 'president-of-india' or 'government-pension-fund-global'. Returns
+    [{name, url, detail}]; empty on failure (caller keeps curated data).
+    """
+    now = time.time()
+    ttl = get_settings().cache_ttl_seconds
+    ent = _PORTFOLIO_CACHE.get(slug)
+    if ent and ent[0] > now:
+        return ent[1]
+    url = f"https://www.moneycontrol.com/india-investors-portfolio/{slug}"
+    cookies = _load_cookies()
+    try:
+        r = httpx.get(url, headers=_headers(), cookies=cookies, timeout=_TIMEOUT,
+                      follow_redirects=True)
+        r.raise_for_status()
+        html = r.text
+    except Exception as e:
+        log.warning("[mc] portfolio '%s' fetch failed: %s", slug, e)
+        return []
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for href, inner in _MC_CO_LINK.findall(html):
+        name = _TAG.sub("", inner).strip()
+        if len(name) < 3 or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        if href.startswith("/"):
+            href = "https://www.moneycontrol.com" + href
+        rows.append({"name": name, "url": href, "detail": ""})
+        if len(rows) >= limit:
+            break
+    log.info("[mc] portfolio '%s' → %d holdings%s", slug, len(rows),
+             " (logged-in)" if cookies else "")
+    _PORTFOLIO_CACHE[slug] = (now + ttl, rows)
+    return rows

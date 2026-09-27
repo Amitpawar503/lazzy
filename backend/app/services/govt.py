@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from app.config import get_settings
 from app.data.cache import cached
-from app.data.govt_data import GOVT_HOLDINGS, INSTITUTIONS, POLICY_SECTORS
+from app.data.govt_data import GOVT_HOLDINGS, INSTITUTIONS, POLICY_SECTORS, SUPERSTARS
 from app.data.universe import get_universe
 
 _NAMES: dict[str, str] = {}
@@ -58,15 +58,21 @@ def _picks() -> list[dict]:
         else:  # divesting → mild supply overhang, but govt-backed
             bump(h["symbol"], -6, f"Govt divesting/OFS overhang ({h['action']})", h["sector"])
 
-    # institutions add / reduce
+    # institutions add / reduce (FIIs weighted a touch higher for flow impact)
     for inst in INSTITUTIONS:
+        w = 1.3 if inst.get("category") == "FII" else 1.0
         for hld in inst["holdings"]:
             if hld["action"] == "add":
-                bump(hld["symbol"], 18, f"{inst['name']} buying: {hld['detail']}")
+                bump(hld["symbol"], 18 * w, f"{inst['name']} buying: {hld['detail']}")
             elif hld["action"] == "reduce":
-                bump(hld["symbol"], -12, f"{inst['name']} trimming: {hld['detail']}")
+                bump(hld["symbol"], -12 * w, f"{inst['name']} trimming: {hld['detail']}")
             else:
-                bump(hld["symbol"], 5, f"{inst['name']} holding: {hld['detail']}")
+                bump(hld["symbol"], 5 * w, f"{inst['name']} holding: {hld['detail']}")
+
+    # superstar / marquee investor ownership (signal, not flow)
+    for star in SUPERSTARS:
+        for hld in star["holdings"]:
+            bump(hld["symbol"], 10, f"{star['name']} holds: {hld['detail']}")
 
     rows = []
     for sym, sc in score.items():
@@ -91,12 +97,50 @@ def radar() -> dict:
                                   for hld in inst["holdings"]]}
             for inst in INSTITUTIONS
         ]
+        superstars = [
+            {**s, "holdings": [{**h, "name": _name(h["symbol"])} for h in s["holdings"]]}
+            for s in SUPERSTARS
+        ]
+        institutions += _live_portfolios()
         return {
             "policy_sectors": POLICY_SECTORS,
             "govt_holdings": holdings,
             "institutions": institutions,
+            "superstars": superstars,
             "picks": _picks(),
+            "live": get_settings().govt_live,
         }
 
     ttl = get_settings().cache_ttl_seconds
-    return cached("govt:radar:v1", ttl, _load)
+    return cached("govt:radar:v2", ttl, _load)
+
+
+# Moneycontrol india-investors-portfolio slugs → labels (the pages the user gave).
+_MC_PORTFOLIOS = [
+    ("president-of-india", "President of India (live)", "Govt", "Govt of India direct equity holdings"),
+    ("government-pension-fund-global", "Government Pension Fund Global (live)", "FII",
+     "Norway sovereign fund — live Moneycontrol portfolio"),
+]
+
+
+def _live_portfolios() -> list[dict]:
+    """When GOVT_LIVE=true, overlay live Moneycontrol investor portfolios."""
+    if not get_settings().govt_live:
+        return []
+    out = []
+    try:
+        from app.data.moneycontrol import investor_portfolio
+    except Exception:
+        return []
+    for slug, label, cat, note in _MC_PORTFOLIOS:
+        rows = investor_portfolio(slug)
+        if not rows:
+            continue
+        out.append({
+            "name": label, "type": note, "category": cat,
+            "note": "Live from moneycontrol.com/india-investors-portfolio",
+            "holdings": [{"symbol": r["name"], "name": r["name"],
+                          "action": "hold", "detail": r.get("detail", "")}
+                         for r in rows],
+        })
+    return out

@@ -2,13 +2,19 @@ import { useEffect, useState } from "react";
 import { api, type GovtRadar as GR } from "../api";
 import { useStockDetail } from "./StockDetail";
 
-type View = "picks" | "policy" | "holdings" | "institutions";
+type View = "picks" | "policy" | "holdings" | "institutions" | "superstars";
 const VIEWS: { id: View; label: string }[] = [
   { id: "picks", label: "Can Rise (Policy + Ownership)" },
   { id: "policy", label: "Policy by Sector" },
   { id: "holdings", label: "Govt Buying / Selling" },
-  { id: "institutions", label: "Big Institutions" },
+  { id: "institutions", label: "Institutions & FIIs" },
+  { id: "superstars", label: "Superstar Investors" },
 ];
+
+function fmtCr(cr: number) {
+  return cr >= 100000 ? `₹${(cr / 100000).toFixed(1)}L cr`
+    : cr >= 1000 ? `₹${(cr / 1000).toFixed(1)}k cr` : `₹${cr} cr`;
+}
 
 function stanceCls(s: string) {
   const v = s.toLowerCase();
@@ -125,7 +131,10 @@ export default function GovtRadar() {
         <div className="gr-inst-grid">
           {data.institutions.map((inst) => (
             <div className="gr-inst" key={inst.name}>
-              <h3>{inst.name} <span className="sig-name">{inst.type}</span></h3>
+              <h3>
+                {inst.name} <span className="sig-name">{inst.type}</span>
+                {inst.category && <span className={`gr-cat cat-${inst.category.toLowerCase()}`}>{inst.category}</span>}
+              </h3>
               <p className="gr-note">{inst.note}</p>
               {inst.holdings.map((h) => (
                 <div className="gr-inst-row" key={h.symbol}>
@@ -141,7 +150,28 @@ export default function GovtRadar() {
         </div>
       )}
 
+      {data && view === "superstars" && (
+        <div className="gr-inst-grid">
+          {data.superstars.map((s) => (
+            <div className="gr-inst" key={s.name}>
+              <h3>{s.name} <span className="gr-cat cat-star">{fmtCr(s.portfolio_cr)}</span></h3>
+              <p className="gr-note">{s.style}</p>
+              {s.holdings.map((h) => (
+                <div className="gr-inst-row" key={h.symbol}>
+                  <span className="link" onClick={() => openStock(h.symbol)}>
+                    <b>{h.symbol}</b> <span className="sig-name">{h.name}</span>
+                  </span>
+                  <span className="gr-badge st-pos">holds</span>
+                  <span className="gr-action">{h.detail}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       <p className="src-note">
+        {data?.live ? "Live investor portfolios overlaid from Moneycontrol where reachable; " : ""}
         Holdings/policy are curated & indicative (public disclosures move with each
         filing/announcement) — not investment advice. Click any stock for its full thesis.
       </p>

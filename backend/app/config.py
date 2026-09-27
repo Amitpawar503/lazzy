@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     compute_workers: int = 8
     # Fetch live news from free RSS feeds + Finnhub (falls back to sample offline).
     news_live: bool = True
+    # Overlay LIVE investor portfolios (Moneycontrol india-investors-portfolio:
+    # President of India, Government Pension Fund Global, …) onto the Govt tab.
+    # Falls back to the curated dataset if unreachable.
+    govt_live: bool = False
 
     # --- Free / freemium LLM providers (Phase 4) ---
     groq_api_key: Optional[str] = None
