@@ -105,9 +105,11 @@ export default function NewsImpact() {
               className={`event-item ${e.id === selId ? "on" : ""}`}
               onClick={() => setSelId(e.id)}
             >
-              <span className={`kind kind-${e.kind}`}>{e.kind}</span>
+              <span className={`kind kind-${e.kind}`}>
+                {e.source === "live" ? "● live" : e.kind}
+              </span>
               <span className="event-title">{e.title}</span>
-              <span className="event-meta">{e.entity} · {e.date}</span>
+              <span className="event-meta">{e.entity}{e.date ? ` · ${e.date}` : ""}</span>
             </button>
           ))}
         </aside>
@@ -117,6 +119,11 @@ export default function NewsImpact() {
             <>
               <h3>{sel.title}</h3>
               <p className="event-summary">{sel.summary}</p>
+              {sel.url && (
+                <a className="event-src" href={sel.url} target="_blank" rel="noreferrer">
+                  Read on {sel.entity} ↗
+                </a>
+              )}
               <div className="imp-head">
                 <span>Company</span>
                 <span>Relation</span>

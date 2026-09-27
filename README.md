@@ -40,7 +40,7 @@ cd frontend && npm install && npm run dev
 | **Ideas** | Categories **style / fundamentals / sector / cap**. **style** = 6 sections (Large/Mid/Small/Micro cap, Multibagger, Most Volatile-SIP), each ~25 stocks ranked by **styles-in-favour across all ~110 investor styles**, with a 👍/•/👎 consensus column. Fundamentals/sector/cap are backtested baskets. | category + section tabs |
 | **Themes** | Thematic baskets (High Conviction, Bharat Bargains, Quality, Momentum, Seasonal, Dividend), backtested vs benchmark | — |
 | **News** | Aggregated Indian & global headlines, entity-linked + sentiment-tagged | category filter |
-| **News Impact** | Event → affected-companies fan-out with short- vs long-term impact (e.g. a Tata Sons listing: holders gain, TCS faces overhang, peers unaffected). **Daily / Weekly / Monthly** sessions filter events by horizon | session + per-event |
+| **News Impact** | **Live headlines** (Moneycontrol / Yahoo / ET / Finnhub / NewsAPI) fanned out to the mentioned stocks + sector peers with short- vs long-term impact, plus curated deep-dives (Tata Sons listing…). **Daily / Weekly / Monthly** sessions by recency; each live event links to its source | session + per-event |
 
 The **Algo Signals** screen runs SMA/EMA crossovers, RSI, MACD, Supertrend,
 Bollinger Bands, ROC momentum, ADX/DI, Donchian breakout, and Stochastic on each

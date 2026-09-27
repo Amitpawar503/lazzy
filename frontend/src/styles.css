@@ -261,6 +261,11 @@ select {
   border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600; }
 .seg-btn.on { background: var(--accent, #4b9fff); color: #fff; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
+.event-src { display: inline-block; margin: -4px 0 10px; font-size: 12px; font-weight: 600;
+  color: var(--accent, #4b9fff); text-decoration: none; }
+.event-src:hover { text-decoration: underline; }
+.kind-news { color: var(--up, #16a34a); }
+.kind-flow { color: #b07cff; }
 
 /* Govt & Institutions radar */
 .st-pos { color: var(--up, #16a34a); }

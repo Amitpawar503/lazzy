@@ -233,6 +233,8 @@ class MarketEvent(BaseModel):
     date: str
     summary: str
     impacted: list[ImpactedStock]
+    url: str = ""            # source article link (live events)
+    source: str = "curated"  # live | curated
 
 
 class EventList(BaseModel):

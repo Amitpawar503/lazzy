@@ -266,6 +266,8 @@ export interface MarketEvent {
   date: string;
   summary: string;
   impacted: ImpactedStock[];
+  url?: string;       // source article link (live events)
+  source?: string;    // live | curated
 }
 export type ImpactSession = "all" | "daily" | "weekly" | "monthly";
 
