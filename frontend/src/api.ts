@@ -262,9 +262,33 @@ export interface MarketEvent {
   title: string;
   entity: string;
   kind: string;
+  session: string;   // daily | weekly | monthly
   date: string;
   summary: string;
   impacted: ImpactedStock[];
+}
+export type ImpactSession = "all" | "daily" | "weekly" | "monthly";
+
+// --- Govt & Institutions radar ---
+export interface PolicySector {
+  sector: string; stance: string; score: number; policy: string;
+  beneficiaries: string[]; note: string;
+}
+export interface GovtHolding {
+  symbol: string; name: string; sector: string; holder: string;
+  holding_pct: number; stance: string; action: string;
+}
+export interface InstHolding { symbol: string; name: string; action: string; detail: string; }
+export interface Institution { name: string; type: string; note: string; holdings: InstHolding[]; }
+export interface GovtPick {
+  symbol: string; name: string; sector: string; score: number;
+  verdict: string; reasons: string[];
+}
+export interface GovtRadar {
+  policy_sectors: PolicySector[];
+  govt_holdings: GovtHolding[];
+  institutions: Institution[];
+  picks: GovtPick[];
 }
 export interface EventList {
   count: number;
@@ -309,7 +333,9 @@ export const api = {
   styleSections: () => get<StyleSections>(`/api/style/sections`),
   news: (category: "all" | "india" | "global", limit: number) =>
     get<NewsFeed>(`/api/news?category=${category}&limit=${limit}`),
-  events: () => get<EventList>(`/api/impact/events`),
+  events: (session: ImpactSession = "all") =>
+    get<EventList>(`/api/impact/events?session=${session}`),
+  govtRadar: () => get<GovtRadar>(`/api/govt/radar`),
   depth: (symbol: string) => get<MarketDepth>(`/api/depth/${encodeURIComponent(symbol)}`),
   stockNews: (symbol: string, limit = 20) =>
     get<{ symbol: string; count: number; items: NewsItem[] }>(

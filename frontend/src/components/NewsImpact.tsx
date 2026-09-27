@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type EventList, type ImpactedStock, type MarketEvent } from "../api";
+import { api, type EventList, type ImpactedStock, type ImpactSession, type MarketEvent } from "../api";
 import { useStockDetail } from "./StockDetail";
+
+const SESSIONS: { id: ImpactSession; label: string; hint: string }[] = [
+  { id: "daily", label: "Daily", hint: "Today's tape reaction" },
+  { id: "weekly", label: "Weekly", hint: "This week's themes" },
+  { id: "monthly", label: "Monthly", hint: "Structural / policy" },
+  { id: "all", label: "All", hint: "Every session" },
+];
 
 function dirColor(v: number) {
   return v > 2 ? "#4fb477" : v < -2 ? "#d0645a" : "var(--muted)";
@@ -46,13 +53,15 @@ export default function NewsImpact() {
   const [data, setData] = useState<EventList | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
+  const [session, setSession] = useState<ImpactSession>("daily");
 
   useEffect(() => {
-    api.events().then((d) => {
+    setData(null);
+    api.events(session).then((d) => {
       setData(d);
       setSelId(d.events[0]?.id ?? null);
     }).catch((e) => setErr(String(e)));
-  }, []);
+  }, [session]);
 
   const sel: MarketEvent | undefined = useMemo(
     () => data?.events.find((e) => e.id === selId),
@@ -69,9 +78,24 @@ export default function NewsImpact() {
             long-term impact, and which are <em>not</em> materially impacted.
           </p>
         </div>
+        <div className="seg">
+          {SESSIONS.map((s) => (
+            <button
+              key={s.id}
+              className={`seg-btn ${s.id === session ? "on" : ""}`}
+              onClick={() => setSession(s.id)}
+              title={s.hint}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {err && <div className="error">Failed to load: {err}</div>}
+      {data && data.events.length === 0 && (
+        <div className="empty">No {session} events right now.</div>
+      )}
 
       <div className="impact-layout">
         <aside className="event-list">

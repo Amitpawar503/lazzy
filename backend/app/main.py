@@ -40,7 +40,7 @@ class SafeJSONResponse(JSONResponse):
 from app import __version__
 from app.config import get_settings
 from app.routers import (
-    ai, fiidii, health, heatmap, impact, news, screener, signals, stock,
+    ai, fiidii, govt, health, heatmap, impact, news, screener, signals, stock,
     strategies, stream, style,
 )
 
@@ -91,6 +91,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(heatmap.router)
 app.include_router(fiidii.router)
+app.include_router(govt.router)
 app.include_router(signals.router)
 app.include_router(screener.router)
 app.include_router(news.router)

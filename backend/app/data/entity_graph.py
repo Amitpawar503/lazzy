@@ -26,12 +26,27 @@ EXTRA_NAMES = {
     "TATAELXSI": "Tata Elxsi",
 }
 
+EXTRA_NAMES.update({
+    "HDFCBANK": "HDFC Bank", "ICICIBANK": "ICICI Bank", "AXISBANK": "Axis Bank",
+    "MARUTI": "Maruti Suzuki", "M&M": "Mahindra & Mahindra", "BEL": "Bharat Electronics",
+    "HAL": "Hindustan Aeronautics", "BHEL": "BHEL", "MAZDOCK": "Mazagon Dock",
+    "SOLARINDS": "Solar Industries", "IRFC": "Indian Railway Finance Corp",
+    "RVNL": "Rail Vikas Nigam", "TITAGARH": "Titagarh Rail", "NTPC": "NTPC",
+    "POWERGRID": "Power Grid", "COALINDIA": "Coal India", "ONGC": "ONGC",
+    "SUZLON": "Suzlon Energy", "INOXWIND": "Inox Wind",
+})
+
+# session: which "news session" this event belongs to —
+#   daily   = breaking / today's tape reaction
+#   weekly  = this week's theme (earnings, sector moves)
+#   monthly = structural / policy / corporate-action horizon
 EVENTS: list[dict] = [
     {
         "id": "e_tatasons_listing",
         "title": "Tata Sons weighs a stock-market listing",
         "entity": "Tata Sons",
         "kind": "listing",
+        "session": "monthly",
         "date": "2026-09-18",
         "summary": (
             "Tata Sons — the unlisted holding company of the Tata group — is "
@@ -92,6 +107,7 @@ EVENTS: list[dict] = [
         "title": "IT majors cautious on FY27 guidance",
         "entity": "Indian IT sector",
         "kind": "earnings",
+        "session": "weekly",
         "date": "2026-09-18",
         "summary": "Soft discretionary spend weighs on near-term IT services demand.",
         "impacted": [
@@ -112,7 +128,8 @@ EVENTS: list[dict] = [
         "title": "Metal stocks slip on China demand worries",
         "entity": "Metals sector",
         "kind": "policy",
-        "date": "2026-09-17",
+        "session": "daily",
+        "date": "2026-09-19",
         "summary": "Weaker global cues pressure steel and aluminium names.",
         "impacted": [
             {"symbol": "TATASTEEL", "relation": "peer", "relation_detail": "Steel",
@@ -122,6 +139,85 @@ EVENTS: list[dict] = [
             {"symbol": "HINDALCO", "relation": "peer", "relation_detail": "Aluminium",
              "lean": -0.4, "st": -0.5, "lt": -0.2,
              "rationale": "Novelis mix partially offsets."},
+        ],
+    },
+    # --- daily ---
+    {
+        "id": "e_fii_banks",
+        "title": "FII inflows lift private banks intraday",
+        "entity": "Banking sector",
+        "kind": "flow",
+        "session": "daily",
+        "date": "2026-09-19",
+        "summary": "Foreign buying pushes large private banks higher through the session.",
+        "impacted": [
+            {"symbol": "HDFCBANK", "relation": "peer", "relation_detail": "Large private bank",
+             "lean": 0.6, "st": 0.7, "lt": 0.3, "rationale": "Heaviest FII index weight benefits first."},
+            {"symbol": "ICICIBANK", "relation": "peer", "relation_detail": "Large private bank",
+             "lean": 0.55, "st": 0.65, "lt": 0.3, "rationale": "Strong FII ownership + earnings momentum."},
+            {"symbol": "AXISBANK", "relation": "peer", "relation_detail": "Large private bank",
+             "lean": 0.45, "st": 0.55, "lt": 0.25, "rationale": "Rides the flow, cheaper valuation."},
+        ],
+    },
+    # --- weekly ---
+    {
+        "id": "e_auto_festive",
+        "title": "Auto sales momentum builds into the festive week",
+        "entity": "Auto sector",
+        "kind": "earnings",
+        "session": "weekly",
+        "date": "2026-09-16",
+        "summary": "Festive bookings and new launches lift passenger-vehicle makers this week.",
+        "impacted": [
+            {"symbol": "MARUTI", "relation": "peer", "relation_detail": "Market leader PV",
+             "lean": 0.55, "st": 0.5, "lt": 0.45, "rationale": "Volume leverage to festive demand."},
+            {"symbol": "M&M", "relation": "peer", "relation_detail": "SUV + tractors",
+             "lean": 0.5, "st": 0.45, "lt": 0.5, "rationale": "SUV mix + rural recovery."},
+            {"symbol": "TATAMOTORS", "relation": "peer", "relation_detail": "PV + EV + JLR",
+             "lean": 0.4, "st": 0.4, "lt": 0.4, "rationale": "EV share gains; JLR swing factor."},
+        ],
+    },
+    # --- monthly (policy / structural) ---
+    {
+        "id": "e_defence_capex",
+        "title": "Govt pushes defence indigenisation + capex order pipeline",
+        "entity": "Government of India",
+        "kind": "policy",
+        "session": "monthly",
+        "date": "2026-09-05",
+        "summary": (
+            "Higher defence capex, an expanded positive-indigenisation list and export "
+            "targets favour domestic defence manufacturers over a multi-quarter horizon."
+        ),
+        "impacted": [
+            {"symbol": "HAL", "relation": "beneficiary", "relation_detail": "Aircraft/engines PSU",
+             "lean": 0.8, "st": 0.5, "lt": 0.9, "rationale": "Large order book from indigenisation."},
+            {"symbol": "BEL", "relation": "beneficiary", "relation_detail": "Defence electronics PSU",
+             "lean": 0.8, "st": 0.5, "lt": 0.9, "rationale": "Radar/EW orders + healthy margins."},
+            {"symbol": "MAZDOCK", "relation": "beneficiary", "relation_detail": "Warship/submarine PSU",
+             "lean": 0.7, "st": 0.45, "lt": 0.85, "rationale": "Naval order pipeline visibility."},
+            {"symbol": "SOLARINDS", "relation": "beneficiary", "relation_detail": "Explosives/defence",
+             "lean": 0.6, "st": 0.4, "lt": 0.75, "rationale": "Defence + export ramp."},
+        ],
+    },
+    {
+        "id": "e_railway_capex",
+        "title": "Record railway capex + Vande Bharat / freight corridor orders",
+        "entity": "Government of India",
+        "kind": "policy",
+        "session": "monthly",
+        "date": "2026-09-02",
+        "summary": (
+            "Sustained railway capex, rolling-stock tenders and electrification favour "
+            "railway PSUs and rolling-stock makers structurally."
+        ),
+        "impacted": [
+            {"symbol": "IRFC", "relation": "beneficiary", "relation_detail": "Railway financing PSU",
+             "lean": 0.6, "st": 0.4, "lt": 0.75, "rationale": "Balance-sheet growth funds capex."},
+            {"symbol": "RVNL", "relation": "beneficiary", "relation_detail": "Rail infra execution PSU",
+             "lean": 0.7, "st": 0.45, "lt": 0.8, "rationale": "Order inflow from network expansion."},
+            {"symbol": "TITAGARH", "relation": "beneficiary", "relation_detail": "Rolling stock",
+             "lean": 0.65, "st": 0.45, "lt": 0.8, "rationale": "Vande Bharat + wagon orders."},
         ],
     },
 ]

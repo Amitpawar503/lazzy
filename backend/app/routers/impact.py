@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import EventList, MarketEvent
 from app.services.impact import get_event, list_events
@@ -9,8 +9,10 @@ router = APIRouter(prefix="/api/impact", tags=["news-impact"])
 
 
 @router.get("/events", response_model=EventList, summary="Market events + impacted companies")
-def events() -> EventList:
-    return list_events()
+def events(
+    session: str = Query("all", pattern="^(all|daily|weekly|monthly)$"),
+) -> EventList:
+    return list_events(session=session)
 
 
 @router.get("/events/{event_id}", response_model=MarketEvent, summary="One event's impact fan-out")

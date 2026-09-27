@@ -254,6 +254,54 @@ select {
 .sd-section { margin-top: 16px; }
 .sd-section h3 { margin: 0 0 10px; font-size: 14px; }
 
+/* Segmented control (session / view switch) */
+.seg { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 3px; flex-wrap: wrap; }
+.seg-btn { background: transparent; border: 0; color: var(--muted); padding: 6px 12px;
+  border-radius: 7px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.seg-btn.on { background: var(--accent, #4b9fff); color: #fff; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+
+/* Govt & Institutions radar */
+.st-pos { color: var(--up, #16a34a); }
+.st-neg { color: var(--dn, #dc2626); }
+.st-neu { color: var(--muted); }
+.gr-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid currentColor; text-transform: capitalize; white-space: nowrap; }
+.gr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.gr-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.gr-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.gr-score { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.gr-score-bar { flex: 1; height: 8px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+.gr-score-bar i { display: block; height: 100%; background: linear-gradient(90deg, #4b9fff, #16a34a); }
+.gr-sector { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.gr-reasons { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.gr-reasons li { font-size: 12px; color: var(--fg); }
+.gr-list { display: flex; flex-direction: column; gap: 10px; }
+.gr-policy { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.gr-policy-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gr-meter { flex: 1; min-width: 120px; height: 8px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+.gr-meter i { display: block; height: 100%; background: linear-gradient(90deg, #4b9fff, #16a34a); }
+.gr-score-n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.gr-policy-txt { font-size: 13px; margin: 8px 0; }
+.gr-benef { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; font-weight: 600; cursor: pointer; color: inherit; }
+.chip:hover { border-color: var(--accent, #4b9fff); }
+.gr-note { color: var(--muted); font-size: 12px; }
+.gr-table { display: flex; flex-direction: column; }
+.gr-th, .gr-tr { display: grid; grid-template-columns: 1.6fr 1fr 1.1fr 0.7fr 0.9fr 2fr;
+  gap: 8px; align-items: center; padding: 9px 10px; }
+.gr-th { color: var(--muted); font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+.gr-tr { border-bottom: 1px solid var(--line); font-size: 13px; }
+.gr-tr .num { font-variant-numeric: tabular-nums; }
+.gr-action { color: var(--muted); font-size: 12px; }
+.gr-inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.gr-inst { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.gr-inst h3 { margin: 0 0 4px; font-size: 15px; }
+.gr-inst-row { display: grid; grid-template-columns: 1.4fr auto 1.6fr; gap: 8px; align-items: center;
+  padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; }
+
 /* Per-stock news list */
 .sn-list { display: flex; flex-direction: column; gap: 6px; }
 .sn-item { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline;

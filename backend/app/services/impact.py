@@ -55,19 +55,22 @@ def _build_event(ev: dict, names: dict[str, str]) -> dict:
         "title": ev["title"],
         "entity": ev["entity"],
         "kind": ev["kind"],
+        "session": ev.get("session", "daily"),
         "date": ev["date"],
         "summary": ev["summary"],
         "impacted": impacted,
     }
 
 
-def list_events() -> dict:
+def list_events(session: str = "all") -> dict:
     def _load():
         names = _name_map()
         return [_build_event(ev, names) for ev in EVENTS]
 
     ttl = get_settings().cache_ttl_seconds
-    events = cached("impact:events:v1", ttl, _load)
+    events = cached("impact:events:v2", ttl, _load)
+    if session and session != "all":
+        events = [e for e in events if e.get("session") == session]
     return {"count": len(events), "events": events}
 
 

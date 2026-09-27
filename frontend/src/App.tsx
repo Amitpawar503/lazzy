@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import Heatmap360 from "./components/Heatmap360";
-import SectorHeatmap from "./components/SectorHeatmap";
+import GovtRadar from "./components/GovtRadar";
 import FiiDiiActivity from "./components/FiiDiiActivity";
 import SignalScorecard from "./components/SignalScorecard";
 import Screeners from "./components/Screeners";
@@ -10,11 +10,11 @@ import NewsImpact from "./components/NewsImpact";
 import { StockDetailProvider } from "./components/StockDetail";
 import Strategies from "./components/Strategies";
 
-type Tab = "360" | "sectors" | "fiidii" | "signals" | "screeners" | "news" | "impact" | "ideas" | "themes";
+type Tab = "360" | "govt" | "fiidii" | "signals" | "screeners" | "news" | "impact" | "ideas" | "themes";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "360", label: "360° Market" },
-  { id: "sectors", label: "Sector Heatmap" },
+  { id: "govt", label: "Govt & Institutions" },
   { id: "screeners", label: "Best Stocks" },
   { id: "ideas", label: "Ideas" },
   { id: "themes", label: "Themes" },
@@ -57,7 +57,7 @@ export default function App() {
 
       <main className="content">
         {tab === "360" && <Heatmap360 />}
-        {tab === "sectors" && <SectorHeatmap />}
+        {tab === "govt" && <GovtRadar />}
         {tab === "fiidii" && <FiiDiiActivity />}
         {tab === "signals" && <SignalScorecard />}
         {tab === "screeners" && <Screeners />}

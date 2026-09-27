@@ -228,7 +228,8 @@ class MarketEvent(BaseModel):
     id: str
     title: str
     entity: str           # the subject entity (e.g. "Tata Sons")
-    kind: str             # listing | earnings | policy | mna | rating | management
+    kind: str             # listing | earnings | policy | mna | rating | management | flow
+    session: str = "daily"  # daily | weekly | monthly (news session horizon)
     date: str
     summary: str
     impacted: list[ImpactedStock]

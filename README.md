@@ -33,14 +33,14 @@ cd frontend && npm install && npm run dev
 | Screen | Description | Top-N control |
 |--------|-------------|---------------|
 | **360° Market** | Treemap: box size = market cap, colour = return over 1d/1w/1m | ✅ `top_n` |
-| **Sector Heatmap** | Market-cap-weighted return per sector, with top gainer/loser | timeframe |
+| **Govt & Institutions** | Where the **Govt of India** + big institutions (LIC/EPFO/SUUTI/SBI MF) are **buying vs selling**, sectors with **policy tailwinds** (defence, railways, renewables, PLI…), and a synthesized **"stocks that can rise on govt decisions"** pick list | view switch |
 | **Best Stocks** | Screeners by **sector / cap / momentum / seasonal**; sector & cap show **subsections** (per sector / large-mid-small-micro), each row showing which algos push it up ▲ / down ▼ and by how much | ✅ `top_n` + dimension |
 | **FII/DII Activity** | Net institutional cash flows + stocks added / removed | ✅ `top_n` |
 | **Algo Signals** | 10 algorithms vote per stock — how many are +ve / −ve and the net conviction, with a per-algorithm drilldown | ✅ `top_n` + view/sort |
 | **Ideas** | Categories **style / fundamentals / sector / cap**. **style** = 6 sections (Large/Mid/Small/Micro cap, Multibagger, Most Volatile-SIP), each ~25 stocks ranked by **styles-in-favour across all ~110 investor styles**, with a 👍/•/👎 consensus column. Fundamentals/sector/cap are backtested baskets. | category + section tabs |
 | **Themes** | Thematic baskets (High Conviction, Bharat Bargains, Quality, Momentum, Seasonal, Dividend), backtested vs benchmark | — |
 | **News** | Aggregated Indian & global headlines, entity-linked + sentiment-tagged | category filter |
-| **News Impact** | Event → affected-companies fan-out with short- vs long-term impact (e.g. a Tata Sons listing: holders gain, TCS faces overhang, peers unaffected) | per-event |
+| **News Impact** | Event → affected-companies fan-out with short- vs long-term impact (e.g. a Tata Sons listing: holders gain, TCS faces overhang, peers unaffected). **Daily / Weekly / Monthly** sessions filter events by horizon | session + per-event |
 
 The **Algo Signals** screen runs SMA/EMA crossovers, RSI, MACD, Supertrend,
 Bollinger Bands, ROC momentum, ADX/DI, Donchian breakout, and Stochastic on each
