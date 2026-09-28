@@ -4,6 +4,7 @@ import com.airtel.userprofile.contest.service.PiiEncryptionDecryption;
 import com.airtel.userprofile.eventpass.config.EventPassProperties;
 import com.airtel.userprofile.eventpass.exception.QrExpiredException;
 import com.airtel.userprofile.eventpass.exception.QrInvalidException;
+import com.airtel.userprofile.eventpass.service.CachedQr;
 import com.airtel.userprofile.eventpass.service.QrClaims;
 import com.airtel.userprofile.eventpass.service.QrIssuanceStore;
 import com.airtel.userprofile.eventpass.service.QrTokenService;
@@ -54,7 +55,7 @@ public class QrTokenServiceImpl implements QrTokenService {
 	private final PublicKey verificationKey;  // from KMS/HSM config bean
 
 	@Override
-	public String issue(String msisdn, String deviceId, Set<String> wonEventIds) {
+	public CachedQr issue(String msisdn, String deviceId, Set<String> wonEventIds) {
 		Instant now = Instant.now();
 		Instant exp = now.plusSeconds(props.getQrTtlSeconds());
 		String jti = UUID.randomUUID().toString();
@@ -72,10 +73,13 @@ public class QrTokenServiceImpl implements QrTokenService {
 				.signWith(signingKey)
 				.compact();
 
-		// register as the single-active token; TTL matches the token so the pointer self-expires
-		issuanceStore.setLatest(msisdn, jti, props.getQrTtlSeconds());
+		CachedQr cached = CachedQr.builder()
+				.jti(jti).token(token).deviceId(deviceId).expiresAt(exp).build();
+
+		// cache as the single-active QR; TTL matches the token so the record self-expires
+		issuanceStore.store(msisdn, cached, props.getQrTtlSeconds());
 		log.debug("Issued QR for msisdn={} jti={} events={}", msisdn, jti, wonEventIds);
-		return token;
+		return cached;
 	}
 
 	@Override

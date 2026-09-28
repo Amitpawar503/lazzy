@@ -31,12 +31,33 @@ public class MembershipQrController {
 
 	private final MembershipQrService membershipQrService;
 
+	/** Create a new QR (always mints). */
 	@PostMapping("/v1/membership/qr")
-	@ApiOperation(value = "Generate/refresh the signed membership QR (carries won eventIds)")
+	@ApiOperation(value = "Generate the signed membership QR (carries won eventIds)")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<QrGenerateResponse> generate(
 			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
 			@Valid @RequestBody QrGenerateRequest request) {
 		return Response.getSuccessResponse(membershipQrService.generate(ivUser, request.getDeviceId()));
+	}
+
+	/** Validate / get-or-create: return the cached live QR if present, else mint a new one. */
+	@PostMapping("/v1/membership/qr/validate")
+	@ApiOperation(value = "Return the cached live QR if present in the fast store, else create a new one")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<QrGenerateResponse> validate(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
+			@Valid @RequestBody QrGenerateRequest request) {
+		return Response.getSuccessResponse(membershipQrService.validateOrGenerate(ivUser, request.getDeviceId()));
+	}
+
+	/** Explicit refresh: always mint a new QR, superseding the previous one. */
+	@PostMapping("/v1/membership/qr/refresh")
+	@ApiOperation(value = "Force a new membership QR (supersedes the previous one)")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<QrGenerateResponse> refresh(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
+			@Valid @RequestBody QrGenerateRequest request) {
+		return Response.getSuccessResponse(membershipQrService.refresh(ivUser, request.getDeviceId()));
 	}
 }

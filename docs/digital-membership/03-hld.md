@@ -458,10 +458,15 @@ column names the internal module that handles each.
 
 | # | Method / Endpoint | Owning component (in User Profile Service) | Caller | Purpose | Key inputs | Success output |
 |---|---|---|---|---|---|---|
-| 1 | `POST /v1/agents/whitelist` | Agent Whitelist | Admin / eng | Whitelist an agent **MSISDN** for an event with its checkpoints | `msisdn`, `eventId`, `checkpoints[]` | whitelist row created/updated |
+| 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Create** — whitelist an agent MSISDN for an event with checkpoints | `msisdn`, `eventId`, `checkpoints[]`, `active?` | `{whitelistId, status}` |
+| 1b | `GET /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Read** — one row (`eventId`+`msisdn`) or all rows for an event | `eventId`, `msisdn?` | `[{eventId, msisdn, checkpoints[], active}]` |
+| 1c | `PUT /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Update** — change checkpoints and/or active flag | `eventId`, `msisdn`, `checkpoints?`, `active?` | updated row |
+| 1d | `DELETE /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Delete** — remove the `(eventId, msisdn)` row | `eventId`, `msisdn` | `{status:"DELETED"}` |
 | 2 | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | **Single call:** validate the agent, list authorized events + checkpoints, **and open a session** | agent `msisdn` (from app auth) | `{authorized, events[], agentSessionId}` |
 | 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | Record an entry after scanning (session via `X-Agent-Session` header) | `qrToken`, `eventId`, `checkpoint`, `scanRequestId` | `ENTRY_ALLOWED` / duplicate / other-device / expired |
-| 4 | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | Generate the signed QR carrying **won `eventId`s** | `deviceId`, `timestamp` (+ customer `msisdn` = `IV_USER`) | signed `qrToken` (+ `expiresAt`) |
+| 4a | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | **Generate** — always mint a fresh signed QR | `deviceId`, `timestamp` (+ `IV_USER`) | signed `qrToken` (+ `expiresAt`) |
+| 4b | `POST /v1/membership/qr/validate` | QR Generation | Thanks App (customer) | **Validate / get-or-create** — return the cached live QR from Aerospike if present, else mint new | `deviceId` (+ `IV_USER`) | signed `qrToken` (+ `expiresAt`) |
+| 4c | `POST /v1/membership/qr/refresh` | QR Generation | Thanks App (customer) | **Refresh** — force a new QR (supersede the previous) | `deviceId` (+ `IV_USER`) | signed `qrToken` (+ `expiresAt`) |
 | 5 | `POST /v1/admin/winners` | Contest (winner write) | Admin / eng | **Mark/update a winner** on the customer's existing `contest_entries` doc (sets `winnerInfo`) | `eventId`, `msisdn`, `rank?`, `drawId?` | `{entriesUpdated, status}` |
 
 **Notes**
@@ -471,6 +476,8 @@ column names the internal module that handles each.
 - **Whitelist carries checkpoints** — a `(eventId, msisdn)` row lists ENTRY, GOODIE, or both; every scan's `(eventId, checkpoint)` is re-checked live against it.
 - **Every entry decision is HTTP 200 + callback** (INVALID_QR / QR_EXPIRED / STAFF_SESSION_INVALID included) so the scanner always renders a result; only unexpected faults map to `SERVICE_UNAVAILABLE`.
 - **Winners: draw or admin API** — winners are normally produced by the existing **contest draw** (`contest_entries.winnerInfo`). **API 5** is a manual override that sets `winnerInfo` on the customer's existing entry; it **never creates an entry** (the customer must have played the contest). A newly-marked win is picked up on the customer's next QR refresh.
+- **Whitelist CRUD** — API 1 is a full admin CRUD (`POST` create, `GET` read, `PUT` update, `DELETE`) on `event_agent_whitelist`.
+- **QR generate vs validate vs refresh** — `validate` (4b) is get-or-create: it returns the **cached live QR** from the Aerospike active-QR store if one exists for this customer+device, else mints a new one (the default the app calls on card open). `generate` (4a) and `refresh` (4c) always mint a fresh QR (supersede). The active-QR store now caches the **whole token** (not just the `jti`) so validate can return it as-is.
 
 ### 9.1 API 1 — Whitelist an agent MSISDN (with checkpoints)
 

@@ -25,4 +25,7 @@ public class WhitelistUpsertRequest {
 
 	@NotEmpty
 	private Set<Checkpoint> checkpoints;
+
+	/** Optional on create (defaults to true). On UPDATE (PUT) it toggles the row active/inactive. */
+	private Boolean active;
 }

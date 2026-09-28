@@ -9,8 +9,19 @@ import com.airtel.userprofile.eventpass.enums.Checkpoint;
 /** Agent whitelist validation + scanning-session lifecycle (all inside the User Profile Service). */
 public interface AgentAccessService {
 
-	/** API 1 (admin) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
+	// ---- Whitelist admin CRUD (API 1) ----
+
+	/** CREATE (POST) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
 	AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor);
+
+	/** READ (GET) — one whitelist row for (eventId, msisdn), or all rows for an event when msisdn is null. */
+	java.util.List<AgentWhitelistDocument> getWhitelist(String eventId, String msisdn);
+
+	/** UPDATE (PUT) — change checkpoints and/or active on an existing row. @throws IllegalArgumentException if absent. */
+	AgentWhitelistDocument updateWhitelist(WhitelistUpsertRequest request, String actor);
+
+	/** DELETE — remove the (eventId, msisdn) row. @throws IllegalArgumentException if absent. */
+	void deleteWhitelist(String eventId, String msisdn, String actor);
 
 	/**
 	 * API 2 (single call) — validate the agent and **open a single-active session** in one shot.

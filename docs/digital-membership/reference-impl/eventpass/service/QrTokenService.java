@@ -6,10 +6,11 @@ import java.util.Set;
 public interface QrTokenService {
 
 	/**
-	 * Mint a signed token for the customer, embedding the won events, and register it as the
-	 * single-active token for this customer (supersedes any previous QR immediately).
+	 * Mint a signed token for the customer, embedding the won events, and cache it as the
+	 * single-active QR (supersedes any previous QR immediately).
+	 * @return the minted {@link CachedQr} (token + jti + expiresAt).
 	 */
-	String issue(String msisdn, String deviceId, Set<String> wonEventIds);
+	CachedQr issue(String msisdn, String deviceId, Set<String> wonEventIds);
 
 	/**
 	 * Verify signature, version, TTL and single-active status.

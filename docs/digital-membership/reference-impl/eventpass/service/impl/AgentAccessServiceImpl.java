@@ -34,13 +34,47 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 				.eventId(request.getEventId())
 				.msisdn(request.getMsisdn())
 				.checkpoints(request.getCheckpoints())
-				.active(true)
+				.active(request.getActive() == null || request.getActive())   // defaults active
 				.createdBy(actor)
 				.build();
 		AgentWhitelistDocument saved = whitelistDao.upsert(doc);
-		log.info("Whitelist upserted by {}: event={} msisdn={} checkpoints={}",
+		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={}",
 				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints());
 		return saved;
+	}
+
+	@Override
+	public java.util.List<AgentWhitelistDocument> getWhitelist(String eventId, String msisdn) {
+		if (msisdn != null && !msisdn.isBlank()) {
+			AgentWhitelistDocument row = whitelistDao.findOne(eventId, msisdn)
+					.orElseThrow(() -> new IllegalArgumentException(
+							"No whitelist row for event " + eventId + " / msisdn " + msisdn));
+			return java.util.List.of(row);
+		}
+		return whitelistDao.findByEvent(eventId);
+	}
+
+	@Override
+	public AgentWhitelistDocument updateWhitelist(WhitelistUpsertRequest request, String actor) {
+		long matched = whitelistDao.update(
+				request.getEventId(), request.getMsisdn(), request.getCheckpoints(), request.getActive());
+		if (matched == 0) {
+			throw new IllegalArgumentException(
+					"No whitelist row to update for event " + request.getEventId() + " / msisdn " + request.getMsisdn());
+		}
+		log.info("Whitelist updated by {}: event={} msisdn={} checkpoints={} active={}",
+				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints(), request.getActive());
+		return whitelistDao.findOne(request.getEventId(), request.getMsisdn()).orElseThrow();
+	}
+
+	@Override
+	public void deleteWhitelist(String eventId, String msisdn, String actor) {
+		long deleted = whitelistDao.delete(eventId, msisdn);
+		if (deleted == 0) {
+			throw new IllegalArgumentException(
+					"No whitelist row to delete for event " + eventId + " / msisdn " + msisdn);
+		}
+		log.info("Whitelist deleted by {}: event={} msisdn={}", actor, eventId, msisdn);
 	}
 
 	@Override

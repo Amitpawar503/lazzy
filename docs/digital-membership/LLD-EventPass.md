@@ -183,19 +183,24 @@ Every entry decision returns **HTTP 200 + callback**; only unexpected faults map
 
 ---
 
-## 7. API surface — the five endpoints
+## 7. API surface
 
 All endpoints are on the **User Profile Service**. "Owning component" names the internal module.
-**Agent validation is a single API** — `GET /v1/agents/validate` validates the agent, returns the
-authorized events/checkpoints, **and opens the session** (returns `agentSessionId`). There is no
-separate session endpoint.
+The **agent whitelist is a full admin CRUD** (POST/GET/PUT/DELETE); **agent validation is a single
+API** (validate + open session); the **membership QR has generate / validate (get-or-create) /
+refresh**.
 
 | # | Method / Endpoint | Owning component | Caller | Key inputs | Success output |
 |---|---|---|---|---|---|
-| 1 | `POST /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `msisdn`, `eventId`, `checkpoints[]` | whitelist row upserted |
+| 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `msisdn`, `eventId`, `checkpoints[]`, `active?` | `{whitelistId, status}` |
+| 1b | `GET /v1/agents/whitelist?eventId=&msisdn=` | Agent Whitelist | Admin/eng | `eventId`, `msisdn?` | `[{eventId, msisdn, checkpoints[], active}]` |
+| 1c | `PUT /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `eventId`, `msisdn`, `checkpoints?`, `active?` | updated row |
+| 1d | `DELETE /v1/agents/whitelist?eventId=&msisdn=` | Agent Whitelist | Admin/eng | `eventId`, `msisdn` | `{status:"DELETED"}` |
 | 2 | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | agent `msisdn` (`IV_USER`) | `{authorized, events[], agentSessionId}` |
 | 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | `qrToken`, `eventId`, `checkpoint`, `scanRequestId` (+ `X-Agent-Session`) | callback |
-| 4 | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | `deviceId`, `timestamp` (+ `IV_USER`) | `{qrToken, expiresAt}` |
+| 4a | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | `deviceId`, `timestamp` (+ `IV_USER`) | `{qrToken, expiresAt}` (always new) |
+| 4b | `POST /v1/membership/qr/validate` | QR Generation | Thanks App (customer) | `deviceId` (+ `IV_USER`) | cached live QR if present, else new |
+| 4c | `POST /v1/membership/qr/refresh` | QR Generation | Thanks App (customer) | `deviceId` (+ `IV_USER`) | new QR (supersedes) |
 | 5 | `POST /v1/admin/winners` | Contest (winner write) | Admin/eng | `eventId`, `msisdn`, `rank?`, `drawId?` | `{entriesUpdated, status}` |
 | — | `GET /v1/admin/scan-history?msisdn=` | Entry Validation | Admin/eng | `msisdn` | chronological scan log |
 
@@ -203,27 +208,38 @@ separate session endpoint.
 
 | API | Controller | Service | Persistence |
 |---|---|---|---|
-| 1 | `AgentController` | `AgentAccessService.upsertWhitelist` | `AgentWhitelistDao` |
-| 2 | `AgentController` | `AgentAccessService.validate` (validates + opens session) | `AgentWhitelistDao`, `AgentSessionDao` |
+| 1a create | `AgentController.createWhitelist` | `AgentAccessService.upsertWhitelist` | `AgentWhitelistDao.upsert` |
+| 1b read | `AgentController.getWhitelist` | `AgentAccessService.getWhitelist` | `AgentWhitelistDao.findOne`/`findByEvent` |
+| 1c update | `AgentController.updateWhitelist` | `AgentAccessService.updateWhitelist` | `AgentWhitelistDao.update` |
+| 1d delete | `AgentController.deleteWhitelist` | `AgentAccessService.deleteWhitelist` | `AgentWhitelistDao.delete` |
+| 2 | `AgentController.validate` | `AgentAccessService.validate` (validates + opens session) | `AgentWhitelistDao`, `AgentSessionDao` |
 | 3 | `EventEntryController` | `EventEntryService.recordEntry` | `EventRedemptionDao` + `ScanLogDao` |
-| 4 | `MembershipQrController` | `MembershipQrService.generate` | `WinnerLookupService` (read) + `QrTokenService` |
+| 4a/4b/4c | `MembershipQrController` | `MembershipQrService.generate` / `validateOrGenerate` / `refresh` | `WinnerLookupService` (read) + `QrTokenService` + `QrIssuanceStore` (get-or-create) |
 | 5 | `WinnerAdminController` | `WinnerAdminService.markWinner` | `ContestWinnerAdminDao` (write `winnerInfo`) |
 
 **Request/response contracts**
 
 ```
-API 1  POST /v1/agents/whitelist   body { msisdn, eventId, checkpoints:["ENTRY"|"GOODIE"...] }
-                                    -> 200 { whitelistId, status:"UPSERTED" }
-API 2  GET  /v1/agents/validate     (IV_USER = agent msisdn)   // validates AND opens the session
-                                    -> { authorized, events:[{eventId, name?, venue?, checkpoints[]}], agentSessionId }
-API 3  POST /v1/entry               Header X-Agent-Session; body { qrToken, eventId, checkpoint, scanRequestId }
-                                    -> 200 { callback, admit, displayColor, message,
-                                             holderMasked?, firstClaimAt?, otherDeviceId? }
-API 4  POST /v1/membership/qr       Header IV_USER; body { deviceId, timestamp }
-                                    -> 200 { qrToken, expiresAt }        (else 400 non-member)
-API 5  POST /v1/admin/winners       Header IV_USER; body { eventId, msisdn, rank?, drawId? }
-                                    -> 200 { eventId, msisdn, entriesUpdated, status:"WINNER_MARKED" }
-                                    -> 400 if no contest entry for (event, msisdn)
+API 1a POST   /v1/agents/whitelist            body { msisdn, eventId, checkpoints[], active? }
+                                              -> 200 { whitelistId, status:"UPSERTED" }
+API 1b GET    /v1/agents/whitelist?eventId=&msisdn=   (msisdn optional → all rows for the event)
+                                              -> 200 [ { eventId, msisdn, checkpoints[], active, updatedAt } ]
+API 1c PUT    /v1/agents/whitelist            body { eventId, msisdn, checkpoints?, active? }
+                                              -> 200 { eventId, msisdn, checkpoints[], active }   (400 if absent)
+API 1d DELETE /v1/agents/whitelist?eventId=&msisdn=
+                                              -> 200 { eventId, msisdn, status:"DELETED" }        (400 if absent)
+API 2  GET    /v1/agents/validate             (IV_USER = agent msisdn)   // validates AND opens the session
+                                              -> { authorized, events:[{eventId,name?,venue?,checkpoints[]}], agentSessionId }
+API 3  POST   /v1/entry                       Header X-Agent-Session; body { qrToken, eventId, checkpoint, scanRequestId }
+                                              -> 200 { callback, admit, displayColor, message, holderMasked?, firstClaimAt?, otherDeviceId? }
+API 4a POST   /v1/membership/qr               Header IV_USER; body { deviceId, timestamp }   // always new
+                                              -> 200 { qrToken, expiresAt }        (else 400 non-member)
+API 4b POST   /v1/membership/qr/validate      Header IV_USER; body { deviceId }     // cached-if-live else new
+                                              -> 200 { qrToken, expiresAt }
+API 4c POST   /v1/membership/qr/refresh       Header IV_USER; body { deviceId }     // force new
+                                              -> 200 { qrToken, expiresAt }
+API 5  POST   /v1/admin/winners               Header IV_USER; body { eventId, msisdn, rank?, drawId? }
+                                              -> 200 { eventId, msisdn, entriesUpdated, status:"WINNER_MARKED" }  (400 if no entry)
 ```
 
 ---
@@ -305,7 +321,7 @@ sequenceDiagram
   end
 ```
 
-### API 4 — Generate QR (customer)
+### API 4a — Generate QR (customer) — always mint
 ```mermaid
 sequenceDiagram
   autonumber
@@ -313,14 +329,38 @@ sequenceDiagram
   participant UPS as User Profile Service
   participant CE as contest_entries
   participant KMS as KMS/HSM
+  participant AS as Aerospike (active-QR cache)
   App->>UPS: POST /v1/membership/qr { deviceId, timestamp }  (IV_USER)
   UPS->>UPS: eligibility check (member?) else 400
   UPS->>CE: programIds where msisdn has winnerInfo
   CE-->>UPS: wonEventIds[]
   UPS->>KMS: sign { sub=enc(msisdn), dev, events, jti, iat, exp }
-  UPS->>UPS: setLatest(msisdn, jti, ttl)   // single-active
+  UPS->>AS: store CachedQr{jti, token, deviceId, expiresAt} (TTL, single-active)
   UPS-->>App: { qrToken, expiresAt }
 ```
+
+### API 4b — Validate QR (get-or-create): return cached if present in Aerospike, else create
+```mermaid
+sequenceDiagram
+  autonumber
+  participant App as Thanks App (customer)
+  participant UPS as User Profile Service
+  participant AS as Aerospike (active-QR cache)
+  App->>UPS: POST /v1/membership/qr/validate { deviceId }  (IV_USER)
+  UPS->>UPS: eligibility check (member?) else 400
+  UPS->>AS: getActive(msisdn)
+  alt cached & same device & not expired
+    AS-->>UPS: CachedQr{token, expiresAt}
+    UPS-->>App: { qrToken, expiresAt }   // returned as-is, no re-mint
+  else miss / expired / different device
+    UPS->>UPS: generate (mint new + cache) — see 4a
+    UPS-->>App: { qrToken, expiresAt }
+  end
+```
+
+### API 4c — Refresh QR — force new
+`POST /v1/membership/qr/refresh` → `MembershipQrService.refresh` → mints a fresh QR (same as 4a),
+superseding the cached one. Use when the customer taps **Refresh** (or after a `QR_EXPIRED` at the gate).
 
 ### API 5 — Mark/update winner (admin) — writes `contest_entries.winnerInfo`
 
@@ -498,6 +538,74 @@ Content-Type: application/json
 
 ---
 
+## 8B. curl — whitelist CRUD & QR validate/refresh
+
+`$BASE` = service base URL (e.g. `https://userprofile.internal`).
+
+**Whitelist — CREATE (POST)**
+```bash
+curl -sS -X POST "$BASE/v1/agents/whitelist" \
+  -H "IV_USER: 9812300000" -H "Content-Type: application/json" \
+  -d '{ "eventId":"ARTLPPAZK", "msisdn":"7000000001", "checkpoints":["ENTRY","GOODIE"] }'
+# 200 { "successful": true, "data": { "whitelistId":"6f2e...", "status":"UPSERTED" } }
+```
+**Whitelist — READ (GET one, or all rows for an event)**
+```bash
+# one row
+curl -sS "$BASE/v1/agents/whitelist?eventId=ARTLPPAZK&msisdn=7000000001" -H "IV_USER: 9812300000"
+# all rows for the event (omit msisdn)
+curl -sS "$BASE/v1/agents/whitelist?eventId=ARTLPPAZK" -H "IV_USER: 9812300000"
+# 200 { "successful": true, "data": [ { "eventId":"ARTLPPAZK","msisdn":"7000000001","checkpoints":["ENTRY","GOODIE"],"active":true,"updatedAt":"2026-09-28T09:00:00Z" } ] }
+# 400 (get one, not found) { "successful": false, "error": { "code":"bad_request","message":"No whitelist row for event ARTLPPAZK / msisdn 7000000001" } }
+```
+**Whitelist — UPDATE (PUT)** — change checkpoints and/or deactivate
+```bash
+curl -sS -X PUT "$BASE/v1/agents/whitelist" \
+  -H "IV_USER: 9812300000" -H "Content-Type: application/json" \
+  -d '{ "eventId":"ARTLPPAZK", "msisdn":"7000000001", "checkpoints":["GOODIE"], "active":true }'
+# 200 { "successful": true, "data": { "eventId":"ARTLPPAZK","msisdn":"7000000001","checkpoints":["GOODIE"],"active":true } }
+# 400 (absent) { "successful": false, "error": { "code":"bad_request","message":"No whitelist row to update ..." } }
+```
+**Whitelist — DELETE**
+```bash
+curl -sS -X DELETE "$BASE/v1/agents/whitelist?eventId=ARTLPPAZK&msisdn=7000000001" -H "IV_USER: 9812300000"
+# 200 { "successful": true, "data": { "eventId":"ARTLPPAZK","msisdn":"7000000001","status":"DELETED" } }
+# 400 (absent) { "successful": false, "error": { "code":"bad_request","message":"No whitelist row to delete ..." } }
+```
+
+**QR — VALIDATE (get-or-create)** — returns the cached live QR if present, else mints a new one
+```bash
+curl -sS -X POST "$BASE/v1/membership/qr/validate" \
+  -H "IV_USER: 7023398743" -H "Content-Type: application/json" \
+  -d '{ "deviceId":"a1b2c3d4-stable-install-id" }'
+# 200 { "successful": true, "data": { "qrToken":"eyJraWQiOiJrMSIsImFsZyI6IkVTMjU2In0...", "expiresAt":"2026-09-28T10:35:00Z" } }
+# 400 (non-member) { "successful": false, "error": { "code":"bad_request","message":"Not an Advantage Club member" } }
+```
+**QR — REFRESH (force new)**
+```bash
+curl -sS -X POST "$BASE/v1/membership/qr/refresh" \
+  -H "IV_USER: 7023398743" -H "Content-Type: application/json" \
+  -d '{ "deviceId":"a1b2c3d4-stable-install-id" }'
+# 200 { "successful": true, "data": { "qrToken":"<new opaque token>", "expiresAt":"2026-09-28T10:40:00Z" } }
+```
+**QR — GENERATE (always new)** and the other flows, for reference
+```bash
+curl -sS -X POST "$BASE/v1/membership/qr" -H "IV_USER: 7023398743" \
+  -H "Content-Type: application/json" -d '{ "deviceId":"a1b2c3d4-stable-install-id","timestamp":1790000000000 }'
+
+curl -sS "$BASE/v1/agents/validate" -H "IV_USER: 7000000001"     # validate + open session
+
+curl -sS -X POST "$BASE/v1/entry" -H "X-Agent-Session: sess-3f9ac2b1-..." \
+  -H "Content-Type: application/json" \
+  -d '{ "qrToken":"eyJ...","eventId":"ARTLPPAZK","checkpoint":"ENTRY","scanRequestId":"7b3d9e2a-..." }'
+
+curl -sS -X POST "$BASE/v1/admin/winners" -H "IV_USER: 9812300000" \
+  -H "Content-Type: application/json" \
+  -d '{ "eventId":"ARTLPPAZK","msisdn":"7023398743","rank":1,"drawId":"draw-2026-09-28" }'
+```
+
+---
+
 ## 9. Atomic redemption — exactly-once
 
 **Chosen store: MongoDB.** The redeem is an **insert guarded by the unique compound index**
@@ -575,9 +683,9 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 | enums | `Checkpoint`, `EntryCallback` |
 | document | `EventRedemptionDocument`, `AgentWhitelistDocument`, `AgentSessionDocument`, `ScanLogDocument` |
 | dto/request | `QrGenerateRequest`, `EntryScanRequest`, `WhitelistUpsertRequest`, `WinnerUpsertRequest` |
-| dto/response | `QrGenerateResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess` |
+| dto/response | `QrGenerateResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse` |
 | dao | `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `AgentWhitelistDao`(+impl), `AgentSessionDao`(+impl), `ContestWinnerAdminDao`(+impl) |
-| service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl), `MembershipEligibilityService`, `QrClaims` |
+| service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `MembershipEligibilityService`, `QrClaims`, `CachedQr` |
 | controller | `MembershipQrController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
 | exception | `QrInvalidException`, `QrExpiredException`, `AgentSessionInvalidException`, `EventPassExceptionHandler` |
 | converter | `CheckpointConverter` |
@@ -589,6 +697,7 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 
 The complete reference implementation follows, grouped by layer. Drop into
 `src/main/java/com/airtel/userprofile/eventpass/` in the User Profile Service.
+
 
 
 
@@ -986,6 +1095,9 @@ public class WhitelistUpsertRequest {
 
 	@NotEmpty
 	private Set<Checkpoint> checkpoints;
+
+	/** Optional on create (defaults to true). On UPDATE (PUT) it toggles the row active/inactive. */
+	private Boolean active;
 }
 ```
 
@@ -1082,6 +1194,48 @@ public class AgentValidateResponse {
 	private boolean authorized;
 	private List<AgentEventAccess> events;
 	private String agentSessionId;
+}
+```
+
+#### `com/airtel/userprofile/eventpass/dto/response/AgentWhitelistResponse.java`
+
+```java
+package com.airtel.userprofile.eventpass.dto.response;
+
+import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+import java.util.Set;
+
+/** DTO for whitelist read/update responses — never exposes the raw Mongo document to the API. */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class AgentWhitelistResponse {
+
+	private String eventId;
+	private String msisdn;
+	private Set<Checkpoint> checkpoints;
+	private boolean active;
+	private Instant updatedAt;
+
+	public static AgentWhitelistResponse from(AgentWhitelistDocument d) {
+		return AgentWhitelistResponse.builder()
+				.eventId(d.getEventId())
+				.msisdn(d.getMsisdn())
+				.checkpoints(d.getCheckpoints())
+				.active(d.isActive())
+				.updatedAt(d.getUpdatedAt())
+				.build();
+	}
 }
 ```
 
@@ -1186,13 +1340,15 @@ public interface AgentSessionDao {
 package com.airtel.userprofile.eventpass.dao;
 
 import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface AgentWhitelistDao {
 
-	/** Idempotent upsert on (eventId, msisdn) — admin API 1. */
+	/** Idempotent upsert on (eventId, msisdn) — admin CREATE (POST). */
 	AgentWhitelistDocument upsert(AgentWhitelistDocument doc);
 
 	/** All active whitelist rows for an agent — API 2 lists the events/checkpoints they may scan. */
@@ -1200,6 +1356,18 @@ public interface AgentWhitelistDao {
 
 	/** The active row for a specific (eventId, msisdn) — used to authorize a scan. */
 	Optional<AgentWhitelistDocument> findActive(String eventId, String msisdn);
+
+	/** READ: a single row (active or not) for (eventId, msisdn). */
+	Optional<AgentWhitelistDocument> findOne(String eventId, String msisdn);
+
+	/** READ: all whitelist rows for an event (admin listing). */
+	List<AgentWhitelistDocument> findByEvent(String eventId);
+
+	/** UPDATE: set checkpoints and/or active on an existing (eventId, msisdn) row. @return matched count. */
+	long update(String eventId, String msisdn, Set<Checkpoint> checkpoints, Boolean active);
+
+	/** DELETE: hard-delete the (eventId, msisdn) row. @return deleted count. */
+	long delete(String eventId, String msisdn);
 }
 ```
 
@@ -1353,6 +1521,7 @@ package com.airtel.userprofile.eventpass.dao.impl;
 
 import com.airtel.userprofile.eventpass.dao.AgentWhitelistDao;
 import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -1363,6 +1532,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 @RequiredArgsConstructor
@@ -1393,6 +1563,32 @@ public class AgentWhitelistDaoImpl implements AgentWhitelistDao {
 	public Optional<AgentWhitelistDocument> findActive(String eventId, String msisdn) {
 		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn).and("active").is(true));
 		return Optional.ofNullable(mongoTemplate.findOne(q, AgentWhitelistDocument.class));
+	}
+
+	@Override
+	public Optional<AgentWhitelistDocument> findOne(String eventId, String msisdn) {
+		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn));
+		return Optional.ofNullable(mongoTemplate.findOne(q, AgentWhitelistDocument.class));
+	}
+
+	@Override
+	public List<AgentWhitelistDocument> findByEvent(String eventId) {
+		return mongoTemplate.find(new Query(Criteria.where("eventId").is(eventId)), AgentWhitelistDocument.class);
+	}
+
+	@Override
+	public long update(String eventId, String msisdn, Set<Checkpoint> checkpoints, Boolean active) {
+		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn));
+		Update u = new Update().set("updatedAt", Instant.now());
+		if (checkpoints != null) u.set("checkpoints", checkpoints);
+		if (active != null) u.set("active", active);
+		return mongoTemplate.updateFirst(u, q, AgentWhitelistDocument.class).getMatchedCount();
+	}
+
+	@Override
+	public long delete(String eventId, String msisdn) {
+		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn));
+		return mongoTemplate.remove(q, AgentWhitelistDocument.class).getDeletedCount();
 	}
 }
 ```
@@ -1575,8 +1771,19 @@ import com.airtel.userprofile.eventpass.enums.Checkpoint;
 /** Agent whitelist validation + scanning-session lifecycle (all inside the User Profile Service). */
 public interface AgentAccessService {
 
-	/** API 1 (admin) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
+	// ---- Whitelist admin CRUD (API 1) ----
+
+	/** CREATE (POST) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
 	AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor);
+
+	/** READ (GET) — one whitelist row for (eventId, msisdn), or all rows for an event when msisdn is null. */
+	java.util.List<AgentWhitelistDocument> getWhitelist(String eventId, String msisdn);
+
+	/** UPDATE (PUT) — change checkpoints and/or active on an existing row. @throws IllegalArgumentException if absent. */
+	AgentWhitelistDocument updateWhitelist(WhitelistUpsertRequest request, String actor);
+
+	/** DELETE — remove the (eventId, msisdn) row. @throws IllegalArgumentException if absent. */
+	void deleteWhitelist(String eventId, String msisdn, String actor);
 
 	/**
 	 * API 2 (single call) — validate the agent and **open a single-active session** in one shot.
@@ -1592,6 +1799,38 @@ public interface AgentAccessService {
 	 *         revoked, expired, or not whitelisted for that event/checkpoint.
 	 */
 	AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
+}
+```
+
+#### `com/airtel/userprofile/eventpass/service/CachedQr.java`
+
+```java
+package com.airtel.userprofile.eventpass.service;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+
+/**
+ * The active QR cached per customer in the fast store (Aerospike). Holds enough to (a) enforce
+ * single-active via {@code jti}, and (b) <b>return the existing token</b> on validate without
+ * re-minting. TTL of the cache record == the token TTL, so it self-expires with the QR.
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class CachedQr {
+
+	private String jti;
+	private String token;
+	private String deviceId;
+	private Instant expiresAt;
 }
 ```
 
@@ -1643,10 +1882,20 @@ package com.airtel.userprofile.eventpass.service;
 
 import com.airtel.userprofile.eventpass.dto.response.QrGenerateResponse;
 
-/** API 4 — generate/refresh the signed membership QR shown in the Thanks App. */
+/** API 4 family — generate / validate (get-or-create) / refresh the signed membership QR. */
 public interface MembershipQrService {
 
+	/** Always mint a fresh QR (supersedes any previous one). */
 	QrGenerateResponse generate(String msisdn, String deviceId);
+
+	/**
+	 * Get-or-create: if a live QR for this customer+device is already cached in the fast store,
+	 * return it as-is; otherwise mint a new one. This is the default the app calls on card open.
+	 */
+	QrGenerateResponse validateOrGenerate(String msisdn, String deviceId);
+
+	/** Force a new QR (explicit refresh); supersedes the previous one immediately. */
+	QrGenerateResponse refresh(String msisdn, String deviceId);
 }
 ```
 
@@ -1682,18 +1931,26 @@ public class QrClaims {
 ```java
 package com.airtel.userprofile.eventpass.service;
 
+import java.util.Optional;
+
 /**
- * Per-customer "latest jti" pointer with a TTL — the single-active anchor that makes a refresh (or
- * a shared old screenshot) stop working immediately, even within the TTL. Backed by the same fast
- * store the contest module uses (Aerospike / Redis) so it is shared across service instances.
+ * Per-customer active-QR cache with a TTL (Aerospike / Redis), shared across service instances.
+ * It is both the single-active anchor (a refresh/screenshot older than the stored {@code jti}
+ * fails) <b>and</b> the source for QR "validate" (get-or-create): if a live QR is cached, it is
+ * returned as-is instead of minting a new one.
  */
 public interface QrIssuanceStore {
 
-	/** Record {@code jti} as the latest token for {@code msisdn}, expiring after {@code ttlSeconds}. */
-	void setLatest(String msisdn, String jti, long ttlSeconds);
+	/** Store {@code qr} as the active QR for {@code msisdn}, expiring after {@code ttlSeconds}. */
+	void store(String msisdn, CachedQr qr, long ttlSeconds);
 
-	/** True iff {@code jti} is still the latest recorded token for {@code msisdn}. */
-	boolean isLatest(String msisdn, String jti);
+	/** The active (not-yet-expired) cached QR for {@code msisdn}, if any. */
+	Optional<CachedQr> getActive(String msisdn);
+
+	/** True iff {@code jti} is still the active token for {@code msisdn} (single-active check). */
+	default boolean isLatest(String msisdn, String jti) {
+		return getActive(msisdn).map(c -> jti != null && jti.equals(c.getJti())).orElse(false);
+	}
 }
 ```
 
@@ -1708,10 +1965,11 @@ import java.util.Set;
 public interface QrTokenService {
 
 	/**
-	 * Mint a signed token for the customer, embedding the won events, and register it as the
-	 * single-active token for this customer (supersedes any previous QR immediately).
+	 * Mint a signed token for the customer, embedding the won events, and cache it as the
+	 * single-active QR (supersedes any previous QR immediately).
+	 * @return the minted {@link CachedQr} (token + jti + expiresAt).
 	 */
-	String issue(String msisdn, String deviceId, Set<String> wonEventIds);
+	CachedQr issue(String msisdn, String deviceId, Set<String> wonEventIds);
 
 	/**
 	 * Verify signature, version, TTL and single-active status.
@@ -1805,13 +2063,47 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 				.eventId(request.getEventId())
 				.msisdn(request.getMsisdn())
 				.checkpoints(request.getCheckpoints())
-				.active(true)
+				.active(request.getActive() == null || request.getActive())   // defaults active
 				.createdBy(actor)
 				.build();
 		AgentWhitelistDocument saved = whitelistDao.upsert(doc);
-		log.info("Whitelist upserted by {}: event={} msisdn={} checkpoints={}",
+		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={}",
 				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints());
 		return saved;
+	}
+
+	@Override
+	public java.util.List<AgentWhitelistDocument> getWhitelist(String eventId, String msisdn) {
+		if (msisdn != null && !msisdn.isBlank()) {
+			AgentWhitelistDocument row = whitelistDao.findOne(eventId, msisdn)
+					.orElseThrow(() -> new IllegalArgumentException(
+							"No whitelist row for event " + eventId + " / msisdn " + msisdn));
+			return java.util.List.of(row);
+		}
+		return whitelistDao.findByEvent(eventId);
+	}
+
+	@Override
+	public AgentWhitelistDocument updateWhitelist(WhitelistUpsertRequest request, String actor) {
+		long matched = whitelistDao.update(
+				request.getEventId(), request.getMsisdn(), request.getCheckpoints(), request.getActive());
+		if (matched == 0) {
+			throw new IllegalArgumentException(
+					"No whitelist row to update for event " + request.getEventId() + " / msisdn " + request.getMsisdn());
+		}
+		log.info("Whitelist updated by {}: event={} msisdn={} checkpoints={} active={}",
+				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints(), request.getActive());
+		return whitelistDao.findOne(request.getEventId(), request.getMsisdn()).orElseThrow();
+	}
+
+	@Override
+	public void deleteWhitelist(String eventId, String msisdn, String actor) {
+		long deleted = whitelistDao.delete(eventId, msisdn);
+		if (deleted == 0) {
+			throw new IllegalArgumentException(
+					"No whitelist row to delete for event " + eventId + " / msisdn " + msisdn);
+		}
+		log.info("Whitelist deleted by {}: event={} msisdn={}", actor, eventId, msisdn);
 	}
 
 	@Override
@@ -2031,17 +2323,18 @@ public class EventEntryServiceImpl implements EventEntryService {
 ```java
 package com.airtel.userprofile.eventpass.service.impl;
 
-import com.airtel.userprofile.eventpass.config.EventPassProperties;
 import com.airtel.userprofile.eventpass.dto.response.QrGenerateResponse;
+import com.airtel.userprofile.eventpass.service.CachedQr;
 import com.airtel.userprofile.eventpass.service.MembershipEligibilityService;
 import com.airtel.userprofile.eventpass.service.MembershipQrService;
+import com.airtel.userprofile.eventpass.service.QrIssuanceStore;
 import com.airtel.userprofile.eventpass.service.QrTokenService;
 import com.airtel.userprofile.eventpass.service.WinnerLookupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -2052,22 +2345,46 @@ public class MembershipQrServiceImpl implements MembershipQrService {
 	private final MembershipEligibilityService eligibility;
 	private final WinnerLookupService winnerLookup;
 	private final QrTokenService qrTokenService;
-	private final EventPassProperties props;
+	private final QrIssuanceStore issuanceStore;
 
 	@Override
 	public QrGenerateResponse generate(String msisdn, String deviceId) {
-		if (!eligibility.isAdvantageClubMember(msisdn)) {
-			// Non-members never get a membership QR.
-			throw new IllegalArgumentException("Not an Advantage Club member");
-		}
-
+		requireMember(msisdn);
 		// Every member gets a QR; the won events (possibly empty) are embedded and signed in.
 		Set<String> wonEventIds = winnerLookup.findWonEventIds(msisdn);
-		String token = qrTokenService.issue(msisdn, deviceId, wonEventIds);
+		CachedQr issued = qrTokenService.issue(msisdn, deviceId, wonEventIds);
+		return toResponse(issued);
+	}
 
+	@Override
+	public QrGenerateResponse validateOrGenerate(String msisdn, String deviceId) {
+		requireMember(msisdn);
+		// If a live QR for this same device is cached, return it as-is (no re-mint).
+		Optional<CachedQr> cached = issuanceStore.getActive(msisdn);
+		if (cached.isPresent() && deviceId != null && deviceId.equals(cached.get().getDeviceId())) {
+			log.debug("QR validate: returning cached active QR for msisdn={}", msisdn);
+			return toResponse(cached.get());
+		}
+		// Miss (none cached, expired, or different device) → mint a fresh one.
+		return generate(msisdn, deviceId);
+	}
+
+	@Override
+	public QrGenerateResponse refresh(String msisdn, String deviceId) {
+		// Explicit refresh always supersedes the cached QR.
+		return generate(msisdn, deviceId);
+	}
+
+	private void requireMember(String msisdn) {
+		if (!eligibility.isAdvantageClubMember(msisdn)) {
+			throw new IllegalArgumentException("Not an Advantage Club member");
+		}
+	}
+
+	private static QrGenerateResponse toResponse(CachedQr qr) {
 		return QrGenerateResponse.builder()
-				.qrToken(token)
-				.expiresAt(Instant.now().plusSeconds(props.getQrTtlSeconds()))
+				.qrToken(qr.getToken())
+				.expiresAt(qr.getExpiresAt())
 				.build();
 	}
 }
@@ -2078,49 +2395,71 @@ public class MembershipQrServiceImpl implements MembershipQrService {
 ```java
 package com.airtel.userprofile.eventpass.service.impl;
 
+import com.airtel.userprofile.eventpass.service.CachedQr;
 import com.airtel.userprofile.eventpass.service.QrIssuanceStore;
 import com.airtel.userprofile.service.impl.helper.AerospikeManager;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.util.Optional;
+
 /**
- * Aerospike-backed single-active pointer, mirroring how {@code UsedOrderCacheServiceImpl} uses
- * {@link AerospikeManager}. Key = customer msisdn; value = latest jti; record TTL = QR TTL, so the
- * pointer self-expires with the token.
+ * Aerospike-backed active-QR cache, mirroring how {@code UsedOrderCacheServiceImpl} uses
+ * {@link AerospikeManager}. Key = customer msisdn; value = the {@link CachedQr} as JSON; record
+ * TTL = QR TTL, so it self-expires with the token.
  *
- * <p>Platform note: add an {@code AerospikeDetails.EVENT_QR_LATEST} namespace/set and a
- * TTL-aware {@code putDetails} overload to match existing conventions; wired here by name.
+ * <p>Platform note: add an {@code AerospikeDetails.EVENT_QR_LATEST} namespace/set and a TTL-aware
+ * {@code putDetails(key, value, details, ttl, useDisk)} overload; wired here by name.
  */
 @Service
 @Slf4j
 public class QrIssuanceStoreImpl implements QrIssuanceStore {
 
 	private static final boolean USE_DISK = false;
+	private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
 	@Autowired(required = false)
 	private AerospikeManager aerospikeManager;
 
 	@Override
-	public void setLatest(String msisdn, String jti, long ttlSeconds) {
+	public void store(String msisdn, CachedQr qr, long ttlSeconds) {
 		if (aerospikeManager == null) {
-			log.warn("AerospikeManager unavailable; single-active QR pointer not persisted for msisdn={}", msisdn);
+			log.warn("AerospikeManager unavailable; active QR not cached for msisdn={}", msisdn);
 			return;
 		}
-		// putDetails(key, value, details, ttlSeconds, useDisk) — TTL-aware overload
-		aerospikeManager.putDetails(key(msisdn), jti,
-				com.airtel.userprofile.constants.AerospikeDetails.EVENT_QR_LATEST, (int) ttlSeconds, USE_DISK);
+		try {
+			String json = mapper.writeValueAsString(qr);
+			aerospikeManager.putDetails(key(msisdn), json,
+					com.airtel.userprofile.constants.AerospikeDetails.EVENT_QR_LATEST, (int) ttlSeconds, USE_DISK);
+		} catch (Exception e) {
+			log.warn("Failed to cache active QR for msisdn={}: {}", msisdn, e.getMessage());
+		}
 	}
 
 	@Override
-	public boolean isLatest(String msisdn, String jti) {
+	public Optional<CachedQr> getActive(String msisdn) {
 		if (aerospikeManager == null) {
-			// Fail safe: cannot confirm single-active → treat as not latest so the customer refreshes.
-			return false;
+			return Optional.empty();   // fail safe: cannot confirm → caller mints a fresh QR
 		}
-		Object latest = aerospikeManager.getDetails(key(msisdn),
+		Object raw = aerospikeManager.getDetails(key(msisdn),
 				com.airtel.userprofile.constants.AerospikeDetails.EVENT_QR_LATEST, USE_DISK);
-		return latest != null && latest.toString().equals(jti);
+		if (raw == null) {
+			return Optional.empty();
+		}
+		try {
+			CachedQr qr = mapper.readValue(raw.toString(), CachedQr.class);
+			// defensive: honour expiry even if the record has not yet been evicted
+			if (qr.getExpiresAt() != null && qr.getExpiresAt().isBefore(Instant.now())) {
+				return Optional.empty();
+			}
+			return Optional.of(qr);
+		} catch (Exception e) {
+			log.warn("Failed to read cached QR for msisdn={}: {}", msisdn, e.getMessage());
+			return Optional.empty();
+		}
 	}
 
 	private static String key(String msisdn) {
@@ -2138,6 +2477,7 @@ import com.airtel.userprofile.contest.service.PiiEncryptionDecryption;
 import com.airtel.userprofile.eventpass.config.EventPassProperties;
 import com.airtel.userprofile.eventpass.exception.QrExpiredException;
 import com.airtel.userprofile.eventpass.exception.QrInvalidException;
+import com.airtel.userprofile.eventpass.service.CachedQr;
 import com.airtel.userprofile.eventpass.service.QrClaims;
 import com.airtel.userprofile.eventpass.service.QrIssuanceStore;
 import com.airtel.userprofile.eventpass.service.QrTokenService;
@@ -2188,7 +2528,7 @@ public class QrTokenServiceImpl implements QrTokenService {
 	private final PublicKey verificationKey;  // from KMS/HSM config bean
 
 	@Override
-	public String issue(String msisdn, String deviceId, Set<String> wonEventIds) {
+	public CachedQr issue(String msisdn, String deviceId, Set<String> wonEventIds) {
 		Instant now = Instant.now();
 		Instant exp = now.plusSeconds(props.getQrTtlSeconds());
 		String jti = UUID.randomUUID().toString();
@@ -2206,10 +2546,13 @@ public class QrTokenServiceImpl implements QrTokenService {
 				.signWith(signingKey)
 				.compact();
 
-		// register as the single-active token; TTL matches the token so the pointer self-expires
-		issuanceStore.setLatest(msisdn, jti, props.getQrTtlSeconds());
+		CachedQr cached = CachedQr.builder()
+				.jti(jti).token(token).deviceId(deviceId).expiresAt(exp).build();
+
+		// cache as the single-active QR; TTL matches the token so the record self-expires
+		issuanceStore.store(msisdn, cached, props.getQrTtlSeconds());
 		log.debug("Issued QR for msisdn={} jti={} events={}", msisdn, jti, wonEventIds);
-		return token;
+		return cached;
 	}
 
 	@Override
@@ -2387,6 +2730,7 @@ import com.airtel.core.logging.AuditLog;
 import com.airtel.userprofile.constants.UserProfileConstants;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
+import com.airtel.userprofile.eventpass.dto.response.AgentWhitelistResponse;
 import com.airtel.userprofile.eventpass.service.AgentAccessService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -2395,7 +2739,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * API 1 (admin whitelist) + API 2 (single agent validate — which also opens the scanning session).
@@ -2410,15 +2756,53 @@ public class AgentController {
 
 	private final AgentAccessService agentAccessService;
 
-	// ---- API 1: admin whitelist (engineering only; secured upstream) ----
+	// ---- API 1: admin whitelist CRUD (engineering only; secured upstream) ----
+
+	// CREATE
 	@PostMapping("/v1/agents/whitelist")
-	@ApiOperation(value = "Whitelist an agent MSISDN for an event with checkpoints (admin)")
+	@ApiOperation(value = "Create/whitelist an agent MSISDN for an event with checkpoints (admin)")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
-	public Response<Map<String, Object>> whitelist(
+	public Response<Map<String, Object>> createWhitelist(
 			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
 			@Valid @RequestBody WhitelistUpsertRequest request) {
 		var saved = agentAccessService.upsertWhitelist(request, actor);
 		return Response.getSuccessResponse(Map.of("whitelistId", saved.getId(), "status", "UPSERTED"));
+	}
+
+	// READ (one when msisdn given, else all rows for the event)
+	@GetMapping("/v1/agents/whitelist")
+	@ApiOperation(value = "Get whitelist row(s) for an event (all rows, or one when msisdn is given)")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<List<AgentWhitelistResponse>> getWhitelist(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
+			@RequestParam String eventId,
+			@RequestParam(required = false) String msisdn) {
+		List<AgentWhitelistResponse> rows = agentAccessService.getWhitelist(eventId, msisdn).stream()
+				.map(AgentWhitelistResponse::from).collect(Collectors.toList());
+		return Response.getSuccessResponse(rows);
+	}
+
+	// UPDATE
+	@PutMapping("/v1/agents/whitelist")
+	@ApiOperation(value = "Update checkpoints and/or active flag on an existing whitelist row (admin)")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<AgentWhitelistResponse> updateWhitelist(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
+			@Valid @RequestBody WhitelistUpsertRequest request) {
+		return Response.getSuccessResponse(
+				AgentWhitelistResponse.from(agentAccessService.updateWhitelist(request, actor)));
+	}
+
+	// DELETE
+	@DeleteMapping("/v1/agents/whitelist")
+	@ApiOperation(value = "Delete a whitelist row for (eventId, msisdn) (admin)")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<Map<String, Object>> deleteWhitelist(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
+			@RequestParam String eventId,
+			@RequestParam String msisdn) {
+		agentAccessService.deleteWhitelist(eventId, msisdn, actor);
+		return Response.getSuccessResponse(Map.of("eventId", eventId, "msisdn", msisdn, "status", "DELETED"));
 	}
 
 	// ---- API 2: validate agent + open session (single call) ----
@@ -2525,13 +2909,34 @@ public class MembershipQrController {
 
 	private final MembershipQrService membershipQrService;
 
+	/** Create a new QR (always mints). */
 	@PostMapping("/v1/membership/qr")
-	@ApiOperation(value = "Generate/refresh the signed membership QR (carries won eventIds)")
+	@ApiOperation(value = "Generate the signed membership QR (carries won eventIds)")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<QrGenerateResponse> generate(
 			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
 			@Valid @RequestBody QrGenerateRequest request) {
 		return Response.getSuccessResponse(membershipQrService.generate(ivUser, request.getDeviceId()));
+	}
+
+	/** Validate / get-or-create: return the cached live QR if present, else mint a new one. */
+	@PostMapping("/v1/membership/qr/validate")
+	@ApiOperation(value = "Return the cached live QR if present in the fast store, else create a new one")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<QrGenerateResponse> validate(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
+			@Valid @RequestBody QrGenerateRequest request) {
+		return Response.getSuccessResponse(membershipQrService.validateOrGenerate(ivUser, request.getDeviceId()));
+	}
+
+	/** Explicit refresh: always mint a new QR, superseding the previous one. */
+	@PostMapping("/v1/membership/qr/refresh")
+	@ApiOperation(value = "Force a new membership QR (supersedes the previous one)")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<QrGenerateResponse> refresh(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
+			@Valid @RequestBody QrGenerateRequest request) {
+		return Response.getSuccessResponse(membershipQrService.refresh(ivUser, request.getDeviceId()));
 	}
 }
 ```
