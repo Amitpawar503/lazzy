@@ -9,9 +9,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * API 3 — agent posts a decoded QR for a decision. The {@code eventId} is NOT taken from the body;
- * it comes from the agent session. {@code checkpoint} is validated against the agent's authorized
- * set. {@code scanRequestId} is the idempotency key (reuse the same value on retry).
+ * API 3 — agent posts a decoded QR for a decision. {@code eventId} + {@code checkpoint} are the
+ * gate the agent is operating; both are validated against the agent's whitelist (via the session),
+ * so a client cannot self-authorize an event it is not whitelisted for. {@code scanRequestId} is
+ * the idempotency key (reuse the same value on retry).
  */
 @Data
 @NoArgsConstructor
@@ -21,6 +22,9 @@ public class EntryScanRequest {
 
 	@NotBlank
 	private String qrToken;
+
+	@NotBlank
+	private String eventId;
 
 	@NotNull
 	private Checkpoint checkpoint;

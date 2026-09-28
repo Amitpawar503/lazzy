@@ -7,7 +7,6 @@ import com.airtel.core.logging.AuditLog;
 import com.airtel.userprofile.constants.UserProfileConstants;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import com.airtel.userprofile.eventpass.service.AgentAccessService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -19,8 +18,9 @@ import jakarta.validation.Valid;
 import java.util.Map;
 
 /**
- * API 1 (admin whitelist) + API 2 (agent validate / open session). No OTP, no microsite — the
- * agent uses the Thanks App in agent mode, so {@code IV_USER} is the authenticated agent MSISDN.
+ * API 1 (admin whitelist) + API 2 (single agent validate — which also opens the scanning session).
+ * No OTP, no microsite — the agent uses the Thanks App in agent mode, so {@code IV_USER} is the
+ * authenticated agent MSISDN.
  */
 @RestController
 @Api(value = "Event Pass — Agent")
@@ -41,25 +41,13 @@ public class AgentController {
 		return Response.getSuccessResponse(Map.of("whitelistId", saved.getId(), "status", "UPSERTED"));
 	}
 
-	// ---- API 2: validate agent, list authorized events + checkpoints ----
+	// ---- API 2: validate agent + open session (single call) ----
 	@GetMapping("/v1/agents/validate")
-	@ApiOperation(value = "List the events + checkpoints this agent may scan")
+	@ApiOperation(value = "Validate the agent and open a scanning session; returns authorized events + checkpoints + agentSessionId")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<AgentValidateResponse> validate(
-			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn) {
-		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn));
-	}
-
-	// ---- API 2b: open a scanning session for a chosen event + checkpoint ----
-	@PostMapping("/v1/agents/session")
-	@ApiOperation(value = "Open a single-active scanning session (event + checkpoint)")
-	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
-	public Response<Map<String, Object>> openSession(
 			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
-			@RequestParam String eventId,
-			@RequestParam Checkpoint checkpoint,
 			@RequestHeader(name = "User-Agent", required = false) String userAgent) {
-		String sessionId = agentAccessService.openSession(agentMsisdn, eventId, checkpoint, userAgent);
-		return Response.getSuccessResponse(Map.of("agentSessionId", sessionId));
+		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn, userAgent));
 	}
 }

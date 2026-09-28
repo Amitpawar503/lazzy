@@ -186,13 +186,15 @@ Every entry decision returns **HTTP 200 + callback**; only unexpected faults map
 ## 7. API surface — the five endpoints
 
 All endpoints are on the **User Profile Service**. "Owning component" names the internal module.
+**Agent validation is a single API** — `GET /v1/agents/validate` validates the agent, returns the
+authorized events/checkpoints, **and opens the session** (returns `agentSessionId`). There is no
+separate session endpoint.
 
 | # | Method / Endpoint | Owning component | Caller | Key inputs | Success output |
 |---|---|---|---|---|---|
 | 1 | `POST /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `msisdn`, `eventId`, `checkpoints[]` | whitelist row upserted |
-| 2a | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | agent `msisdn` (`IV_USER`) | `{authorized, events[]}` |
-| 2b | `POST /v1/agents/session` | Agent Whitelist & Session | Thanks App (agent) | `eventId`, `checkpoint` | `{agentSessionId}` |
-| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | `qrToken`, `checkpoint`, `scanRequestId` (+ `X-Agent-Session`) | callback |
+| 2 | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | agent `msisdn` (`IV_USER`) | `{authorized, events[], agentSessionId}` |
+| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | `qrToken`, `eventId`, `checkpoint`, `scanRequestId` (+ `X-Agent-Session`) | callback |
 | 4 | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | `deviceId`, `timestamp` (+ `IV_USER`) | `{qrToken, expiresAt}` |
 | 5 | `POST /v1/admin/winners` | Contest (winner write) | Admin/eng | `eventId`, `msisdn`, `rank?`, `drawId?` | `{entriesUpdated, status}` |
 | — | `GET /v1/admin/scan-history?msisdn=` | Entry Validation | Admin/eng | `msisdn` | chronological scan log |
@@ -202,7 +204,7 @@ All endpoints are on the **User Profile Service**. "Owning component" names the 
 | API | Controller | Service | Persistence |
 |---|---|---|---|
 | 1 | `AgentController` | `AgentAccessService.upsertWhitelist` | `AgentWhitelistDao` |
-| 2 | `AgentController` | `AgentAccessService.validate` / `openSession` | `AgentWhitelistDao`, `AgentSessionDao` |
+| 2 | `AgentController` | `AgentAccessService.validate` (validates + opens session) | `AgentWhitelistDao`, `AgentSessionDao` |
 | 3 | `EventEntryController` | `EventEntryService.recordEntry` | `EventRedemptionDao` + `ScanLogDao` |
 | 4 | `MembershipQrController` | `MembershipQrService.generate` | `WinnerLookupService` (read) + `QrTokenService` |
 | 5 | `WinnerAdminController` | `WinnerAdminService.markWinner` | `ContestWinnerAdminDao` (write `winnerInfo`) |
@@ -212,10 +214,9 @@ All endpoints are on the **User Profile Service**. "Owning component" names the 
 ```
 API 1  POST /v1/agents/whitelist   body { msisdn, eventId, checkpoints:["ENTRY"|"GOODIE"...] }
                                     -> 200 { whitelistId, status:"UPSERTED" }
-API 2a GET  /v1/agents/validate     (IV_USER = agent msisdn)
-                                    -> { authorized, events:[{eventId, name?, venue?, checkpoints[]}] }
-API 2b POST /v1/agents/session      body { eventId, checkpoint } -> 200 { agentSessionId }   (single-active)
-API 3  POST /v1/entry               Header X-Agent-Session; body { qrToken, checkpoint, scanRequestId }
+API 2  GET  /v1/agents/validate     (IV_USER = agent msisdn)   // validates AND opens the session
+                                    -> { authorized, events:[{eventId, name?, venue?, checkpoints[]}], agentSessionId }
+API 3  POST /v1/entry               Header X-Agent-Session; body { qrToken, eventId, checkpoint, scanRequestId }
                                     -> 200 { callback, admit, displayColor, message,
                                              holderMasked?, firstClaimAt?, otherDeviceId? }
 API 4  POST /v1/membership/qr       Header IV_USER; body { deviceId, timestamp }
@@ -232,7 +233,7 @@ API 5  POST /v1/admin/winners       Header IV_USER; body { eventId, msisdn, rank
 ### API 1 — Whitelist agent (admin)
 Idempotent upsert on `(eventId, msisdn)`; one MSISDN may serve many events; mid-event appends supported.
 
-### API 2 — Validate then open session (agent; no OTP)
+### API 2 — Validate agent + open session (single call; no OTP)
 ```mermaid
 sequenceDiagram
   autonumber
@@ -242,13 +243,12 @@ sequenceDiagram
   App->>UPS: GET /v1/agents/validate (IV_USER = agent msisdn)
   UPS->>DB: active whitelist rows for msisdn
   alt authorized
-    UPS-->>App: { authorized:true, events[] }
-    App->>UPS: POST /v1/agents/session { eventId, checkpoint }
-    UPS->>DB: revoke prior sessions; insert agent_session (TTL 24h)
-    UPS-->>App: { agentSessionId }
+    UPS->>DB: revoke prior sessions; insert agent_session (per-agent, TTL 24h)
+    UPS-->>App: { authorized:true, events[], agentSessionId }
   else not an agent
-    UPS-->>App: { authorized:false }
+    UPS-->>App: { authorized:false }   (no session)
   end
+  Note over App: agent picks event + checkpoint per scan (sent in the entry body)
 ```
 
 ### API 3 — Entry after scan (the gate decision)
@@ -257,10 +257,10 @@ Ordered conditions (short-circuit on first match):
 | Step | Condition | Result |
 |---|---|---|
 | 0 | `scanRequestId` already logged | replay stored callback (idempotent) |
-| 1–2 | session invalid / checkpoint mismatch / whitelist revoked | `STAFF_SESSION_INVALID` |
+| 1–2 | session invalid, or agent not whitelisted for `(request.eventId, checkpoint)` | `STAFF_SESSION_INVALID` |
 | 3 | signature/version bad, unresolvable subject | `INVALID_QR` |
 | 4 | past TTL or superseded | `QR_EXPIRED` |
-| 5 | `session.eventId ∉ token.events` | `NOT_ENTITLED` |
+| 5 | `request.eventId ∉ token.events` | `NOT_ENTITLED` |
 | 6a | redeem inserted (won race) | `ENTRY_ALLOWED` |
 | 6b | already redeemed, same device | `DUPLICATE_ENTRY` (+ firstClaimAt) |
 | 6c | already redeemed, other device | `ALREADY_ENTERED_OTHER_DEVICE` (+ otherDeviceId) |
@@ -276,20 +276,20 @@ sequenceDiagram
   participant Ag as Agent Session
   participant Tk as QR Token
   participant Rd as event_redemptions
-  App->>EVS: POST /v1/entry {qrToken, checkpoint, scanRequestId} (X-Agent-Session)
+  App->>EVS: POST /v1/entry {qrToken, eventId, checkpoint, scanRequestId} (X-Agent-Session)
   EVS->>Lg: findByScanRequestId
   alt already logged
     EVS-->>App: replay(callback)
   else new
-    EVS->>Ag: requireAuthorizedSession(sessionId, checkpoint)
-    alt invalid
+    EVS->>Ag: requireAuthorizedSession(sessionId, eventId, checkpoint)
+    alt invalid / not whitelisted
       EVS-->>App: STAFF_SESSION_INVALID
-    else ok (eventId from session)
+    else ok
       EVS->>Tk: verify(qrToken)
       alt invalid/expired
         EVS-->>App: INVALID_QR / QR_EXPIRED
       else claims ok
-        alt session.eventId ∉ events
+        alt request.eventId ∉ events
           EVS-->>App: NOT_ENTITLED
         else winner
           EVS->>Rd: tryRedeem(eventId,msisdn,checkpoint,deviceId,...)
@@ -383,43 +383,27 @@ Content-Type: application/json
 | 400 | unknown checkpoint value | `{ "successful": false, "error": { "code": "bad_request", "message": "Unsupported checkpoint: VIP" } }` |
 | 401/403 | caller not engineering (enforced upstream) | `{ "successful": false, "error": { "code": "forbidden", "message": "Not authorized" } }` |
 
-### API 2a — `GET /v1/agents/validate` (agent)
+### API 2 — `GET /v1/agents/validate` (agent) — validates **and** opens the session
 
 **Request**
 ```http
 GET /v1/agents/validate
 IV_USER: 7000000001            # agent msisdn (from app auth)
 ```
-**Success — 200 (authorized)**
+**Success — 200 (authorized — events + a session, in one call)**
 ```json
 { "successful": true,
   "data": { "authorized": true,
+            "agentSessionId": "sess-3f9ac2b1-...",
             "events": [ { "eventId": "ARTLPPAZK", "eventName": "Advantage Club Live", "venue": "Delhi", "checkpoints": ["ENTRY","GOODIE"] },
                         { "eventId": "ARTLXYZ12", "checkpoints": ["GOODIE"] } ] } }
 ```
-**Success — 200 (not an event agent — no event data leaked)**
+**Success — 200 (not an event agent — no event data, no session)**
 ```json
 { "successful": true, "data": { "authorized": false } }
 ```
-
-### API 2b — `POST /v1/agents/session` (agent)
-
-**Request**
-```http
-POST /v1/agents/session?eventId=ARTLPPAZK&checkpoint=ENTRY
-IV_USER: 7000000001
-```
-**Success — 200**
-```json
-{ "successful": true, "data": { "agentSessionId": "sess-3f9ac2b1-..." } }
-```
-**Errors**
-
-| HTTP | When | Body |
-|---|---|---|
-| 401 | msisdn not whitelisted for this event | `{ "successful": false, "error": { "code": "staff_session_invalid", "message": "Not whitelisted for this event" } }` |
-| 401 | whitelisted but not for this checkpoint | `{ "successful": false, "error": { "code": "staff_session_invalid", "message": "Not authorized for checkpoint GOODIE" } }` |
-| 400 | unknown checkpoint value | `{ "successful": false, "error": { "code": "bad_request", "message": "Unsupported checkpoint: VIP" } }` |
+The agent picks an event + checkpoint in the UI and sends them on each scan (API 3); a new
+`validate` call revokes any prior session for the MSISDN (single-active).
 
 ### API 3 — `POST /v1/entry` (agent) — every decision is HTTP 200 + callback
 
@@ -429,7 +413,7 @@ POST /v1/entry
 X-Agent-Session: sess-3f9ac2b1-...
 Content-Type: application/json
 
-{ "qrToken": "eyJraWQiOiJrMSIsImFsZyI6IkVTMjU2In0...", "checkpoint": "ENTRY", "scanRequestId": "7b3d9e2a-..." }
+{ "qrToken": "eyJraWQiOiJrMSIsImFsZyI6IkVTMjU2In0...", "eventId": "ARTLPPAZK", "checkpoint": "ENTRY", "scanRequestId": "7b3d9e2a-..." }
 ```
 **Success — 200 (`ENTRY_ALLOWED`)**
 ```json
@@ -459,7 +443,7 @@ Full body for a deny, e.g. `NOT_ENTITLED`:
 
 | HTTP | When | Body |
 |---|---|---|
-| 400 | missing `qrToken` / `checkpoint` / `scanRequestId` | `{ "successful": false, "error": { "code": "bad_request", "message": "qrToken must not be blank" } }` |
+| 400 | missing `qrToken` / `eventId` / `checkpoint` / `scanRequestId` | `{ "successful": false, "error": { "code": "bad_request", "message": "qrToken must not be blank" } }` |
 | 400 | missing `X-Agent-Session` header | `{ "successful": false, "error": { "code": "bad_request", "message": "Required header 'X-Agent-Session' is not present" } }` |
 
 > Note: a revoked/expired session is **not** a 4xx — it returns 200 `STAFF_SESSION_INVALID` so the
@@ -607,6 +591,7 @@ The complete reference implementation follows, grouped by layer. Drop into
 `src/main/java/com/airtel/userprofile/eventpass/` in the User Profile Service.
 
 
+
 ### Enums
 
 #### `com/airtel/userprofile/eventpass/enums/Checkpoint.java`
@@ -699,7 +684,6 @@ public enum EntryCallback {
 ```java
 package com.airtel.userprofile.eventpass.document;
 
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -712,10 +696,10 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 
 /**
- * An active agent scanning session, bound to (msisdn, eventId, checkpoint). Single-active per
- * msisdn: opening a new session revokes prior non-expired ones (mirrors the "one session per
- * number" rule). Identity is already proven by the Thanks App login; this only carries scanning
- * authority + the selected checkpoint.
+ * An active agent scanning session, opened by the single {@code GET /v1/agents/validate} call. It
+ * is per-agent (not bound to one event/checkpoint) — the agent may scan any (event, checkpoint) it
+ * is whitelisted for, checked live per scan. Single-active per msisdn: opening a new session
+ * revokes prior non-expired ones. Identity is already proven by the Thanks App login.
  */
 @Data
 @Document(collection = "event_agent_sessions")
@@ -730,8 +714,6 @@ public class AgentSessionDocument {
 
 	@Indexed
 	private String msisdn;
-	private String eventId;
-	private Checkpoint checkpoint;
 	private boolean revoked;
 	private Instant createdAt;
 	private Instant expiresAt;
@@ -922,9 +904,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * API 3 — agent posts a decoded QR for a decision. The {@code eventId} is NOT taken from the body;
- * it comes from the agent session. {@code checkpoint} is validated against the agent's authorized
- * set. {@code scanRequestId} is the idempotency key (reuse the same value on retry).
+ * API 3 — agent posts a decoded QR for a decision. {@code eventId} + {@code checkpoint} are the
+ * gate the agent is operating; both are validated against the agent's whitelist (via the session),
+ * so a client cannot self-authorize an event it is not whitelisted for. {@code scanRequestId} is
+ * the idempotency key (reuse the same value on retry).
  */
 @Data
 @NoArgsConstructor
@@ -934,6 +917,9 @@ public class EntryScanRequest {
 
 	@NotBlank
 	private String qrToken;
+
+	@NotBlank
+	private String eventId;
 
 	@NotNull
 	private Checkpoint checkpoint;
@@ -1592,18 +1578,20 @@ public interface AgentAccessService {
 	/** API 1 (admin) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
 	AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor);
 
-	/** API 2 — list the events + checkpoints this agent MSISDN may scan. Empty if not an agent. */
-	AgentValidateResponse validate(String agentMsisdn);
-
-	/** Open a single-active session bound to (msisdn, eventId, checkpoint); returns the session id. */
-	String openSession(String agentMsisdn, String eventId, Checkpoint checkpoint, String deviceInfo);
+	/**
+	 * API 2 (single call) — validate the agent and **open a single-active session** in one shot.
+	 * Returns the events + checkpoints the agent may scan plus an {@code agentSessionId}; empty /
+	 * {@code authorized=false} (and no session) if the MSISDN is not an event agent.
+	 */
+	AgentValidateResponse validate(String agentMsisdn, String deviceInfo);
 
 	/**
-	 * Resolve an active session and confirm it is still authorized for the requested checkpoint.
+	 * Resolve an active session and confirm the agent is (still) whitelisted for the requested
+	 * (eventId, checkpoint) — checked live against the whitelist, since the session is per-agent.
 	 * @throws com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException if missing,
-	 *         revoked, expired, checkpoint mismatch, or whitelist no longer active.
+	 *         revoked, expired, or not whitelisted for that event/checkpoint.
 	 */
-	AgentSessionDocument requireAuthorizedSession(String sessionId, Checkpoint requestedCheckpoint);
+	AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
 }
 ```
 
@@ -1827,10 +1815,10 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 	}
 
 	@Override
-	public AgentValidateResponse validate(String agentMsisdn) {
+	public AgentValidateResponse validate(String agentMsisdn, String deviceInfo) {
 		List<AgentWhitelistDocument> rows = whitelistDao.findActiveByMsisdn(agentMsisdn);
 		if (rows.isEmpty()) {
-			return AgentValidateResponse.builder().authorized(false).build();  // no event data leaked
+			return AgentValidateResponse.builder().authorized(false).build();  // no event data / no session
 		}
 		List<AgentEventAccess> events = rows.stream()
 				.map(r -> AgentEventAccess.builder()
@@ -1839,45 +1827,37 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 						// eventName/venue enriched from event/program metadata where available
 						.build())
 				.collect(Collectors.toList());
-		return AgentValidateResponse.builder().authorized(true).events(events).build();
-	}
 
-	@Override
-	public String openSession(String agentMsisdn, String eventId, Checkpoint checkpoint, String deviceInfo) {
-		AgentWhitelistDocument wl = whitelistDao.findActive(eventId, agentMsisdn)
-				.orElseThrow(() -> new AgentSessionInvalidException("Not whitelisted for this event"));
-		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(checkpoint)) {
-			throw new AgentSessionInvalidException("Not authorized for checkpoint " + checkpoint);
-		}
+		// open a single-active per-agent session in the same call (revokes any prior session)
 		Instant now = Instant.now();
 		AgentSessionDocument session = AgentSessionDocument.builder()
 				.id(UUID.randomUUID().toString())
 				.msisdn(agentMsisdn)
-				.eventId(eventId)
-				.checkpoint(checkpoint)
 				.revoked(false)
 				.createdAt(now)
 				.expiresAt(now.plusSeconds(props.getAgentSessionTtlSeconds()))
 				.deviceInfo(deviceInfo)
 				.build();
-		sessionDao.openExclusive(session);   // revokes prior sessions for this msisdn
-		log.info("Agent session opened: msisdn={} event={} checkpoint={}", agentMsisdn, eventId, checkpoint);
-		return session.getId();
+		sessionDao.openExclusive(session);
+		log.info("Agent validated + session opened: msisdn={} events={}", agentMsisdn, events.size());
+
+		return AgentValidateResponse.builder()
+				.authorized(true)
+				.events(events)
+				.agentSessionId(session.getId())
+				.build();
 	}
 
 	@Override
-	public AgentSessionDocument requireAuthorizedSession(String sessionId, Checkpoint requestedCheckpoint) {
+	public AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
 		AgentSessionDocument session = sessionDao.findActiveById(sessionId)
 				.orElseThrow(() -> new AgentSessionInvalidException("Session missing, revoked, or expired"));
 
-		if (requestedCheckpoint != null && session.getCheckpoint() != requestedCheckpoint) {
-			throw new AgentSessionInvalidException("Checkpoint mismatch for session");
-		}
-		// re-check the whitelist is still active for this (event, msisdn) and allows the checkpoint
-		AgentWhitelistDocument wl = whitelistDao.findActive(session.getEventId(), session.getMsisdn())
-				.orElseThrow(() -> new AgentSessionInvalidException("Whitelist revoked"));
-		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(session.getCheckpoint())) {
-			throw new AgentSessionInvalidException("Checkpoint authorization revoked");
+		// authorize live against the whitelist for the (eventId, checkpoint) this scan targets
+		AgentWhitelistDocument wl = whitelistDao.findActive(eventId, session.getMsisdn())
+				.orElseThrow(() -> new AgentSessionInvalidException("Not whitelisted for event " + eventId));
+		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(requestedCheckpoint)) {
+			throw new AgentSessionInvalidException("Not authorized for checkpoint " + requestedCheckpoint);
 		}
 		return session;
 	}
@@ -1939,17 +1919,17 @@ public class EventEntryServiceImpl implements EventEntryService {
 				return rebuild(prior.get());
 			}
 
-			// 1–2) Agent session valid & authorized for this checkpoint (event derived from session)
+			// 1–2) Agent session valid & agent whitelisted for the requested (eventId, checkpoint)
+			String eventId = request.getEventId();
+			Checkpoint checkpoint = request.getCheckpoint();
 			AgentSessionDocument session;
 			try {
-				session = agentAccess.requireAuthorizedSession(agentSessionId, request.getCheckpoint());
+				session = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
 			} catch (AgentSessionInvalidException e) {
-				log.warn("Scan rejected — session invalid: {}", e.getMessage());
+				log.warn("Scan rejected — session/authorization invalid: {}", e.getMessage());
 				return audit(EntryScanResponse.of(EntryCallback.STAFF_SESSION_INVALID),
-						null, null, request, null);
+						eventId, null, request, null);
 			}
-			String eventId = session.getEventId();
-			Checkpoint checkpoint = session.getCheckpoint();
 			String agentMsisdn = session.getMsisdn();
 
 			// 3–5) Verify token (signature, version, TTL, single-active)
@@ -2407,7 +2387,6 @@ import com.airtel.core.logging.AuditLog;
 import com.airtel.userprofile.constants.UserProfileConstants;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import com.airtel.userprofile.eventpass.service.AgentAccessService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -2419,8 +2398,9 @@ import jakarta.validation.Valid;
 import java.util.Map;
 
 /**
- * API 1 (admin whitelist) + API 2 (agent validate / open session). No OTP, no microsite — the
- * agent uses the Thanks App in agent mode, so {@code IV_USER} is the authenticated agent MSISDN.
+ * API 1 (admin whitelist) + API 2 (single agent validate — which also opens the scanning session).
+ * No OTP, no microsite — the agent uses the Thanks App in agent mode, so {@code IV_USER} is the
+ * authenticated agent MSISDN.
  */
 @RestController
 @Api(value = "Event Pass — Agent")
@@ -2441,26 +2421,14 @@ public class AgentController {
 		return Response.getSuccessResponse(Map.of("whitelistId", saved.getId(), "status", "UPSERTED"));
 	}
 
-	// ---- API 2: validate agent, list authorized events + checkpoints ----
+	// ---- API 2: validate agent + open session (single call) ----
 	@GetMapping("/v1/agents/validate")
-	@ApiOperation(value = "List the events + checkpoints this agent may scan")
+	@ApiOperation(value = "Validate the agent and open a scanning session; returns authorized events + checkpoints + agentSessionId")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<AgentValidateResponse> validate(
-			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn) {
-		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn));
-	}
-
-	// ---- API 2b: open a scanning session for a chosen event + checkpoint ----
-	@PostMapping("/v1/agents/session")
-	@ApiOperation(value = "Open a single-active scanning session (event + checkpoint)")
-	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
-	public Response<Map<String, Object>> openSession(
 			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
-			@RequestParam String eventId,
-			@RequestParam Checkpoint checkpoint,
 			@RequestHeader(name = "User-Agent", required = false) String userAgent) {
-		String sessionId = agentAccessService.openSession(agentMsisdn, eventId, checkpoint, userAgent);
-		return Response.getSuccessResponse(Map.of("agentSessionId", sessionId));
+		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn, userAgent));
 	}
 }
 ```

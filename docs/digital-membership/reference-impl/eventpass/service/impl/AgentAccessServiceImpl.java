@@ -44,10 +44,10 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 	}
 
 	@Override
-	public AgentValidateResponse validate(String agentMsisdn) {
+	public AgentValidateResponse validate(String agentMsisdn, String deviceInfo) {
 		List<AgentWhitelistDocument> rows = whitelistDao.findActiveByMsisdn(agentMsisdn);
 		if (rows.isEmpty()) {
-			return AgentValidateResponse.builder().authorized(false).build();  // no event data leaked
+			return AgentValidateResponse.builder().authorized(false).build();  // no event data / no session
 		}
 		List<AgentEventAccess> events = rows.stream()
 				.map(r -> AgentEventAccess.builder()
@@ -56,45 +56,37 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 						// eventName/venue enriched from event/program metadata where available
 						.build())
 				.collect(Collectors.toList());
-		return AgentValidateResponse.builder().authorized(true).events(events).build();
-	}
 
-	@Override
-	public String openSession(String agentMsisdn, String eventId, Checkpoint checkpoint, String deviceInfo) {
-		AgentWhitelistDocument wl = whitelistDao.findActive(eventId, agentMsisdn)
-				.orElseThrow(() -> new AgentSessionInvalidException("Not whitelisted for this event"));
-		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(checkpoint)) {
-			throw new AgentSessionInvalidException("Not authorized for checkpoint " + checkpoint);
-		}
+		// open a single-active per-agent session in the same call (revokes any prior session)
 		Instant now = Instant.now();
 		AgentSessionDocument session = AgentSessionDocument.builder()
 				.id(UUID.randomUUID().toString())
 				.msisdn(agentMsisdn)
-				.eventId(eventId)
-				.checkpoint(checkpoint)
 				.revoked(false)
 				.createdAt(now)
 				.expiresAt(now.plusSeconds(props.getAgentSessionTtlSeconds()))
 				.deviceInfo(deviceInfo)
 				.build();
-		sessionDao.openExclusive(session);   // revokes prior sessions for this msisdn
-		log.info("Agent session opened: msisdn={} event={} checkpoint={}", agentMsisdn, eventId, checkpoint);
-		return session.getId();
+		sessionDao.openExclusive(session);
+		log.info("Agent validated + session opened: msisdn={} events={}", agentMsisdn, events.size());
+
+		return AgentValidateResponse.builder()
+				.authorized(true)
+				.events(events)
+				.agentSessionId(session.getId())
+				.build();
 	}
 
 	@Override
-	public AgentSessionDocument requireAuthorizedSession(String sessionId, Checkpoint requestedCheckpoint) {
+	public AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
 		AgentSessionDocument session = sessionDao.findActiveById(sessionId)
 				.orElseThrow(() -> new AgentSessionInvalidException("Session missing, revoked, or expired"));
 
-		if (requestedCheckpoint != null && session.getCheckpoint() != requestedCheckpoint) {
-			throw new AgentSessionInvalidException("Checkpoint mismatch for session");
-		}
-		// re-check the whitelist is still active for this (event, msisdn) and allows the checkpoint
-		AgentWhitelistDocument wl = whitelistDao.findActive(session.getEventId(), session.getMsisdn())
-				.orElseThrow(() -> new AgentSessionInvalidException("Whitelist revoked"));
-		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(session.getCheckpoint())) {
-			throw new AgentSessionInvalidException("Checkpoint authorization revoked");
+		// authorize live against the whitelist for the (eventId, checkpoint) this scan targets
+		AgentWhitelistDocument wl = whitelistDao.findActive(eventId, session.getMsisdn())
+				.orElseThrow(() -> new AgentSessionInvalidException("Not whitelisted for event " + eventId));
+		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(requestedCheckpoint)) {
+			throw new AgentSessionInvalidException("Not authorized for checkpoint " + requestedCheckpoint);
 		}
 		return session;
 	}

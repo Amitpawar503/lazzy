@@ -459,17 +459,16 @@ column names the internal module that handles each.
 | # | Method / Endpoint | Owning component (in User Profile Service) | Caller | Purpose | Key inputs | Success output |
 |---|---|---|---|---|---|---|
 | 1 | `POST /v1/agents/whitelist` | Agent Whitelist | Admin / eng | Whitelist an agent **MSISDN** for an event with its checkpoints | `msisdn`, `eventId`, `checkpoints[]` | whitelist row created/updated |
-| 2a | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | List the events + checkpoints this agent may scan | agent `msisdn` (from app auth) | `{authorized, events[]}` |
-| 2b | `POST /v1/agents/session` | Agent Whitelist & Session | Thanks App (agent) | Open a single-active session for a chosen event + checkpoint | `eventId`, `checkpoint` (+ agent `msisdn`) | `{agentSessionId}` |
-| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | Record an entry after scanning (session via `X-Agent-Session` header) | `qrToken`, `checkpoint`, `scanRequestId` (event from session) | `ENTRY_ALLOWED` / duplicate / other-device / expired |
+| 2 | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | **Single call:** validate the agent, list authorized events + checkpoints, **and open a session** | agent `msisdn` (from app auth) | `{authorized, events[], agentSessionId}` |
+| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | Record an entry after scanning (session via `X-Agent-Session` header) | `qrToken`, `eventId`, `checkpoint`, `scanRequestId` | `ENTRY_ALLOWED` / duplicate / other-device / expired |
 | 4 | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | Generate the signed QR carrying **won `eventId`s** | `deviceId`, `timestamp` (+ customer `msisdn` = `IV_USER`) | signed `qrToken` (+ `expiresAt`) |
 | 5 | `POST /v1/admin/winners` | Contest (winner write) | Admin / eng | **Mark/update a winner** on the customer's existing `contest_entries` doc (sets `winnerInfo`) | `eventId`, `msisdn`, `rank?`, `drawId?` | `{entriesUpdated, status}` |
 
 **Notes**
-- **Validate then open a session** — API 2 is two calls: `GET /validate` lists the agent's authorized events/checkpoints, then `POST /session` opens the single-active scanning session the agent picks. The session id is passed to API 3 in the **`X-Agent-Session`** header.
+- **Single validate call** — `GET /v1/agents/validate` both lists the agent's authorized events/checkpoints **and opens the single-active session** (returns `agentSessionId`). There is **no separate session endpoint**. The session id is passed to API 3 in the **`X-Agent-Session`** header; the agent picks event + checkpoint per scan (sent in the entry body, validated against the whitelist).
 - **No microsite** — API 2 and API 3 are called by the **Airtel Thanks App in agent mode**; the agent's MSISDN is already authenticated by the app (carried as `IV_USER`).
 - **No OTP** — agent authority is the User Profile Service **whitelist** (per event + checkpoint). See Q10.
-- **Whitelist carries checkpoints** — a `(eventId, msisdn)` row lists ENTRY, GOODIE, or both; agent mode surfaces only what the agent is authorized for.
+- **Whitelist carries checkpoints** — a `(eventId, msisdn)` row lists ENTRY, GOODIE, or both; every scan's `(eventId, checkpoint)` is re-checked live against it.
 - **Every entry decision is HTTP 200 + callback** (INVALID_QR / QR_EXPIRED / STAFF_SESSION_INVALID included) so the scanner always renders a result; only unexpected faults map to `SERVICE_UNAVAILABLE`.
 - **Winners: draw or admin API** — winners are normally produced by the existing **contest draw** (`contest_entries.winnerInfo`). **API 5** is a manual override that sets `winnerInfo` on the customer's existing entry; it **never creates an entry** (the customer must have played the contest). A newly-marked win is picked up on the customer's next QR refresh.
 
@@ -503,18 +502,18 @@ sequenceDiagram
   UPS->>DB: whitelisted & active rows for msisdn
   alt has authorized events
     DB-->>UPS: [ { eventId, checkpoints[] } ... ]
-    UPS-->>App: { authorized:true, events[] }
-    App->>UPS: POST /v1/agents/session { eventId, checkpoint }
-    UPS->>DB: revoke prior sessions for msisdn; insert agent_session
-    UPS-->>App: { agentSessionId }
+    UPS->>DB: revoke prior sessions for msisdn; insert agent_session (per-agent, TTL 24h)
+    UPS-->>App: { authorized:true, events[], agentSessionId }
   else none
-    UPS-->>App: { authorized:false } (no event data)
+    UPS-->>App: { authorized:false } (no event data, no session)
   end
+  Note over App: agent picks event + checkpoint per scan (sent in the entry body)
 ```
 
 ### 9.3 API 3 — Entry after scan (won-events + device + TTL)
 
-The event comes from the **agent session**; the winner check is **`session.eventId ∈ token.wonEventIds`**.
+The `eventId` + `checkpoint` come in the **request** and are re-checked against the agent's
+**whitelist** (via the session); the winner check is **`request.eventId ∈ token.wonEventIds`**.
 The dedup record is keyed **`(msisdn, eventId, checkpoint)`** and stores the `deviceId` + timestamp
 of the first entry.
 
@@ -527,9 +526,9 @@ sequenceDiagram
   participant DB as redemption
 
   App->>App: decode QR → qrToken (carries msisdn, deviceId, wonEventIds[], iat)
-  App->>EVS: POST /v1/entry { qrToken, checkpoint, scanRequestId } (+ agent session)
+  App->>EVS: POST /v1/entry { qrToken, eventId, checkpoint, scanRequestId } (+ X-Agent-Session)
 
-  EVS->>EVS: session valid & authorized for event + checkpoint?
+  EVS->>EVS: session active & agent whitelisted for (eventId, checkpoint)?
   EVS->>KMS: verify signature + structure
 
   alt bad / forged
@@ -539,7 +538,7 @@ sequenceDiagram
     alt too old
       EVS-->>App: QR_EXPIRED (refresh & rescan)
     else fresh
-      EVS->>EVS: session.eventId ∈ token.wonEventIds ?
+      EVS->>EVS: request.eventId ∈ token.wonEventIds ?
       alt not a winner for this event
         EVS-->>App: NOT_ENTITLED
       else winner

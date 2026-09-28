@@ -50,17 +50,17 @@ public class EventEntryServiceImpl implements EventEntryService {
 				return rebuild(prior.get());
 			}
 
-			// 1–2) Agent session valid & authorized for this checkpoint (event derived from session)
+			// 1–2) Agent session valid & agent whitelisted for the requested (eventId, checkpoint)
+			String eventId = request.getEventId();
+			Checkpoint checkpoint = request.getCheckpoint();
 			AgentSessionDocument session;
 			try {
-				session = agentAccess.requireAuthorizedSession(agentSessionId, request.getCheckpoint());
+				session = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
 			} catch (AgentSessionInvalidException e) {
-				log.warn("Scan rejected — session invalid: {}", e.getMessage());
+				log.warn("Scan rejected — session/authorization invalid: {}", e.getMessage());
 				return audit(EntryScanResponse.of(EntryCallback.STAFF_SESSION_INVALID),
-						null, null, request, null);
+						eventId, null, request, null);
 			}
-			String eventId = session.getEventId();
-			Checkpoint checkpoint = session.getCheckpoint();
 			String agentMsisdn = session.getMsisdn();
 
 			// 3–5) Verify token (signature, version, TTL, single-active)

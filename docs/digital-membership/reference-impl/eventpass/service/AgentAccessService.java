@@ -12,16 +12,18 @@ public interface AgentAccessService {
 	/** API 1 (admin) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
 	AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor);
 
-	/** API 2 — list the events + checkpoints this agent MSISDN may scan. Empty if not an agent. */
-	AgentValidateResponse validate(String agentMsisdn);
-
-	/** Open a single-active session bound to (msisdn, eventId, checkpoint); returns the session id. */
-	String openSession(String agentMsisdn, String eventId, Checkpoint checkpoint, String deviceInfo);
+	/**
+	 * API 2 (single call) — validate the agent and **open a single-active session** in one shot.
+	 * Returns the events + checkpoints the agent may scan plus an {@code agentSessionId}; empty /
+	 * {@code authorized=false} (and no session) if the MSISDN is not an event agent.
+	 */
+	AgentValidateResponse validate(String agentMsisdn, String deviceInfo);
 
 	/**
-	 * Resolve an active session and confirm it is still authorized for the requested checkpoint.
+	 * Resolve an active session and confirm the agent is (still) whitelisted for the requested
+	 * (eventId, checkpoint) — checked live against the whitelist, since the session is per-agent.
 	 * @throws com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException if missing,
-	 *         revoked, expired, checkpoint mismatch, or whitelist no longer active.
+	 *         revoked, expired, or not whitelisted for that event/checkpoint.
 	 */
-	AgentSessionDocument requireAuthorizedSession(String sessionId, Checkpoint requestedCheckpoint);
+	AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
 }

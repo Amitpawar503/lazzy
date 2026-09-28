@@ -1,6 +1,5 @@
 package com.airtel.userprofile.eventpass.document;
 
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,10 +12,10 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 
 /**
- * An active agent scanning session, bound to (msisdn, eventId, checkpoint). Single-active per
- * msisdn: opening a new session revokes prior non-expired ones (mirrors the "one session per
- * number" rule). Identity is already proven by the Thanks App login; this only carries scanning
- * authority + the selected checkpoint.
+ * An active agent scanning session, opened by the single {@code GET /v1/agents/validate} call. It
+ * is per-agent (not bound to one event/checkpoint) — the agent may scan any (event, checkpoint) it
+ * is whitelisted for, checked live per scan. Single-active per msisdn: opening a new session
+ * revokes prior non-expired ones. Identity is already proven by the Thanks App login.
  */
 @Data
 @Document(collection = "event_agent_sessions")
@@ -31,8 +30,6 @@ public class AgentSessionDocument {
 
 	@Indexed
 	private String msisdn;
-	private String eventId;
-	private Checkpoint checkpoint;
 	private boolean revoked;
 	private Instant createdAt;
 	private Instant expiresAt;
