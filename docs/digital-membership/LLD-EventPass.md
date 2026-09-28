@@ -26,6 +26,7 @@
 6. [Callback contract](#6-callback-contract)
 7. [API surface — the five endpoints](#7-api-surface--the-five-endpoints)
 8. [API sequences & conditions](#8-api-sequences--conditions)
+8A. [Sample requests, responses & error responses](#8a-sample-requests-responses--error-responses-per-api)
 9. [Atomic redemption — exactly-once](#9-atomic-redemption--exactly-once)
 10. [Winner read & write (contest reuse)](#10-winner-read--write-contest-reuse)
 11. [Idempotency, exceptions, config](#11-idempotency-exceptions-config)
@@ -349,6 +350,167 @@ sequenceDiagram
 
 **Effect chain:** API 5 writes `winnerInfo` → API 4 embeds the event in the QR on next refresh →
 API 3 admits at the gate.
+
+---
+
+## 8A. Sample requests, responses & error responses (per API)
+
+> **Envelope.** All responses use the shared `com.airtel.core.dto.genericResponse.Response<T>`
+> wrapper: a success carries the payload under `data`; a failure carries `error.code` +
+> `error.message` and the HTTP status. The envelope field names below (`successful`, `data`,
+> `error`) follow that shared class; the **payloads** are the DTOs defined in this LLD. Bodies are
+> `application/json`. `IV_USER` = the caller's authenticated MSISDN.
+
+### API 1 — `POST /v1/agents/whitelist` (admin)
+
+**Request**
+```http
+POST /v1/agents/whitelist
+IV_USER: 9812300000            # actor (engineering)
+Content-Type: application/json
+
+{ "eventId": "ARTLPPAZK", "msisdn": "7023398743", "checkpoints": ["ENTRY", "GOODIE"] }
+```
+**Success — 200**
+```json
+{ "successful": true, "data": { "whitelistId": "6f2e1c40-...", "status": "UPSERTED" } }
+```
+**Errors**
+
+| HTTP | When | Body |
+|---|---|---|
+| 400 | missing/blank field, empty `checkpoints` | `{ "successful": false, "error": { "code": "bad_request", "message": "checkpoints must not be empty" } }` |
+| 400 | unknown checkpoint value | `{ "successful": false, "error": { "code": "bad_request", "message": "Unsupported checkpoint: VIP" } }` |
+| 401/403 | caller not engineering (enforced upstream) | `{ "successful": false, "error": { "code": "forbidden", "message": "Not authorized" } }` |
+
+### API 2a — `GET /v1/agents/validate` (agent)
+
+**Request**
+```http
+GET /v1/agents/validate
+IV_USER: 7000000001            # agent msisdn (from app auth)
+```
+**Success — 200 (authorized)**
+```json
+{ "successful": true,
+  "data": { "authorized": true,
+            "events": [ { "eventId": "ARTLPPAZK", "eventName": "Advantage Club Live", "venue": "Delhi", "checkpoints": ["ENTRY","GOODIE"] },
+                        { "eventId": "ARTLXYZ12", "checkpoints": ["GOODIE"] } ] } }
+```
+**Success — 200 (not an event agent — no event data leaked)**
+```json
+{ "successful": true, "data": { "authorized": false } }
+```
+
+### API 2b — `POST /v1/agents/session` (agent)
+
+**Request**
+```http
+POST /v1/agents/session?eventId=ARTLPPAZK&checkpoint=ENTRY
+IV_USER: 7000000001
+```
+**Success — 200**
+```json
+{ "successful": true, "data": { "agentSessionId": "sess-3f9ac2b1-..." } }
+```
+**Errors**
+
+| HTTP | When | Body |
+|---|---|---|
+| 401 | msisdn not whitelisted for this event | `{ "successful": false, "error": { "code": "staff_session_invalid", "message": "Not whitelisted for this event" } }` |
+| 401 | whitelisted but not for this checkpoint | `{ "successful": false, "error": { "code": "staff_session_invalid", "message": "Not authorized for checkpoint GOODIE" } }` |
+| 400 | unknown checkpoint value | `{ "successful": false, "error": { "code": "bad_request", "message": "Unsupported checkpoint: VIP" } }` |
+
+### API 3 — `POST /v1/entry` (agent) — every decision is HTTP 200 + callback
+
+**Request**
+```http
+POST /v1/entry
+X-Agent-Session: sess-3f9ac2b1-...
+Content-Type: application/json
+
+{ "qrToken": "eyJraWQiOiJrMSIsImFsZyI6IkVTMjU2In0...", "checkpoint": "ENTRY", "scanRequestId": "7b3d9e2a-..." }
+```
+**Success — 200 (`ENTRY_ALLOWED`)**
+```json
+{ "successful": true,
+  "data": { "callback": "ENTRY_ALLOWED", "admit": true, "displayColor": "green",
+            "message": "Entry allowed. Customer admitted.", "holderMasked": "***** 8743" } }
+```
+**Deny / exception decisions — also HTTP 200** (the scanner always parses a callback):
+
+| `callback` | admit | Example `data` |
+|---|:---:|---|
+| `DUPLICATE_ENTRY` | false | `{ "callback":"DUPLICATE_ENTRY","admit":false,"displayColor":"red","message":"Already claimed on this device.","firstClaimAt":"2026-09-28T09:40:12Z" }` |
+| `ALREADY_ENTERED_OTHER_DEVICE` | false | `{ "callback":"ALREADY_ENTERED_OTHER_DEVICE","admit":false,"displayColor":"red","message":"Already claimed on another device.","firstClaimAt":"2026-09-28T09:40:12Z","otherDeviceId":"a1b2-first-device" }` |
+| `NOT_ENTITLED` | false | `{ "callback":"NOT_ENTITLED","admit":false,"displayColor":"red","message":"Member is not a winner for this event.","holderMasked":"***** 8743" }` |
+| `QR_EXPIRED` | false | `{ "callback":"QR_EXPIRED","admit":false,"displayColor":"grey","message":"QR expired. Ask the customer to refresh and re-present." }` |
+| `INVALID_QR` | false | `{ "callback":"INVALID_QR","admit":false,"displayColor":"red","message":"Invalid QR. Ask the customer to open it from the Airtel app." }` |
+| `STAFF_SESSION_INVALID` | false | `{ "callback":"STAFF_SESSION_INVALID","admit":false,"displayColor":"red","message":"Session expired. Re-open the scanner to continue." }` |
+| `SERVICE_UNAVAILABLE` | false | `{ "callback":"SERVICE_UNAVAILABLE","admit":false,"displayColor":"grey","message":"Service error. Retry the scan." }` |
+
+Full body for a deny, e.g. `NOT_ENTITLED`:
+```json
+{ "successful": true,
+  "data": { "callback": "NOT_ENTITLED", "admit": false, "displayColor": "red",
+            "message": "Member is not a winner for this event.", "holderMasked": "***** 8743" } }
+```
+**True HTTP errors** (request never reached a decision):
+
+| HTTP | When | Body |
+|---|---|---|
+| 400 | missing `qrToken` / `checkpoint` / `scanRequestId` | `{ "successful": false, "error": { "code": "bad_request", "message": "qrToken must not be blank" } }` |
+| 400 | missing `X-Agent-Session` header | `{ "successful": false, "error": { "code": "bad_request", "message": "Required header 'X-Agent-Session' is not present" } }` |
+
+> Note: a revoked/expired session is **not** a 4xx — it returns 200 `STAFF_SESSION_INVALID` so the
+> scanner renders the "re-open" screen. `SERVICE_UNAVAILABLE` is likewise 200 (never auto-allow).
+
+### API 4 — `POST /v1/membership/qr` (customer)
+
+**Request**
+```http
+POST /v1/membership/qr
+IV_USER: 7023398743
+Content-Type: application/json
+
+{ "deviceId": "a1b2c3d4-stable-install-id", "timestamp": 1790000000000 }
+```
+**Success — 200**
+```json
+{ "successful": true,
+  "data": { "qrToken": "eyJraWQiOiJrMSIsImFsZyI6IkVTMjU2In0.eyJzdWIiOiJ...opaque...",
+            "expiresAt": "2026-09-28T10:35:00Z" } }
+```
+(The customer may have won zero events — the QR is still issued with an empty `events[]`; any gate then returns `NOT_ENTITLED`.)
+
+**Errors**
+
+| HTTP | When | Body |
+|---|---|---|
+| 400 | not an Advantage Club member | `{ "successful": false, "error": { "code": "bad_request", "message": "Not an Advantage Club member" } }` |
+| 400 | missing/blank `deviceId` | `{ "successful": false, "error": { "code": "bad_request", "message": "deviceId must not be blank" } }` |
+
+### API 5 — `POST /v1/admin/winners` (admin) — mark/update winner
+
+**Request**
+```http
+POST /v1/admin/winners
+IV_USER: 9812300000            # actor
+Content-Type: application/json
+
+{ "eventId": "ARTLPPAZK", "msisdn": "7023398743", "rank": 1, "drawId": "draw-2026-09-28" }
+```
+**Success — 200**
+```json
+{ "successful": true,
+  "data": { "eventId": "ARTLPPAZK", "msisdn": "7023398743", "entriesUpdated": 1, "status": "WINNER_MARKED" } }
+```
+**Errors**
+
+| HTTP | When | Body |
+|---|---|---|
+| 400 | customer has **no** contest entry for this event (never played) | `{ "successful": false, "error": { "code": "bad_request", "message": "No contest entry found for msisdn in event ARTLPPAZK; cannot mark winner" } }` |
+| 400 | missing/blank `eventId` or `msisdn` | `{ "successful": false, "error": { "code": "bad_request", "message": "eventId must not be blank" } }` |
 
 ---
 
