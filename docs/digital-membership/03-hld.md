@@ -6,7 +6,7 @@
 | **Status** | Proposed — for review |
 | **Author** | Amit Pawar |
 | **Reviewers** | `[names]` |
-| **Related** | [`04-lld.md`](./04-lld.md) (schema, endpoints), [`01-open-questions.md`](./01-open-questions.md) |
+| **Related** | [`LLD-EventPass.md`](./LLD-EventPass.md) (code-level LLD + full source), [`01-open-questions.md`](./01-open-questions.md) |
 | **Date** | September 2026 |
 
 ---
@@ -316,7 +316,7 @@ erDiagram
 | Redemption (`event_redemptions`) | **Entry Validation component** | unique `(eventId, msisdn, checkpoint)` + **first-claim deviceId & time** — **the exactly-once anchor** |
 | Scan audit log (`event_scan_logs`) | **Entry Validation component** | Append-only record of every scan attempt (for the history API) |
 
-*(Concrete schema, columns, and constraints in the [code-level LLD](./lld.md).)*
+*(Concrete schema, columns, and constraints in the [consolidated LLD](./LLD-EventPass.md).)*
 
 ---
 
@@ -688,4 +688,4 @@ flowchart TD
 
 ---
 
-*Concrete schema, indexes, DTOs, and request/response contracts are in the accompanying design [LLD](./04-lld.md) and code-level [lld.md](./lld.md).*
+*Concrete schema, indexes, DTOs, request/response contracts, and the full source are in the [consolidated LLD](./LLD-EventPass.md).*

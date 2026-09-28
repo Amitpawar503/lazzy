@@ -9,10 +9,8 @@ These documents translate the PRD, the Figma flows, and the review meeting into 
 | [`01-open-questions.md`](./01-open-questions.md) | Every open decision, including the ones the PRD states as settled but the meeting left open (TTL, refresh throttle, iOS screenshot, PII-to-staff, etc.). Each with a recommendation. |
 | [`02-loopholes-and-mitigations.md`](./02-loopholes-and-mitigations.md) | The abuse/failure surface (screenshot replay, shared QR, concurrent double-scan, forged QR, retries, staff account sharing, offline) and how the design closes each. |
 | [`03-hld.md`](./03-hld.md) | High-level design: components, boundaries, the core "identity-QR + session-bound event" model, and the main sequence flows. |
-| [`04-lld.md`](./04-lld.md) | Low-level design: token schema, data model, API contracts, the atomic-redemption + idempotency mechanics, callback matrix, and the validation state machine. |
-| [`05-detailed-lld-eventpass.md`](./05-detailed-lld-eventpass.md) | Build-ready, code-level LLD matching the existing `contest` module conventions, with the reference implementation in [`reference-impl/eventpass/`](./reference-impl/eventpass) (atomic entry save + contest winner check). |
-| [`lld.md`](./lld.md) | **Authoritative code-level LLD** — every file/class change, per-branch condition tables, and method-level sequence diagrams for all five APIs. |
-| [`lld-confluence.md`](./lld-confluence.md) | **Self-contained, paste-ready Confluence page** — the whole LLD (architecture, data model, all 5 APIs with sequences, conditions, config) on one page. |
+| [`LLD-EventPass.md`](./LLD-EventPass.md) | **The single, consolidated LLD (Confluence-ready)** — architecture, data model, all 5 APIs with conditions + sequence diagrams, atomic redemption, winner read/write, idempotency/exceptions/config, the module map, and the **full embedded source** of the reference implementation. Merges the former `04-lld` / `05-detailed` / `lld` / `lld-confluence`. |
+| [`reference-impl/eventpass/`](./reference-impl/eventpass) | Drop-in reference code (also embedded in §13 of the LLD). |
 
 ## The one idea the whole design rests on
 
