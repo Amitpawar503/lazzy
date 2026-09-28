@@ -190,7 +190,7 @@ stateDiagram-v2
 **Every result carries explicit text** (never color-only) — NFR accessibility.
 `CAMERA_PERMISSION_DENIED` and `QR_NOT_DETECTED` are **local scanner states** with no backend call.
 
-## 7. API contracts — the four endpoints
+## 7. API contracts — the five endpoints
 
 Each request/response below is a **DTO** at the controller boundary (never a DB entity). Owning
 service is noted per endpoint.
@@ -207,8 +207,9 @@ supports mid-event appends. Supporting admin endpoint:
 GET  /v1/admin/scan-history?msisdn=...   full chronological history (FR35) [Entry Validation component]:
        [ { eventId, checkpoint, callback, serverTs, agentMsisdn, deviceId } ]
 ```
-> **Winners are NOT loaded here.** They are produced by the existing **contest draw**
-> (`contest_entries.winnerInfo`); this feature only reads them. Events are contest `programId`s (Q23).
+> **Winners** are normally produced by the existing **contest draw** (`contest_entries.winnerInfo`);
+> this feature reads them, and **API 5** (below) can manually mark/update a winner on an existing
+> entry. Events are contest `programId`s (Q23).
 
 ### API 2 — validate then open session — **User Profile Service** (no OTP, no microsite)
 DTO `AgentValidateResponse`. Two calls:
@@ -250,6 +251,19 @@ body:   { deviceId, timestamp }
 
 If the customer won multiple events, **all** their `eventId`s are in the one token. Refresh = call
 again (rate-limited per Q2); a win declared after issue is picked up on the next refresh/re-issue.
+
+### API 5 — `POST /v1/admin/winners` — **Contest write** (admin / eng only)
+DTO `WinnerUpsertRequest`
+```
+Header: IV_USER: <actor>
+body:   { eventId, msisdn, rank?, drawId? }     # eventId == contest programId
+-> 200  { eventId, msisdn, entriesUpdated, status:"WINNER_MARKED" }
+-> 400  if the customer has no contest entry for this event (never fabricate an entry)
+```
+Sets `winnerInfo{rank?, drawId?, createdAt}` on the customer's existing `contest_entries`
+row(s) via `updateMulti(programId==eventId, msisdn)`. Idempotent (re-marking overwrites
+rank/drawId). The customer picks up the new win on their next QR refresh (API 4). Concrete impl:
+`ContestWinnerAdminDaoImpl.markWinner` / `WinnerAdminServiceImpl` ([`lld.md`](./lld.md) §10b).
 
 ## 8. Agent-scanner client behavior (Thanks App — agent mode)
 

@@ -9,7 +9,7 @@
 | **Date** | September 2026 |
 
 This document catalogues **every code change** for the feature, the **exact conditions** each
-branch handles, and the **method-level sequence flows** for all four APIs. It is written against
+branch handles, and the **method-level sequence flows** for all five APIs. It is written against
 the existing `contest` module conventions: `com.airtel.userprofile.*`, Lombok Mongo `@Document`s,
 **DAO + `MongoTemplate`**, `DuplicateKeyException` for atomic uniqueness (the `orderId` pattern),
 the `com.airtel.core.dto.genericResponse.Response` wrapper, `@AuditLog`, and the `IV_USER` header
@@ -37,8 +37,9 @@ for the caller MSISDN.
 
 ## 1. Module map (all files)
 
-Every file below is **new**. Nothing in the existing `contest` module is modified; the winner
-check only **reads** `contest_entries`.
+Every file below is **new**. Nothing in the existing `contest` module code is modified; this
+feature **reads** `contest_entries` for the winner check and **writes** `winnerInfo` on existing
+`contest_entries` via the winner-admin override (API 5) — it never creates a contest entry.
 
 | Layer | File | Responsibility |
 |---|---|---|
@@ -51,6 +52,7 @@ check only **reads** `contest_entries`.
 | dto/req | `dto/request/QrGenerateRequest.java` | `{deviceId, timestamp}` (API 4) |
 | dto/req | `dto/request/EntryScanRequest.java` | `{qrToken, checkpoint, scanRequestId}` (API 3) |
 | dto/req | `dto/request/WhitelistUpsertRequest.java` | `{eventId, msisdn, checkpoints[]}` (API 1) |
+| dto/req | `dto/request/WinnerUpsertRequest.java` | `{eventId, msisdn, rank?, drawId?}` (API 5) |
 | dto/resp | `dto/response/QrGenerateResponse.java` | `{qrToken, expiresAt}` |
 | dto/resp | `dto/response/EntryScanResponse.java` | `{callback, admit, displayColor, message, holderMasked?, firstClaimAt?, otherDeviceId?}` + `of(cb)` factory |
 | dto/resp | `dto/response/AgentValidateResponse.java` | `{authorized, events[], agentSessionId?}` |
@@ -60,10 +62,12 @@ check only **reads** `contest_entries`.
 | dao | `dao/ScanLogDao.java` + `impl/…` | `save`, `findByScanRequestId`, `findByCustomerMsisdnOrderByServerTs` |
 | dao | `dao/AgentWhitelistDao.java` + `impl/…` | `upsert`, `findActiveByMsisdn`, `findActive` |
 | dao | `dao/AgentSessionDao.java` + `impl/…` | `openExclusive` (revoke-then-insert), `findActiveById` |
+| dao | `dao/ContestWinnerAdminDao.java` + `impl/…` | `markWinner(...)` — writes `winnerInfo` on `contest_entries` (API 5) |
 | service | `service/MembershipQrService.java` + `impl/…` | API 4 orchestration |
 | service | `service/AgentAccessService.java` + `impl/…` | API 1/2 + `requireAuthorizedSession` |
 | service | `service/EventEntryService.java` + `impl/…` | API 3 orchestration (the chain) + `scanHistory` |
-| service | `service/WinnerLookupService.java` + `impl/…` | winner check over `contest_entries` |
+| service | `service/WinnerLookupService.java` + `impl/…` | winner **read** over `contest_entries` |
+| service | `service/WinnerAdminService.java` + `impl/…` | winner **write** (API 5) — build `WinnerInfo`, update entry |
 | service | `service/QrTokenService.java` + `impl/…` | mint/verify JWS |
 | service | `service/QrIssuanceStore.java` + `impl/…` | single-active `latestJti` pointer (Aerospike) |
 | service | `service/QrClaims.java` | verified token payload holder |
@@ -71,6 +75,7 @@ check only **reads** `contest_entries`.
 | controller | `controller/MembershipQrController.java` | `POST /v1/membership/qr` |
 | controller | `controller/AgentController.java` | `POST /v1/agents/whitelist`, `GET /v1/agents/validate`, `POST /v1/agents/session` |
 | controller | `controller/EventEntryController.java` | `POST /v1/entry`, `GET /v1/admin/scan-history` |
+| controller | `controller/WinnerAdminController.java` | `POST /v1/admin/winners` (API 5) |
 | exception | `exception/{QrInvalid,QrExpired,AgentSessionInvalid}Exception.java` | typed failures |
 | exception | `exception/EventPassExceptionHandler.java` | `@RestControllerAdvice` for the module |
 | converter | `converter/CheckpointConverter.java` | `@RequestParam Checkpoint` binding |
@@ -390,10 +395,59 @@ exists (set by `DrawServiceImpl.upsertWinnerInfoOnEntries`). A live **event = co
 | `findWonEventIds(msisdn)` | `msisdn == ? AND winnerInfo exists`, project `programId`, distinct | API 4 — build token `events[]` |
 | `isWinner(msisdn, eventId)` | `msisdn == ? AND winnerInfo exists AND programId == ?` (`exists`) | API 3 optional re-check |
 
-No new winner store; no writes to `contest_entries`.
+No new winner store. The **only** write to `contest_entries` is the winner override (API 5, below).
 
 > **Open item (confirm):** event ↔ contest `programId` mapping. If an event spans multiple
 > contests or keys on `campaignId`, adjust the projection/criteria accordingly.
+
+### 10b. API 5 — Mark/update winner (`POST /v1/admin/winners`) — the write side
+
+`WinnerAdminController` → `WinnerAdminServiceImpl.markWinner` → `ContestWinnerAdminDaoImpl.markWinner`.
+Sets `winnerInfo` (the existing contest `WinnerInfo` document) on the customer's **existing**
+`contest_entries` row(s); it **never creates** an entry.
+
+```java
+// ContestWinnerAdminDaoImpl.markWinner
+Query q = new Query(Criteria.where("programId").is(programId).and("msisdn").is(msisdn));
+Update u = new Update().set("winnerInfo", winnerInfo).set("updatedAt", Instant.now());
+long matched = mongoTemplate.updateMulti(q, u, EntryDocument.class).getMatchedCount();
+```
+
+**Conditions**
+
+| # | Condition | Outcome |
+|---|---|---|
+| 1 | `eventId`/`msisdn` blank | 400 (`@NotBlank`) |
+| 2 | ≥1 `contest_entries` row for `(programId=eventId, msisdn)` | set `winnerInfo{rank?, drawId?, createdAt}`; return `{entriesUpdated, WINNER_MARKED}` |
+| 3 | **no** matching entry (customer never played) | `IllegalArgumentException` → 400 — never fabricate an entry |
+| 4 | already a winner | idempotent — `winnerInfo` overwritten with the new rank/drawId |
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ad as Admin
+  participant C as WinnerAdminController
+  participant S as WinnerAdminServiceImpl
+  participant D as ContestWinnerAdminDaoImpl
+  participant M as contest_entries
+  Ad->>C: POST /v1/admin/winners { eventId, msisdn, rank?, drawId? }
+  C->>S: markWinner(eventId, msisdn, rank, drawId, actor)
+  S->>S: build WinnerInfo{rank, drawId, createdAt=now}
+  S->>D: markWinner(programId, msisdn, winnerInfo)
+  D->>M: updateMulti(programId, msisdn) set winnerInfo
+  M-->>D: matchedCount
+  alt matched == 0
+    D-->>S: 0
+    S-->>C: IllegalArgumentException → 400
+  else matched ≥ 1
+    S-->>C: entriesUpdated
+    C-->>Ad: { entriesUpdated, status: WINNER_MARKED }
+  end
+  Note over Ad,M: Customer's next QR (API 4) reads winnerInfo → event now in token.events
+```
+
+Effect chain: **API 5 writes `winnerInfo`** → **API 4** embeds the new event in the QR on next
+refresh → **API 3** admits at the gate. This is the write counterpart to §10's read.
 
 ---
 

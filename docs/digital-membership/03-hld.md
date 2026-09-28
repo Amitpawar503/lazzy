@@ -21,7 +21,7 @@
 6. [Trust Boundaries](#6-trust-boundaries)
 7. [Data Domains](#7-data-domains)
 8. [Primary Flows (Sequence Diagrams)](#8-primary-flows-sequence-diagrams)
-9. [API Surface — the Four Endpoints](#9-api-surface--the-four-endpoints)
+9. [API Surface — the Five Endpoints](#9-api-surface--the-five-endpoints)
 10. [Entry Decision Flow (Flowchart)](#10-entry-decision-flow-flowchart)
 11. [Entry Decisions → Callback Codes](#11-entry-decisions--callback-codes)
 12. [Cross-Cutting Concerns](#12-cross-cutting-concerns)
@@ -171,7 +171,7 @@ separate deployables.
 | ├ **Eligibility component** | Membership status — active Postpaid + Fastlane / Advantage Club. Gates the customer surfaces and QR generation. |
 | ├ **Agent Whitelist & Session component** | The **agent whitelist** — which **events** and which **checkpoints** (ENTRY / GOODIE / both) each agent MSISDN may scan — and **agent scanning-session** validation. |
 | ├ **QR Generation component** | On request, checks eligibility, reads the customer's won events from the **Contest component**, and returns a **signed, short-TTL** token (single-active per customer). |
-| ├ **Contest component** | The existing contest engine. Sole source of truth for "**which events has this MSISDN won?**" — a winner is a **`contest_entries`** row whose **`winnerInfo`** is set (as `DrawServiceImpl` marks winners); a live **event maps to a contest `programId`**. Read (never written) at QR generation and re-checkable at entry. |
+| ├ **Contest component** | The existing contest engine. Sole source of truth for "**which events has this MSISDN won?**" — a winner is a **`contest_entries`** row whose **`winnerInfo`** is set (as `DrawServiceImpl` marks winners); a live **event maps to a contest `programId`**. **Read** at QR generation / re-checkable at entry, and **written** by the winner-admin override (API 5) which sets `winnerInfo` on an existing entry. |
 | └ **Entry Validation component** | The **gate authority**. On each scan it verifies the token (signature, structure, TTL), confirms the **agent is authorized** for the session's **event + checkpoint**, checks the session's event is **among the QR's won events**, performs the **atomic per-checkpoint redemption**, writes the **audit log**, and returns a **callback code**. Also serves the **scan-history** API. |
 | **Admin / Engineering tooling** | Not a UI role. Against the User Profile Service, it creates events, loads **contest winners** (Contest component) and **agent whitelist** rows (Agent Whitelist component), and retrieves **scan history** (Entry Validation component). |
 
@@ -310,7 +310,7 @@ erDiagram
 | Customer / eligibility | **User Profile Service** | Membership status, customer reference |
 | QR issuance (`qr_issuance`) | **User Profile Service** | Per-customer latest `jti` + issue time + **won `eventId`s** (fast store, TTL'd) — powers single-active + TTL |
 | Event | Admin | Event id, name, venue, window, checkpoints enabled |
-| **Contest** (existing `contest_entries`) | **Contest component** | The **winner source of truth**: a `contest_entries` row with **`winnerInfo`** set is a winner; **event = `programId`**. Read-only from this feature |
+| **Contest** (existing `contest_entries`) | **Contest component** | The **winner source of truth**: a `contest_entries` row with **`winnerInfo`** set is a winner; **event = `programId`**. Read at QR generation; **written** only by API 5 (winner override, sets `winnerInfo`) |
 | **Agent whitelist** (`event_agent_whitelist`) | **Agent Whitelist component** | Per **`(eventId, msisdn)`**: the **checkpoints** (ENTRY / GOODIE / both) that agent may scan. One agent MSISDN can hold **many** rows (many events) |
 | Agent session (`event_agent_sessions`) | **Agent Whitelist & Session component** | Active scanning session bound to `(msisdn, eventId, checkpoint)`; single-active per MSISDN |
 | Redemption (`event_redemptions`) | **Entry Validation component** | unique `(eventId, msisdn, checkpoint)` + **first-claim deviceId & time** — **the exactly-once anchor** |
@@ -451,9 +451,9 @@ sequenceDiagram
 
 ---
 
-## 9. API Surface — the Four Endpoints
+## 9. API Surface — the Five Endpoints
 
-All four endpoints are exposed by the **User Profile Service microservice**; the "Owning component"
+All endpoints are exposed by the **User Profile Service microservice**; the "Owning component"
 column names the internal module that handles each.
 
 | # | Method / Endpoint | Owning component (in User Profile Service) | Caller | Purpose | Key inputs | Success output |
@@ -463,6 +463,7 @@ column names the internal module that handles each.
 | 2b | `POST /v1/agents/session` | Agent Whitelist & Session | Thanks App (agent) | Open a single-active session for a chosen event + checkpoint | `eventId`, `checkpoint` (+ agent `msisdn`) | `{agentSessionId}` |
 | 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | Record an entry after scanning (session via `X-Agent-Session` header) | `qrToken`, `checkpoint`, `scanRequestId` (event from session) | `ENTRY_ALLOWED` / duplicate / other-device / expired |
 | 4 | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | Generate the signed QR carrying **won `eventId`s** | `deviceId`, `timestamp` (+ customer `msisdn` = `IV_USER`) | signed `qrToken` (+ `expiresAt`) |
+| 5 | `POST /v1/admin/winners` | Contest (winner write) | Admin / eng | **Mark/update a winner** on the customer's existing `contest_entries` doc (sets `winnerInfo`) | `eventId`, `msisdn`, `rank?`, `drawId?` | `{entriesUpdated, status}` |
 
 **Notes**
 - **Validate then open a session** — API 2 is two calls: `GET /validate` lists the agent's authorized events/checkpoints, then `POST /session` opens the single-active scanning session the agent picks. The session id is passed to API 3 in the **`X-Agent-Session`** header.
@@ -470,6 +471,7 @@ column names the internal module that handles each.
 - **No OTP** — agent authority is the User Profile Service **whitelist** (per event + checkpoint). See Q10.
 - **Whitelist carries checkpoints** — a `(eventId, msisdn)` row lists ENTRY, GOODIE, or both; agent mode surfaces only what the agent is authorized for.
 - **Every entry decision is HTTP 200 + callback** (INVALID_QR / QR_EXPIRED / STAFF_SESSION_INVALID included) so the scanner always renders a result; only unexpected faults map to `SERVICE_UNAVAILABLE`.
+- **Winners: draw or admin API** — winners are normally produced by the existing **contest draw** (`contest_entries.winnerInfo`). **API 5** is a manual override that sets `winnerInfo` on the customer's existing entry; it **never creates an entry** (the customer must have played the contest). A newly-marked win is picked up on the customer's next QR refresh.
 
 ### 9.1 API 1 — Whitelist an agent MSISDN (with checkpoints)
 
@@ -580,6 +582,29 @@ sequenceDiagram
   UPS-->>App: { qrToken, expiresAt }
 
   Note over App: Won multiple events → ALL eventIds ride in one token.<br/>Refresh re-calls API 4 → new jti supersedes old
+```
+
+### 9.5 API 5 — Mark/update a winner (writes `contest_entries.winnerInfo`)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Admin
+  participant WA as Winner Admin (Contest write)
+  participant DB as contest_entries
+
+  Admin->>WA: POST /v1/admin/winners { eventId, msisdn, rank?, drawId? }
+  WA->>WA: authz (eng only); build WinnerInfo{rank, drawId, createdAt}
+  WA->>DB: updateMulti(programId==eventId, msisdn) set winnerInfo
+  alt ≥ 1 entry matched
+    DB-->>WA: matchedCount
+    WA-->>Admin: { entriesUpdated, status: WINNER_MARKED }
+  else no entry for (event, msisdn)
+    DB-->>WA: 0
+    WA-->>Admin: 400 — customer never entered this contest (no entry to mark)
+  end
+
+  Note over Admin,DB: Winner is picked up in the customer's next QR (API 4 reads winnerInfo).
 ```
 
 ---

@@ -23,15 +23,15 @@ in the **same folder layout** as `contest` (`document/`, `dto/request|response/`
 com.airtel.userprofile.eventpass
 ├── enums/            Checkpoint, EntryCallback
 ├── document/         EventRedemptionDocument, AgentWhitelistDocument, AgentSessionDocument, ScanLogDocument
-├── dto/request/      QrGenerateRequest, EntryScanRequest, WhitelistUpsertRequest
+├── dto/request/      QrGenerateRequest, EntryScanRequest, WhitelistUpsertRequest, WinnerUpsertRequest
 ├── dto/response/     QrGenerateResponse, EntryScanResponse, AgentValidateResponse, AgentEventAccess
-├── dao/              EventRedemptionDao, RedeemOutcome, ScanLogDao, AgentWhitelistDao, AgentSessionDao
-│   └── impl/         EventRedemptionDaoImpl, ScanLogDaoImpl, AgentWhitelistDaoImpl, AgentSessionDaoImpl
-├── service/          MembershipQrService, EventEntryService, AgentAccessService, WinnerLookupService,
+├── dao/              EventRedemptionDao, RedeemOutcome, ScanLogDao, AgentWhitelistDao, AgentSessionDao, ContestWinnerAdminDao
+│   └── impl/         EventRedemptionDaoImpl, ScanLogDaoImpl, AgentWhitelistDaoImpl, AgentSessionDaoImpl, ContestWinnerAdminDaoImpl
+├── service/          MembershipQrService, EventEntryService, AgentAccessService, WinnerLookupService, WinnerAdminService,
 │                     QrTokenService, QrIssuanceStore, MembershipEligibilityService, QrClaims
 │   └── impl/         MembershipQrServiceImpl, EventEntryServiceImpl, AgentAccessServiceImpl,
-│                     WinnerLookupServiceImpl, QrTokenServiceImpl, QrIssuanceStoreImpl
-├── controller/       MembershipQrController, AgentController, EventEntryController
+│                     WinnerLookupServiceImpl, WinnerAdminServiceImpl, QrTokenServiceImpl, QrIssuanceStoreImpl
+├── controller/       MembershipQrController, AgentController, EventEntryController, WinnerAdminController
 ├── exception/        QrInvalidException, QrExpiredException, AgentSessionInvalidException, EventPassExceptionHandler
 ├── converter/        CheckpointConverter
 └── config/           EventPassProperties
@@ -45,6 +45,7 @@ com.airtel.userprofile.eventpass
 | 2 | `GET /v1/agents/validate` · `POST /v1/agents/session` | `AgentController` | `AgentAccessService.validate` / `openSession` | `AgentWhitelistDao`, `AgentSessionDao` |
 | 3 | `POST /v1/entry` | `EventEntryController` | `EventEntryService.recordEntry` | `EventRedemptionDao` (redeem) + `ScanLogDao` (audit) |
 | 4 | `POST /v1/membership/qr` | `MembershipQrController` | `MembershipQrService.generate` | `WinnerLookupService` (read `contest_entries`) + `QrTokenService` |
+| 5 | `POST /v1/admin/winners` | `WinnerAdminController` | `WinnerAdminService.markWinner` | `ContestWinnerAdminDao` (write `contest_entries.winnerInfo`) |
 | — | `GET /v1/admin/scan-history` | `EventEntryController` | `EventEntryService.scanHistory` | `ScanLogDao` |
 
 ## 3. Collections & indexes (MongoDB)
@@ -55,7 +56,7 @@ com.airtel.userprofile.eventpass
 | `event_agent_whitelist` | **unique** `(eventId, msisdn)` | agent authority (events + checkpoints) |
 | `event_agent_sessions` | `msisdn` | single-active scanning session |
 | `event_scan_logs` | unique sparse `scanRequestId`; `customerMsisdn`; `agentMsisdn`; `eventId` | audit + idempotency + history API |
-| `contest_entries` *(existing)* | reuse `winnerInfo` presence + `programId` | winner source of truth (read-only here) |
+| `contest_entries` *(existing)* | reuse `winnerInfo` presence + `programId` | winner source of truth (read at API 4; **written** by API 5 winner override) |
 
 The unique indexes are declared on the documents (`@CompoundIndex` / `@Indexed(unique=true)`) so
 Spring Data auto-creates them, same as `EntryDocument.orderId` in `contest`.
