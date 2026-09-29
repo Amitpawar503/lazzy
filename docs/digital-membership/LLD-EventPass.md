@@ -23,6 +23,7 @@
 3. [Service layering (Controller / Service / DAO)](#3-service-layering)
 4. [Data model, collections & indexes](#4-data-model-collections--indexes)
 5. [QR token](#5-qr-token)
+5A. [QR image util — render & validate](#5a-qr-image-util--render--validate)
 6. [Callback contract](#6-callback-contract)
 7. [API surface — the five endpoints](#7-api-surface--the-five-endpoints)
 8. [API sequences & conditions](#8-api-sequences--conditions)
@@ -163,6 +164,90 @@ Compact signed JWS (ES256). Claims:
 **Two expiry gates:** the JWT `exp` (hard TTL) **and** the single-active `latestJti` pointer
 (immediate supersede on refresh). Either failing → `QR_EXPIRED`. Signing key in KMS/HSM (`kid`
 rotation); verified with the public key.
+
+---
+
+## 5A. QR image util — render & validate
+
+The `qrToken` above is a **string**; §5 says nothing about how it becomes the *picture* in the
+Thanks App. The image util (package `…​eventpass.util`) draws the **styled circular QR** shown in the
+Figma — dotted modules under a radial gradient, rounded finder "eyes", a centre badge with the
+Advantage-Club logo / changeable text — and reads one back. Styling never touches the encoded bits,
+so any payload round-trips unchanged.
+
+**What it carries.** The util is payload-agnostic: pass the signed membership `qrToken`, a deeplink
+(`airtelthanks://…` / `https://…`), or any opaque info string as `data`. On scan the app decodes
+`data` locally and POSTs it to the backend (e.g. API 3 `/v1/entry`), which is how a scan "publishes"
+to the backend — the QR itself is only the carrier.
+
+**Two halves.**
+
+| Half | Class | Does |
+|---|---|---|
+| generate | `CircularQrGenerator` | `data` (+ resolved `Style`) → styled PNG / `data:image/png;base64,…`. ZXing encodes the bare module matrix (EC level **H**), Java2D paints dots + gradient + finder rings + centre badge. Stateless / thread-safe. |
+| validate | `QrImageDecoder` | image bytes → payload string (ZXing decode, `TRY_HARDER`). `decode` throws `QrInvalidException` when unreadable; `tryDecode` returns `Optional`; `matches(bytes, expected)` asserts a clean round-trip. This is **structural** validation only — trust validation (signature / TTL / single-active) stays `QrTokenService.verify`. |
+
+`QrImageService`(+impl) wraps both with the configured defaults and layers per-request overrides.
+
+**Config — `eventpass.qr-style.*`** (`@RefreshScope`; hex `#RRGGBB` / `#AARRGGBB`, or `transparent`):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `size` | `720` | Output edge in px (square). |
+| `quiet-zone-modules` | `2` | Quiet-zone modules around the code. |
+| `background-color` | `#FFFFFF` | Canvas fill; `transparent` for overlay. |
+| `module-shape` | `DOTS` | `DOTS` / `ROUNDED` / `SQUARE`. |
+| `module-size-ratio` | `0.86` | Dot size vs cell (airy gaps < 1.0). |
+| `gradient-enabled` | `true` | Radial gradient across the modules. |
+| `gradient-inner-color` / `gradient-outer-color` | `#F5A623` / `#C8102E` | Centre → edge gradient stops. |
+| `foreground-color` | `#C8102E` | Flat module colour when gradient off. |
+| `styled-finder` / `finder-corner-ratio` / `finder-color` | `true` / `0.35` / `#C8102E` | Rounded concentric "eyes". |
+| `center-badge-enabled` / `center-badge-ratio` | `true` / `0.24` | Centre disc (needs EC H). |
+| `center-badge-inner-color` / `center-badge-outer-color` | `#E4002B` / `#8B0000` | Badge gradient. |
+| `center-ring-*` | `true` / `#FFFFFF` / `0.04` | White separator ring. |
+| `center-text` | `airtel\nPOSTPAID\nADVANTAGE\nCLUB` | Stacked lines; first is the brand line. **Changeable per request** via `QrRenderRequest.centerText`. |
+| `center-text-color` / `center-text-font` | `#FFFFFF` / `SansSerif` | Centre text style. |
+| `center-logo-resource` | *(unset)* | Optional `classpath:…` logo drawn in the badge. |
+| `error-correction` | `H` | L/M/Q/H — keep **H** while a centre badge covers the middle. |
+
+```yaml
+# application.yml (User Profile Service)
+eventpass:
+  qr-style:
+    size: 720
+    module-shape: DOTS
+    gradient-inner-color: "#F5A623"
+    gradient-outer-color: "#C8102E"
+    finder-color: "#C8102E"
+    center-badge-inner-color: "#E4002B"
+    center-badge-outer-color: "#8B0000"
+    center-text: "airtel\nPOSTPAID\nADVANTAGE\nCLUB"
+    center-text-color: "#FFFFFF"
+    error-correction: H
+```
+
+**API surface** (`MembershipQrImageController`, util endpoints — member QR string is still API 4):
+
+| Endpoint | Body / param | Returns |
+|---|---|---|
+| `POST /v1/membership/qr/image` | `QrRenderRequest` (`data` required; optional `centerText`, colour & `size` overrides) | `QrRenderResponse` — `imageDataUri`, `width/height`, `encoded` |
+| `POST /v1/membership/qr/image.png` | `QrRenderRequest` | raw `image/png` |
+| `POST /v1/membership/qr/validate-image` | multipart `image` | `{ "data": "<decoded payload>" }` |
+
+**pom.xml**
+
+```xml
+<dependency>
+  <groupId>com.google.zxing</groupId>
+  <artifactId>core</artifactId>
+  <version>3.5.3</version>
+</dependency>
+<dependency>
+  <groupId>com.google.zxing</groupId>
+  <artifactId>javase</artifactId>
+  <version>3.5.3</version>
+</dependency>
+```
 
 ---
 
@@ -665,11 +750,15 @@ the scanner reuses one `scanRequestId` per decoded QR.
 | `IllegalArgumentException` (bad input / non-member / no entry to mark) | 400 |
 
 **Config** (`eventpass.*`, `@RefreshScope`): `qrTtlSeconds=300` (shared by API 3 & 4),
-`agentSessionTtlSeconds=86400`, `tokenVersion=1`, `issuer`, `signingKeyId`.
+`agentSessionTtlSeconds=86400`, `tokenVersion=1`, `issuer`, `signingKeyId`. QR **image style** is a
+separate `@RefreshScope` block `eventpass.qr-style.*` (see §5A) — colours, module shape, centre text —
+so branding is retuned without a redeploy.
 
 **Platform wiring to confirm:** (1) **jjwt** 0.12.x in `pom.xml`; (2) `@Configuration` KMS/HSM
 `PrivateKey`/`PublicKey` beans; (3) `MembershipEligibilityService` → existing eligibility bean;
-(4) `AerospikeDetails.EVENT_QR_LATEST` + TTL-aware `putDetails`; (5) event name/venue enrichment (optional).
+(4) `AerospikeDetails.EVENT_QR_LATEST` + TTL-aware `putDetails`; (5) event name/venue enrichment (optional);
+(6) **ZXing** for the image util — `com.google.zxing:core` (encode) and `com.google.zxing:javase`
+(decode / `BufferedImageLuminanceSource`), both 3.5.x, in `pom.xml`.
 
 ---
 
@@ -682,14 +771,15 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 |---|---|
 | enums | `Checkpoint`, `EntryCallback` |
 | document | `EventRedemptionDocument`, `AgentWhitelistDocument`, `AgentSessionDocument`, `ScanLogDocument` |
-| dto/request | `QrGenerateRequest`, `EntryScanRequest`, `WhitelistUpsertRequest`, `WinnerUpsertRequest` |
-| dto/response | `QrGenerateResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse` |
+| dto/request | `QrGenerateRequest`, `EntryScanRequest`, `WhitelistUpsertRequest`, `WinnerUpsertRequest`, `QrRenderRequest` |
+| dto/response | `QrGenerateResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse`, `QrRenderResponse` |
 | dao | `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `AgentWhitelistDao`(+impl), `AgentSessionDao`(+impl), `ContestWinnerAdminDao`(+impl) |
-| service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `MembershipEligibilityService`, `QrClaims`, `CachedQr` |
-| controller | `MembershipQrController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
+| service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `MembershipEligibilityService`, `QrClaims`, `CachedQr`, `QrImageService`(+impl) |
+| util | `CircularQrGenerator` (render styled circular QR), `QrImageDecoder` (decode/validate QR image) |
+| controller | `MembershipQrController`, `MembershipQrImageController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
 | exception | `QrInvalidException`, `QrExpiredException`, `AgentSessionInvalidException`, `EventPassExceptionHandler` |
 | converter | `CheckpointConverter` |
-| config | `EventPassProperties` |
+| config | `EventPassProperties`, `QrStyleProperties` |
 
 ---
 
@@ -3141,6 +3231,75 @@ public class EventPassProperties {
 	private String signingKeyId;
 }
 ```
+
+### QR image util (render & validate) — §5A
+
+New files under `com.airtel.userprofile.eventpass` for the styled circular QR. Full source lives in
+the reference tree; the colour/style config is inlined here since it is the tunable surface.
+
+| Path | Role |
+|---|---|
+| `config/QrStyleProperties.java` | `eventpass.qr-style.*` — colours, module shape, centre text, EC level (inlined below). |
+| `util/CircularQrGenerator.java` | `data` → styled PNG / data-URI (ZXing encode + Java2D dots/gradient/finder/badge). |
+| `util/QrImageDecoder.java` | image bytes → payload (ZXing decode); `decode` / `tryDecode` / `matches`. |
+| `dto/request/QrRenderRequest.java` | render body — `data` (required) + optional `centerText`, colour & `size` overrides. |
+| `dto/response/QrRenderResponse.java` | `imageDataUri`, `width/height`, `encoded`. |
+| `service/QrImageService.java` (+`impl`) | config defaults + per-request overrides over the two utils. |
+| `controller/MembershipQrImageController.java` | `POST /v1/membership/qr/image`, `…/image.png`, `…/validate-image`. |
+
+```java
+package com.airtel.userprofile.eventpass.config;
+
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.stereotype.Component;
+
+/** Visual style for the rendered membership QR — env-tunable via {@code eventpass.qr-style.*}. */
+@Data
+@Component
+@RefreshScope
+@ConfigurationProperties(prefix = "eventpass.qr-style")
+public class QrStyleProperties {
+
+	public enum ModuleShape { DOTS, ROUNDED, SQUARE }
+
+	private int size = 720;
+	private int quietZoneModules = 2;
+	private String backgroundColor = "#FFFFFF";
+
+	private ModuleShape moduleShape = ModuleShape.DOTS;
+	private double moduleSizeRatio = 0.86;
+
+	private boolean gradientEnabled = true;
+	private String gradientInnerColor = "#F5A623";
+	private String gradientOuterColor = "#C8102E";
+	private String foregroundColor = "#C8102E";
+
+	private boolean styledFinder = true;
+	private double finderCornerRatio = 0.35;
+	private String finderColor = "#C8102E";
+
+	private boolean centerBadgeEnabled = true;
+	private double centerBadgeRatio = 0.24;
+	private String centerBadgeInnerColor = "#E4002B";
+	private String centerBadgeOuterColor = "#8B0000";
+	private boolean centerRingEnabled = true;
+	private String centerRingColor = "#FFFFFF";
+	private double centerRingRatio = 0.04;
+
+	private String centerText = "airtel\nPOSTPAID\nADVANTAGE\nCLUB";
+	private String centerTextColor = "#FFFFFF";
+	private String centerTextFont = "SansSerif";
+	private String centerLogoResource;
+
+	private String errorCorrection = "H";
+}
+```
+
+> The generator (`CircularQrGenerator`) and decoder (`QrImageDecoder`) are ~250 and ~80 lines; see
+> [`reference-impl/eventpass/util/`](./reference-impl/eventpass/util). Both are stateless Spring
+> `@Component`s wired through `QrImageService`.
 
 ---
 
