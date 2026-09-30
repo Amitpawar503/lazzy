@@ -178,7 +178,7 @@ public class CircularQrGenerator {
 			g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 			g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-			fill(g, new Rectangle2D.Double(0, 0, style.getSize(), style.getSize()), style.getBackground());
+			fillOrClear(g, new Rectangle2D.Double(0, 0, style.getSize(), style.getSize()), style.getBackground());
 			drawModules(g, style, grid);
 			if (style.isStyledFinder()) {
 				drawFinders(g, style, grid);
@@ -286,7 +286,7 @@ public class CircularQrGenerator {
 		g.fill(roundBox(x, y, box, arc));
 
 		double hole = unit * 5;
-		fill(g, roundBox(x + unit, y + unit, hole, hole * cornerRatio), style.getBackground());
+		fillOrClear(g, roundBox(x + unit, y + unit, hole, hole * cornerRatio), style.getBackground());
 
 		double eye = unit * 3;
 		g.setColor(style.getFinderColor());
@@ -394,7 +394,7 @@ public class CircularQrGenerator {
 	}
 
 	/** Fill {@code shape} with {@code color}, or clear to transparent when {@code color} is null. */
-	private static void fill(Graphics2D g, Shape shape, Color color) {
+	private static void fillOrClear(Graphics2D g, Shape shape, Color color) {
 		if (color == null) {
 			Composite prev = g.getComposite();
 			g.setComposite(AlphaComposite.Clear);
