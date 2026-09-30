@@ -2,6 +2,7 @@ package com.airtel.userprofile.eventpass.util;
 
 import com.airtel.userprofile.eventpass.config.QrStyleProperties;
 import com.airtel.userprofile.eventpass.config.QrStyleProperties.ModuleShape;
+import com.google.zxing.BarcodeFormat;
 import com.google.zxing.EncodeHintType;
 import com.google.zxing.WriterException;
 import com.google.zxing.common.BitMatrix;
@@ -19,14 +20,18 @@ import org.springframework.util.StringUtils;
 import javax.imageio.ImageIO;
 import java.awt.AlphaComposite;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.MultipleGradientPaint.CycleMethod;
+import java.awt.Paint;
 import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
+import java.awt.Shape;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -43,13 +48,13 @@ import java.util.Map;
  * (signed token, deeplink, or opaque info). What a camera reads back is exactly the payload; the
  * styling never touches the encoded bits.
  *
- * <p>Stateless and thread-safe: all per-call inputs arrive through {@link Style}. Resolve a {@link
- * Style} from {@link QrStyleProperties} once (optionally layering request overrides), then call
- * {@link #renderPng} / {@link #renderDataUri} as often as needed.
+ * <p>Stateless and thread-safe: every per-call input arrives through {@link Style}. Resolve a {@link
+ * Style} from {@link QrStyleProperties} with {@link Style#from}, then call {@link #renderPng} /
+ * {@link #renderDataUri} as often as needed. The renderer knows nothing about web DTOs or Spring
+ * config binding — layering per-request overrides onto a {@link Style} is the caller's concern.
  *
- * <p>Error correction defaults to level H so the covered centre still decodes. Encoding uses
- * ZXing ({@code com.google.zxing:core} + {@code javase} for decode); see the platform-wiring note in
- * the LLD for the {@code pom.xml} entries.
+ * <p>Encoding uses ZXing ({@code com.google.zxing:core}); decoding lives in {@link QrImageDecoder}
+ * ({@code :javase}). See the LLD §5A platform-wiring note for the {@code pom.xml} entries.
  */
 @Component
 @Slf4j
@@ -57,9 +62,20 @@ public class CircularQrGenerator {
 
 	private static final ResourceLoader RESOURCE_LOADER = new DefaultResourceLoader();
 
+	/** Modules per side of a QR finder pattern (the three corner "eyes"). */
+	private static final int FINDER_MODULES = 7;
+
+	// Centre-text layout, all relative to the badge radius so they scale with the badge.
+	private static final double BRAND_TEXT_RATIO = 0.42; // first (brand) line
+	private static final double LINE_TEXT_RATIO = 0.26;  // remaining lines
+	private static final double LINE_SPACING = 1.12;
+	private static final double TEXT_INNER_WIDTH_RATIO = 1.5;
+	private static final double BADGE_HIGHLIGHT_SPREAD = 1.4; // radial-highlight reach vs badge radius
+	private static final float MIN_FONT_PX = 6f;
+
 	/**
-	 * Immutable, fully-resolved render style. Build from config with {@link #from(QrStyleProperties)},
-	 * then layer any non-null per-request overrides yourself before rendering.
+	 * Immutable, fully-resolved render style. Build from config with {@link #from(QrStyleProperties)}
+	 * and layer any non-null per-request overrides via {@link #toBuilder()} before rendering.
 	 */
 	@Value
 	@Builder(toBuilder = true)
@@ -89,30 +105,30 @@ public class CircularQrGenerator {
 		String centerLogoResource;
 		ErrorCorrectionLevel errorCorrection;
 
-		/** Resolve a Style straight from configured defaults. */
+		/** Resolve a Style straight from configured defaults (parsing + clamping applied here). */
 		public static Style from(QrStyleProperties p) {
 			return Style.builder()
 					.size(p.getSize())
 					.quietZoneModules(p.getQuietZoneModules())
-					.background(parseColor(p.getBackgroundColor()))
+					.background(HexColors.parse(p.getBackgroundColor()))
 					.moduleShape(p.getModuleShape())
 					.moduleSizeRatio(clamp(p.getModuleSizeRatio(), 0.4, 1.0))
 					.gradientEnabled(p.isGradientEnabled())
-					.gradientInner(parseColor(p.getGradientInnerColor()))
-					.gradientOuter(parseColor(p.getGradientOuterColor()))
-					.foreground(parseColor(p.getForegroundColor()))
+					.gradientInner(HexColors.parse(p.getGradientInnerColor()))
+					.gradientOuter(HexColors.parse(p.getGradientOuterColor()))
+					.foreground(HexColors.parse(p.getForegroundColor()))
 					.styledFinder(p.isStyledFinder())
 					.finderCornerRatio(clamp(p.getFinderCornerRatio(), 0.0, 0.5))
-					.finderColor(parseColor(p.getFinderColor()))
+					.finderColor(HexColors.parse(p.getFinderColor()))
 					.centerBadgeEnabled(p.isCenterBadgeEnabled())
 					.centerBadgeRatio(clamp(p.getCenterBadgeRatio(), 0.0, 0.32))
-					.centerBadgeInner(parseColor(p.getCenterBadgeInnerColor()))
-					.centerBadgeOuter(parseColor(p.getCenterBadgeOuterColor()))
+					.centerBadgeInner(HexColors.parse(p.getCenterBadgeInnerColor()))
+					.centerBadgeOuter(HexColors.parse(p.getCenterBadgeOuterColor()))
 					.centerRingEnabled(p.isCenterRingEnabled())
-					.centerRingColor(parseColor(p.getCenterRingColor()))
+					.centerRingColor(HexColors.parse(p.getCenterRingColor()))
 					.centerRingRatio(clamp(p.getCenterRingRatio(), 0.0, 0.15))
 					.centerText(p.getCenterText())
-					.centerTextColor(parseColor(p.getCenterTextColor()))
+					.centerTextColor(HexColors.parse(p.getCenterTextColor()))
 					.centerTextFont(p.getCenterTextFont())
 					.centerLogoResource(p.getCenterLogoResource())
 					.errorCorrection(parseEc(p.getErrorCorrection()))
@@ -120,17 +136,32 @@ public class CircularQrGenerator {
 		}
 	}
 
+	/** Immutable pixel layout of the code on the canvas — the single source of module geometry. */
+	@Value
+	private static class Grid {
+		BitMatrix matrix;
+		int modules;      // modules per side (quiet zone excluded)
+		int cell;         // px per module
+		int origin;       // px offset of the whole (code + quiet zone) block
+		int quietZone;    // modules
+
+		double x(int col) { return origin + (quietZone + col) * (double) cell; }
+		double y(int row) { return origin + (quietZone + row) * (double) cell; }
+		double codeOrigin() { return origin + quietZone * (double) cell; }
+		double codeSpan() { return modules * (double) cell; }
+	}
+
+	// ---- public API ---------------------------------------------------------
+
 	/** Render to a {@code data:image/png;base64,…} URI, ready for an {@code <img src>}. */
 	public String renderDataUri(String data, Style style) {
-		byte[] png = renderPng(data, style);
-		return "data:image/png;base64," + Base64.getEncoder().encodeToString(png);
+		return "data:image/png;base64," + Base64.getEncoder().encodeToString(renderPng(data, style));
 	}
 
 	/** Render to PNG bytes. */
 	public byte[] renderPng(String data, Style style) {
-		BufferedImage img = render(data, style);
 		try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-			ImageIO.write(img, "png", out);
+			ImageIO.write(render(data, style), "png", out);
 			return out.toByteArray();
 		} catch (IOException e) {
 			throw new IllegalStateException("Failed to encode QR PNG", e);
@@ -139,60 +170,21 @@ public class CircularQrGenerator {
 
 	/** Render to a {@link BufferedImage}. */
 	public BufferedImage render(String data, Style style) {
-		if (!StringUtils.hasText(data)) {
-			throw new IllegalArgumentException("QR payload must not be blank");
-		}
-		BitMatrix matrix = encodeBareMatrix(data, style.getErrorCorrection());
-		int modules = matrix.getWidth(); // square, quiet zone excluded
-
-		int size = style.getSize();
-		int dims = modules + 2 * style.getQuietZoneModules();
-		int cell = Math.max(1, size / dims);
-		int drawn = cell * dims;
-		int origin = (size - drawn) / 2; // centre the code in the canvas
-		int qz = style.getQuietZoneModules();
-
-		BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Grid grid = layout(data, style);
+		BufferedImage img = new BufferedImage(style.getSize(), style.getSize(), BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = img.createGraphics();
 		try {
 			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 			g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 			g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-			paintBackground(g, style, size);
-
-			double cx = size / 2.0;
-			double cy = size / 2.0;
-			// Modules whose centre falls inside this radius are cleared for the badge.
-			double badgeClearR = style.isCenterBadgeEnabled()
-					? size * (style.getCenterBadgeRatio() / 2.0 + style.getCenterRingRatio())
-					: -1;
-
-			g.setPaint(dataPaint(style, origin + qz * cell, drawn - 2 * qz * cell));
-
-			for (int my = 0; my < modules; my++) {
-				for (int mx = 0; mx < modules; mx++) {
-					if (!matrix.get(mx, my)) continue;
-					if (style.isStyledFinder() && inFinder(mx, my, modules)) continue; // drawn separately
-					double px = origin + (qz + mx) * cell;
-					double py = origin + (qz + my) * cell;
-					if (badgeClearR > 0) {
-						double mcx = px + cell / 2.0, mcy = py + cell / 2.0;
-						if (Math.hypot(mcx - cx, mcy - cy) <= badgeClearR) continue; // under badge
-					}
-					g.fill(moduleShape(style, px, py, cell));
-				}
-			}
-
+			fill(g, new Rectangle2D.Double(0, 0, style.getSize(), style.getSize()), style.getBackground());
+			drawModules(g, style, grid);
 			if (style.isStyledFinder()) {
-				int f = 7 * cell;
-				drawFinder(g, style, origin + qz * cell, origin + qz * cell, f);
-				drawFinder(g, style, origin + (qz + modules - 7) * cell, origin + qz * cell, f);
-				drawFinder(g, style, origin + qz * cell, origin + (qz + modules - 7) * cell, f);
+				drawFinders(g, style, grid);
 			}
-
 			if (style.isCenterBadgeEnabled()) {
-				drawCenterBadge(g, style, cx, cy);
+				drawCenterBadge(g, style, style.getSize() / 2.0, style.getSize() / 2.0);
 			}
 		} finally {
 			g.dispose();
@@ -200,7 +192,19 @@ public class CircularQrGenerator {
 		return img;
 	}
 
-	// ---- encoding -----------------------------------------------------------
+	// ---- encoding & layout --------------------------------------------------
+
+	private Grid layout(String data, Style style) {
+		if (!StringUtils.hasText(data)) {
+			throw new IllegalArgumentException("QR payload must not be blank");
+		}
+		BitMatrix matrix = encodeBareMatrix(data, style.getErrorCorrection());
+		int modules = matrix.getWidth(); // square, quiet zone excluded
+		int dims = modules + 2 * style.getQuietZoneModules();
+		int cell = Math.max(1, style.getSize() / dims);
+		int origin = (style.getSize() - cell * dims) / 2; // centre the block
+		return new Grid(matrix, modules, cell, origin, style.getQuietZoneModules());
+	}
 
 	private BitMatrix encodeBareMatrix(String data, ErrorCorrectionLevel ec) {
 		Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
@@ -209,44 +213,50 @@ public class CircularQrGenerator {
 		hints.put(EncodeHintType.MARGIN, 0); // we add the quiet zone ourselves
 		try {
 			// width/height==0 asks ZXing for the natural, one-pixel-per-module matrix.
-			return new QRCodeWriter().encode(data, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0, hints);
+			return new QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, 0, 0, hints);
 		} catch (WriterException e) {
 			throw new IllegalArgumentException("Cannot encode QR payload (too long?)", e);
 		}
 	}
 
-	// ---- painting helpers ---------------------------------------------------
+	// ---- modules ------------------------------------------------------------
 
-	private void paintBackground(Graphics2D g, Style style, int size) {
-		if (style.getBackground() == null) {
-			g.setComposite(AlphaComposite.Clear);
-			g.fillRect(0, 0, size, size);
-			g.setComposite(AlphaComposite.SrcOver);
-		} else {
-			g.setColor(style.getBackground());
-			g.fillRect(0, 0, size, size);
+	private void drawModules(Graphics2D g, Style style, Grid grid) {
+		double center = style.getSize() / 2.0;
+		double badgeClearR = style.isCenterBadgeEnabled()
+				? style.getSize() * (style.getCenterBadgeRatio() / 2.0 + style.getCenterRingRatio())
+				: -1;
+		g.setPaint(dataPaint(style, grid));
+
+		for (int row = 0; row < grid.getModules(); row++) {
+			for (int col = 0; col < grid.getModules(); col++) {
+				if (!grid.getMatrix().get(col, row)) continue;
+				if (style.isStyledFinder() && inFinder(col, row, grid.getModules())) continue; // drawn separately
+				double px = grid.x(col);
+				double py = grid.y(row);
+				if (badgeClearR > 0
+						&& Math.hypot(px + grid.getCell() / 2.0 - center, py + grid.getCell() / 2.0 - center) <= badgeClearR) {
+					continue; // under the centre badge
+				}
+				g.fill(moduleShape(style, px, py, grid.getCell()));
+			}
 		}
 	}
 
 	/** Radial gradient (inner→outer) across the code, or a flat colour when disabled. */
-	private java.awt.Paint dataPaint(Style style, int codeOrigin, int codeSpan) {
+	private Paint dataPaint(Style style, Grid grid) {
 		if (!style.isGradientEnabled()) return style.getForeground();
-		float cx = codeOrigin + codeSpan / 2f;
-		float cy = cx; // square
-		float radius = (float) (codeSpan / 2f * Math.sqrt(2)); // reach the corners
-		return new RadialGradientPaint(
-				new Point2D.Float(cx, cy), radius,
-				new float[]{0f, 1f},
-				new Color[]{style.getGradientInner(), style.getGradientOuter()},
-				CycleMethod.NO_CYCLE);
+		double c = grid.codeOrigin() + grid.codeSpan() / 2.0;
+		double radius = grid.codeSpan() / 2.0 * Math.sqrt(2); // reach the corners
+		return radial(c, c, radius, style.getGradientInner(), style.getGradientOuter());
 	}
 
-	private java.awt.Shape moduleShape(Style style, double px, double py, int cell) {
+	private Shape moduleShape(Style style, double px, double py, int cell) {
 		double d = cell * style.getModuleSizeRatio();
 		double off = (cell - d) / 2.0;
 		switch (style.getModuleShape()) {
 			case SQUARE:
-				return new RoundRectangle2D.Double(px, py, cell, cell, 0, 0);
+				return new Rectangle2D.Double(px, py, cell, cell);
 			case ROUNDED:
 				return new RoundRectangle2D.Double(px + off, py + off, d, d, d * 0.5, d * 0.5);
 			case DOTS:
@@ -255,59 +265,74 @@ public class CircularQrGenerator {
 		}
 	}
 
-	/** Concentric rounded finder: outer ring (7) → hole (5) → solid eye (3). */
+	// ---- finders ------------------------------------------------------------
+
+	private void drawFinders(Graphics2D g, Style style, Grid grid) {
+		int box = FINDER_MODULES * grid.getCell();
+		int last = grid.getModules() - FINDER_MODULES;
+		int[][] corners = {{0, 0}, {last, 0}, {0, last}}; // top-left, top-right, bottom-left
+		for (int[] c : corners) {
+			drawFinder(g, style, grid.x(c[0]), grid.y(c[1]), box);
+		}
+	}
+
+	/** Concentric rounded finder: outer ring (7 modules) → hole (5) → solid eye (3). */
 	private void drawFinder(Graphics2D g, Style style, double x, double y, int box) {
 		double arc = box * style.getFinderCornerRatio();
-		double unit = box / 7.0;
+		double unit = box / (double) FINDER_MODULES;
+		double cornerRatio = arc / box;
+
 		g.setColor(style.getFinderColor());
-		g.fill(new RoundRectangle2D.Double(x, y, box, box, arc, arc));
-		// punch a 5x5 hole using the background (transparent-safe)
-		double hole = unit * 5, hx = x + unit, hy = y + unit, harc = hole * (arc / box);
-		java.awt.Composite prev = g.getComposite();
-		if (style.getBackground() == null) {
-			g.setComposite(AlphaComposite.Clear);
-			g.fill(new RoundRectangle2D.Double(hx, hy, hole, hole, harc, harc));
-			g.setComposite(prev);
-		} else {
-			g.setColor(style.getBackground());
-			g.fill(new RoundRectangle2D.Double(hx, hy, hole, hole, harc, harc));
-		}
-		double eye = unit * 3, ex = x + unit * 2, ey = y + unit * 2, earc = eye * (arc / box);
+		g.fill(roundBox(x, y, box, arc));
+
+		double hole = unit * 5;
+		fill(g, roundBox(x + unit, y + unit, hole, hole * cornerRatio), style.getBackground());
+
+		double eye = unit * 3;
 		g.setColor(style.getFinderColor());
-		g.fill(new RoundRectangle2D.Double(ex, ey, eye, eye, earc, earc));
+		g.fill(roundBox(x + unit * 2, y + unit * 2, eye, eye * cornerRatio));
 	}
+
+	private static RoundRectangle2D.Double roundBox(double x, double y, double size, double arc) {
+		return new RoundRectangle2D.Double(x, y, size, size, arc, arc);
+	}
+
+	private static boolean inFinder(int col, int row, int modules) {
+		return (col < FINDER_MODULES && row < FINDER_MODULES)                       // top-left
+				|| (col >= modules - FINDER_MODULES && row < FINDER_MODULES)        // top-right
+				|| (col < FINDER_MODULES && row >= modules - FINDER_MODULES);       // bottom-left
+	}
+
+	// ---- centre badge -------------------------------------------------------
 
 	private void drawCenterBadge(Graphics2D g, Style style, double cx, double cy) {
 		double badgeR = style.getSize() * style.getCenterBadgeRatio() / 2.0;
 		if (style.isCenterRingEnabled()) {
 			double ringR = badgeR + style.getSize() * style.getCenterRingRatio();
 			g.setColor(style.getCenterRingColor());
-			g.fill(new Ellipse2D.Double(cx - ringR, cy - ringR, ringR * 2, ringR * 2));
+			g.fill(disc(cx, cy, ringR));
 		}
-		// gradient disc
-		g.setPaint(new RadialGradientPaint(
-				new Point2D.Double(cx - badgeR * 0.25, cy - badgeR * 0.25), (float) (badgeR * 1.4),
-				new float[]{0f, 1f},
-				new Color[]{style.getCenterBadgeInner(), style.getCenterBadgeOuter()},
-				CycleMethod.NO_CYCLE));
-		g.fill(new Ellipse2D.Double(cx - badgeR, cy - badgeR, badgeR * 2, badgeR * 2));
+		// gradient disc, highlight biased to the upper-left for a glossy look
+		g.setPaint(radial(cx - badgeR * 0.25, cy - badgeR * 0.25, badgeR * BADGE_HIGHLIGHT_SPREAD,
+				style.getCenterBadgeInner(), style.getCenterBadgeOuter()));
+		g.fill(disc(cx, cy, badgeR));
 
 		double contentTop = drawCenterLogo(g, style, cx, cy, badgeR);
 		drawCenterText(g, style, cx, cy, badgeR, contentTop);
 	}
 
-	/** @return y where text should start (below the logo), or cy for text-only badges. */
+	/** @return y where text should start (below the logo), or NaN when there is no logo. */
 	private double drawCenterLogo(Graphics2D g, Style style, double cx, double cy, double badgeR) {
 		if (!StringUtils.hasText(style.getCenterLogoResource())) return Double.NaN;
+		boolean textToo = StringUtils.hasText(style.getCenterText());
 		try {
 			Resource res = RESOURCE_LOADER.getResource(style.getCenterLogoResource());
 			try (InputStream in = res.getInputStream()) {
 				BufferedImage logo = ImageIO.read(in);
 				if (logo == null) return Double.NaN;
-				double max = badgeR * (StringUtils.hasText(style.getCenterText()) ? 0.9 : 1.3);
+				double max = badgeR * (textToo ? 0.9 : 1.3);
 				double scale = max / Math.max(logo.getWidth(), logo.getHeight());
 				double w = logo.getWidth() * scale, h = logo.getHeight() * scale;
-				boolean textToo = StringUtils.hasText(style.getCenterText());
 				double top = textToo ? cy - badgeR * 0.72 : cy - h / 2;
 				g.drawImage(logo, (int) Math.round(cx - w / 2), (int) Math.round(top),
 						(int) Math.round(w), (int) Math.round(h), null);
@@ -323,70 +348,65 @@ public class CircularQrGenerator {
 		if (!StringUtils.hasText(style.getCenterText())) return;
 		String[] lines = style.getCenterText().split("\\r?\\n");
 		g.setColor(style.getCenterTextColor());
+		double innerW = badgeR * TEXT_INNER_WIDTH_RATIO;
 
-		// First line is the brand line (largest); the rest share a smaller size.
-		double innerW = badgeR * 1.5;
-		double brandSize = badgeR * 0.42;
-		double restSize = badgeR * 0.26;
-
+		Font[] fonts = new Font[lines.length];
 		double totalH = 0;
-		double[] heights = new double[lines.length];
 		for (int i = 0; i < lines.length; i++) {
-			Font f = fitFont(g, style.getCenterTextFont(), i == 0 ? Font.BOLD : Font.BOLD,
-					i == 0 ? brandSize : restSize, lines[i], innerW);
-			heights[i] = f.getSize2D() * 1.12;
-			totalH += heights[i];
+			double px = badgeR * (i == 0 ? BRAND_TEXT_RATIO : LINE_TEXT_RATIO);
+			fonts[i] = fitFont(g, style.getCenterTextFont(), px, lines[i], innerW);
+			totalH += fonts[i].getSize2D() * LINE_SPACING;
 		}
+
 		double y = Double.isNaN(startY) ? cy - totalH / 2 : startY;
 		for (int i = 0; i < lines.length; i++) {
-			Font f = fitFont(g, style.getCenterTextFont(), Font.BOLD,
-					i == 0 ? brandSize : restSize, lines[i], innerW);
-			g.setFont(f);
+			g.setFont(fonts[i]);
 			FontMetrics fm = g.getFontMetrics();
-			int tx = (int) Math.round(cx - fm.stringWidth(lines[i]) / 2.0);
-			int ty = (int) Math.round(y + fm.getAscent());
-			g.drawString(lines[i], tx, ty);
-			y += heights[i];
+			g.drawString(lines[i],
+					(int) Math.round(cx - fm.stringWidth(lines[i]) / 2.0),
+					(int) Math.round(y + fm.getAscent()));
+			y += fonts[i].getSize2D() * LINE_SPACING;
 		}
 	}
 
-	/** Shrink the font until the line fits {@code maxWidth}. */
-	private Font fitFont(Graphics2D g, String family, int weightStyle, double px, String text, double maxWidth) {
+	/** Largest BOLD font at {@code family} whose {@code text} fits {@code maxWidth}, down to a floor. */
+	private Font fitFont(Graphics2D g, String family, double px, String text, double maxWidth) {
 		float sz = (float) px;
-		Font f = new Font(family, weightStyle, Math.max(1, Math.round(sz)));
-		while (sz > 6) {
-			f = new Font(family, weightStyle, Math.round(sz));
+		Font f = new Font(family, Font.BOLD, Math.max(1, Math.round(sz)));
+		while (sz > MIN_FONT_PX) {
+			f = new Font(family, Font.BOLD, Math.round(sz));
 			if (g.getFontMetrics(f).stringWidth(text) <= maxWidth) break;
 			sz -= 1f;
 		}
 		return f;
 	}
 
-	// ---- finder geometry & parsing -----------------------------------------
+	// ---- shared paint helpers ----------------------------------------------
 
-	private static boolean inFinder(int mx, int my, int modules) {
-		return (mx < 7 && my < 7)                       // top-left
-				|| (mx >= modules - 7 && my < 7)        // top-right
-				|| (mx < 7 && my >= modules - 7);       // bottom-left
+	/** Two-stop radial gradient centred at (cx,cy). */
+	private static RadialGradientPaint radial(double cx, double cy, double radius, Color inner, Color outer) {
+		return new RadialGradientPaint(new Point2D.Double(cx, cy), (float) radius,
+				new float[]{0f, 1f}, new Color[]{inner, outer}, CycleMethod.NO_CYCLE);
 	}
 
-	/** Parse {@code #RRGGBB} / {@code #AARRGGBB} / {@code "transparent"} (→ null). Public for overrides. */
-	public static Color parseColor(String hex) {
-		if (!StringUtils.hasText(hex) || "transparent".equalsIgnoreCase(hex.trim())) return null;
-		String h = hex.trim();
-		if (h.startsWith("#")) h = h.substring(1);
-		try {
-			if (h.length() == 6) {
-				return new Color(Integer.parseInt(h, 16));
-			} else if (h.length() == 8) { // AARRGGBB
-				long v = Long.parseLong(h, 16);
-				return new Color((int) (v >> 16) & 0xFF, (int) (v >> 8) & 0xFF, (int) v & 0xFF, (int) (v >> 24) & 0xFF);
-			}
-		} catch (NumberFormatException ignored) {
-			// fall through
+	private static Ellipse2D.Double disc(double cx, double cy, double r) {
+		return new Ellipse2D.Double(cx - r, cy - r, r * 2, r * 2);
+	}
+
+	/** Fill {@code shape} with {@code color}, or clear to transparent when {@code color} is null. */
+	private static void fill(Graphics2D g, Shape shape, Color color) {
+		if (color == null) {
+			Composite prev = g.getComposite();
+			g.setComposite(AlphaComposite.Clear);
+			g.fill(shape);
+			g.setComposite(prev);
+		} else {
+			g.setColor(color);
+			g.fill(shape);
 		}
-		throw new IllegalArgumentException("Invalid colour: " + hex + " (use #RRGGBB, #AARRGGBB, or 'transparent')");
 	}
+
+	// ---- misc ---------------------------------------------------------------
 
 	private static ErrorCorrectionLevel parseEc(String level) {
 		if (!StringUtils.hasText(level)) return ErrorCorrectionLevel.H;

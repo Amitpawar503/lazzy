@@ -775,7 +775,7 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 | dto/response | `QrGenerateResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse`, `QrRenderResponse` |
 | dao | `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `AgentWhitelistDao`(+impl), `AgentSessionDao`(+impl), `ContestWinnerAdminDao`(+impl) |
 | service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `MembershipEligibilityService`, `QrClaims`, `CachedQr`, `QrImageService`(+impl) |
-| util | `CircularQrGenerator` (render styled circular QR), `QrImageDecoder` (decode/validate QR image) |
+| util | `CircularQrGenerator` (render styled circular QR), `QrImageDecoder` (decode/validate QR image), `HexColors` (hex→`Color` parsing) |
 | controller | `MembershipQrController`, `MembershipQrImageController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
 | exception | `QrInvalidException`, `QrExpiredException`, `AgentSessionInvalidException`, `EventPassExceptionHandler` |
 | converter | `CheckpointConverter` |
@@ -3240,8 +3240,9 @@ the reference tree; the colour/style config is inlined here since it is the tuna
 | Path | Role |
 |---|---|
 | `config/QrStyleProperties.java` | `eventpass.qr-style.*` — colours, module shape, centre text, EC level (inlined below). |
-| `util/CircularQrGenerator.java` | `data` → styled PNG / data-URI (ZXing encode + Java2D dots/gradient/finder/badge). |
+| `util/CircularQrGenerator.java` | `data` → styled PNG / data-URI (ZXing encode + Java2D dots/gradient/finder/badge). Per-call input is an immutable `Style`; a private `Grid` owns the module geometry. |
 | `util/QrImageDecoder.java` | image bytes → payload (ZXing decode); `decode` / `tryDecode` / `matches`. |
+| `util/HexColors.java` | `#RRGGBB` / `#AARRGGBB` / `transparent` → `Color` (one parser shared by config mapping + overrides). |
 | `dto/request/QrRenderRequest.java` | render body — `data` (required) + optional `centerText`, colour & `size` overrides. |
 | `dto/response/QrRenderResponse.java` | `imageDataUri`, `width/height`, `encoded`. |
 | `service/QrImageService.java` (+`impl`) | config defaults + per-request overrides over the two utils. |
@@ -3297,9 +3298,11 @@ public class QrStyleProperties {
 }
 ```
 
-> The generator (`CircularQrGenerator`) and decoder (`QrImageDecoder`) are ~250 and ~80 lines; see
-> [`reference-impl/eventpass/util/`](./reference-impl/eventpass/util). Both are stateless Spring
-> `@Component`s wired through `QrImageService`.
+> The generator (`CircularQrGenerator`), decoder (`QrImageDecoder`) and colour parser (`HexColors`)
+> live in [`reference-impl/eventpass/util/`](./reference-impl/eventpass/util). The generator/decoder
+> are stateless Spring `@Component`s wired through `QrImageService`; `HexColors` is a pure helper. The
+> renderer takes an immutable `Style` and knows nothing about the web DTO or Spring config — the
+> service resolves config + per-request overrides into a `Style` (SRP), so styling stays pure.
 
 ---
 
