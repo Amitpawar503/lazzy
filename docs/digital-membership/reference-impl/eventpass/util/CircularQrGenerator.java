@@ -104,6 +104,7 @@ public class CircularQrGenerator {
 		String centerTextFont;
 		String centerLogoResource;
 		ErrorCorrectionLevel errorCorrection;
+		boolean resilient;
 
 		/** Resolve a Style straight from configured defaults (parsing + clamping applied here). */
 		public static Style from(QrStyleProperties p) {
@@ -132,6 +133,24 @@ public class CircularQrGenerator {
 					.centerTextFont(p.getCenterTextFont())
 					.centerLogoResource(p.getCenterLogoResource())
 					.errorCorrection(parseEc(p.getErrorCorrection()))
+					.resilient(p.isResilientRender())
+					.build();
+		}
+
+		/**
+		 * A guaranteed-scannable variant of this style: plain black square modules on opaque white,
+		 * no gradient, styled finder, or centre overlay. Keeps size, quiet zone and EC level so the
+		 * fallback encodes the same payload at the same dimensions.
+		 */
+		Style toPlain() {
+			return toBuilder()
+					.background(Color.WHITE)
+					.foreground(Color.BLACK)
+					.gradientEnabled(false)
+					.moduleShape(ModuleShape.SQUARE)
+					.styledFinder(false)
+					.centerBadgeEnabled(false)
+					.centerRingEnabled(false)
 					.build();
 		}
 	}
@@ -168,9 +187,25 @@ public class CircularQrGenerator {
 		}
 	}
 
-	/** Render to a {@link BufferedImage}. */
+	/**
+	 * Render to a {@link BufferedImage}. Encoding the payload is the only hard failure (an
+	 * un-encodable/too-long payload throws); if the <em>styling</em> then fails and the style is
+	 * {@link Style#isResilient() resilient}, a plain black-on-white QR of the same matrix is returned
+	 * so a valid payload always yields a scannable code.
+	 */
 	public BufferedImage render(String data, Style style) {
-		Grid grid = layout(data, style);
+		Grid grid = layout(data, style); // encode: bad payload → IllegalArgumentException (propagates)
+		try {
+			return draw(grid, style);
+		} catch (RuntimeException e) {
+			if (!style.isResilient()) throw e;
+			log.warn("Styled QR render failed for a valid payload; falling back to a plain QR", e);
+			return draw(grid, style.toPlain());
+		}
+	}
+
+	/** Paint the (already-encoded) grid with the given style onto a fresh canvas. */
+	private BufferedImage draw(Grid grid, Style style) {
 		BufferedImage img = new BufferedImage(style.getSize(), style.getSize(), BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = img.createGraphics();
 		try {

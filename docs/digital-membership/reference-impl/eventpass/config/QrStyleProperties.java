@@ -103,4 +103,11 @@ public class QrStyleProperties {
 	 * covered centre still decodes.
 	 */
 	private String errorCorrection = "H";
+
+	/**
+	 * Resilience: when the styled render fails for an otherwise-encodable payload (e.g. a bad centre
+	 * logo, font, or colour), fall back to a plain black-on-white QR of the same data instead of
+	 * failing the request. A payload that cannot be encoded at all still errors.
+	 */
+	private boolean resilientRender = true;
 }

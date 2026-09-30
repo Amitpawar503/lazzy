@@ -189,6 +189,10 @@ to the backend — the QR itself is only the carrier.
 
 `QrImageService`(+impl) wraps both with the configured defaults and layers per-request overrides.
 
+**Resilience.** Neither half fails a caller for a recoverable reason:
+- *Generation* — encoding is the only hard failure (an un-encodable/too-long payload throws `IllegalArgumentException` → 400). If the **styling** then fails (bad centre logo, font, or colour) and `resilient-render` is on (default), the generator falls back to a **plain black-on-white QR of the same matrix** — a valid payload always yields a scannable code. The fallback is logged at WARN.
+- *Validation* — `tryDecode` walks a **strategy ladder** (Hybrid then Global-histogram binarizer, each on normal and inverted luminance, all `TRY_HARDER`) and returns the first hit, so a photographed / compressed / dark-mode / dotted image that defeats one binarizer still decodes. Later passes run only on a miss; all failing → empty `Optional` (→ `QrInvalidException` from `decode`).
+
 **Config — `eventpass.qr-style.*`** (`@RefreshScope`; hex `#RRGGBB` / `#AARRGGBB`, or `transparent`):
 
 | Key | Default | Meaning |
@@ -209,6 +213,7 @@ to the backend — the QR itself is only the carrier.
 | `center-text-color` / `center-text-font` | `#FFFFFF` / `SansSerif` | Centre text style. |
 | `center-logo-resource` | *(unset)* | Optional `classpath:…` logo drawn in the badge. |
 | `error-correction` | `H` | L/M/Q/H — keep **H** while a centre badge covers the middle. |
+| `resilient-render` | `true` | On a styling failure, fall back to a plain scannable QR instead of erroring. |
 
 ```yaml
 # application.yml (User Profile Service)
@@ -3295,6 +3300,9 @@ public class QrStyleProperties {
 	private String centerLogoResource;
 
 	private String errorCorrection = "H";
+
+	/** Fall back to a plain scannable QR if the styled render fails. */
+	private boolean resilientRender = true;
 }
 ```
 
