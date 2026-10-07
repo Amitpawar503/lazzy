@@ -18,9 +18,6 @@ public class EventPassProperties {
 	/** QR token TTL in seconds (Q1 — recommend 300). */
 	private long qrTtlSeconds = 300;
 
-	/** Agent scanning session TTL in seconds (24h). */
-	private long agentSessionTtlSeconds = 86_400;
-
 	/** Token schema version currently issued; verifier accepts this and older supported versions. */
 	private int tokenVersion = 1;
 

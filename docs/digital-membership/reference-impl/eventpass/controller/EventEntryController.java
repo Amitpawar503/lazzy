@@ -4,6 +4,7 @@ import com.airtel.core.dto.genericResponse.Response;
 import com.airtel.core.enums.Entity;
 import com.airtel.core.enums.Operation;
 import com.airtel.core.logging.AuditLog;
+import com.airtel.userprofile.constants.UserProfileConstants;
 import com.airtel.userprofile.eventpass.document.ScanLogDocument;
 import com.airtel.userprofile.eventpass.dto.request.EntryScanRequest;
 import com.airtel.userprofile.eventpass.dto.response.EntryScanResponse;
@@ -18,9 +19,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 
 /**
- * API 3 — record an entry after scanning (agent mode). The event is taken from the agent session
- * (header {@code X-Agent-Session}); the body carries only qrToken + checkpoint + scanRequestId.
- * Also exposes the admin scan-history API (FR35).
+ * API 3 — record an entry after scanning (agent mode). The agent MSISDN is the authenticated
+ * {@code IV_USER} (no session); {@code eventId} + {@code checkpoint} in the body are authorized
+ * live against the agent's whitelist. Also exposes the admin scan-history API (FR35).
  */
 @RestController
 @Api(value = "Event Pass — Entry")
@@ -28,18 +29,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EventEntryController {
 
-	public static final String HEADER_AGENT_SESSION = "X-Agent-Session";
-
 	private final EventEntryService eventEntryService;
 
 	@PostMapping("/v1/entry")
 	@ApiOperation(value = "Record entry/goodie redemption after scanning a customer QR")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<EntryScanResponse> recordEntry(
-			@RequestHeader(name = HEADER_AGENT_SESSION) String agentSessionId,
+			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
 			@Valid @RequestBody EntryScanRequest request) {
 		// Every gate decision (allow/deny) returns 200 with a callback so the scanner always renders.
-		return Response.getSuccessResponse(eventEntryService.recordEntry(agentSessionId, request));
+		return Response.getSuccessResponse(eventEntryService.recordEntry(agentMsisdn, request));
 	}
 
 	@GetMapping("/v1/admin/scan-history")

@@ -39,13 +39,14 @@
 
 ## 1. Design principle
 
-> **Identity + won-events QR, agent-session-bound checkpoint. One app for both roles.**
+> **Identity + won-events QR, whitelist-authorized checkpoint. One app for both roles.**
 > The QR proves **who** the customer is **and which events they have won** — the winning
 > `eventId`s are read from the contest data at generation time and **signed into the token** by the
 > **User Profile Service**, then shown in the Airtel Thanks App. Scanning is **also inside the same
 > Thanks App**, in an *agent mode* unlocked only for **whitelisted MSISDNs** — **no microsite, no
-> OTP**. The **checkpoint** (ENTRY / GOODIE) and the **event** come from the **agent's validated
-> session**. Entry is allowed when `session.eventId ∈ token.wonEvents` **and** that
+> OTP, no session**: the agent is already authenticated by app login (`IV_USER`), and each scan is
+> authorized live against the whitelist. The agent sends the **event** + **checkpoint** (ENTRY /
+> GOODIE) with the scan. Entry is allowed when `request.eventId ∈ token.wonEvents` **and** that
 > `(customer, event, checkpoint)` has not already been redeemed — an **atomic, exactly-once,
 > per-checkpoint** operation.
 
@@ -69,7 +70,7 @@ flowchart TB
   subgraph UPS["User Profile Service (microservice)"]
     QRG[QR Generation]
     ELIG[Eligibility]
-    WLC[Agent Whitelist & Session]
+    WLC[Agent Whitelist]
     CTS["Contest (read winnerInfo / write via API 5)"]
     EVS[Entry Validation]
   end
@@ -78,7 +79,7 @@ flowchart TB
   Admin[Admin / Eng]
 
   QRC -->|API 4 generate| QRG
-  AGT -->|API 2 validate/session| WLC
+  AGT -->|API 2 validate| WLC
   AGT -->|API 3 entry| EVS
   Admin -->|API 1 whitelist| WLC
   Admin -->|API 5 mark winner| CTS
@@ -97,13 +98,13 @@ flowchart TB
 | **Thanks App — Agent mode** | Whitelisted MSISDNs only; pick authorized event+checkpoint, scan, POST to Entry Validation, render decision. Decides nothing. |
 | **QR Generation** | Checks eligibility, reads won events from Contest, mints signed short-TTL token, single-active per customer. |
 | **Eligibility** | Active Postpaid + Fastlane / Advantage Club membership. |
-| **Agent Whitelist & Session** | Which events + checkpoints each agent MSISDN may scan; single-active scanning session. |
+| **Agent Whitelist** | Which events + checkpoints each agent MSISDN may scan — one `event_agent` row per (agent, event), carrying the agent + that event's info (read for validate; authorized live per scan). No separate event or session store. |
 | **Contest** | Existing contest engine; winner source of truth (`contest_entries.winnerInfo`, event=`programId`). Read at API 4 / entry; **written** by API 5. |
 | **Entry Validation** | The gate authority: verify token, authorize agent, winner check, atomic redeem, audit, callback. |
 
 **Trust boundaries:** the app is semi-trusted (can request a QR / validate an agent) but **untrusted
 for decisions** — Entry Validation decides server-side; event, checkpoint, agent identity and
-timestamp come from the session, never the client body.
+timestamp come from the server; eventId/checkpoint are re-checked against the whitelist, never trusted blindly.
 
 ---
 
@@ -115,7 +116,7 @@ Inside the one microservice, each component is layered Controller → Service �
 |---|---|---|
 | **Controller (API boundary)** | Accepts/returns **DTOs** only, never DB entities | `MembershipQrController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
 | **Service (business logic)** | Eligibility, whitelist, token mint/verify, redemption, winner read/write | `MembershipQrService`, `AgentAccessService`, `EventEntryService`, `WinnerLookupService`, `WinnerAdminService`, `QrTokenService` |
-| **DAO (persistence)** | `MongoTemplate` mapping documents ↔ collections | `EventRedemptionDao`, `ScanLogDao`, `AgentWhitelistDao`, `AgentSessionDao`, `ContestWinnerAdminDao` |
+| **DAO (persistence)** | `MongoTemplate` mapping documents ↔ collections | `EventAgentDao` (the single `event_agent` collection — whitelist CRUD + agent lookups), `EventRedemptionDao`, `ScanLogDao`, `ContestWinnerAdminDao` |
 
 DTOs never cross into the DB layer; the signing key stays behind KMS/HSM.
 
@@ -125,28 +126,30 @@ DTOs never cross into the DB layer; the signing key stays behind KMS/HSM.
 
 ```mermaid
 erDiagram
-  EVENT ||--o{ EVENT_AGENT_WHITELIST : "agent↔event relation"
-  EVENT ||--o{ EVENT_REDEMPTIONS : scoped_to
+  EVENT_AGENT ||--o{ EVENT_REDEMPTIONS : "authorizes scan / scoped_to"
   CONTEST_ENTRIES ||--o{ EVENT_REDEMPTIONS : "winner (winnerInfo) redeems"
-  EVENT_AGENT_WHITELIST ||--o| EVENT_AGENT_SESSIONS : opens
-  EVENT_AGENT_SESSIONS ||--o{ EVENT_SCAN_LOGS : records
-  EVENT { string eventId  string eventName  string venue  instant startTime  instant endTime  bool active  instant cleanupAt }
+  EVENT_AGENT ||--o{ EVENT_SCAN_LOGS : "authorizes scan"
+  EVENT_AGENT { string _id "msisdn::eventId"  string msisdn  set checkpoints  bool active  string eventId  string eventName  string venue  instant startTime  instant endTime  instant cleanupAt }
   EVENT_REDEMPTIONS { string eventId  string msisdn  string checkpoint  string deviceId  string scanRequestId  instant redeemedAt  instant cleanupAt }
-  EVENT_AGENT_WHITELIST { string eventId  string msisdn  set checkpoints  bool active  instant endTime  instant cleanupAt }
-  EVENT_AGENT_SESSIONS { string msisdn  bool revoked  instant expiresAt }
   EVENT_SCAN_LOGS { string scanRequestId  string eventId  string customerMsisdn  string agentMsisdn  string callback  instant serverTs  instant cleanupAt }
   CONTEST_ENTRIES { string programId  string msisdn  object winnerInfo }
 ```
 
 | Collection | Key index | TTL (auto-delete) | Purpose |
 |---|---|---|---|
-| `event` | `_id = eventId` | `cleanupAt` (`endTime+30d`) | event master; name/venue/window/active |
-| `event_agent_whitelist` | **unique** `(eventId, msisdn)` | `cleanupAt` (`endTime+30d`) | **agent↔event relation** (events + checkpoints an agent may scan) |
+| `event_agent` | **composite `_id = msisdn::eventId`** (agent+event PK); `msisdn`, `eventId` | `cleanupAt` (`endTime+30d`) | **the single whitelist collection** — one row per (agent, event): agent (`checkpoints[]`, `active`) **+ that event's info** (name/venue/window) |
 | `event_redemptions` | **unique** `(eventId, msisdn, checkpoint)`; unique sparse `scanRequestId` | `cleanupAt` (`endTime+30d`) | exactly-once redemption + idempotency |
 | `event_scan_logs` | unique sparse `scanRequestId`; `customerMsisdn`, `agentMsisdn`, `eventId` | `cleanupAt` (`endTime+30d`) | **audit** (agent↔customer↔event) + idempotency + history |
-| `event_agent_sessions` | `msisdn` | `expiresAt` (24h) | single-active scanning session |
 | `contest_entries` *(existing)* | `winnerInfo` presence + `programId` | — (owned by contest) | winner source (read at API 4; **written** by API 5) |
 | Aerospike `qr:latest:{msisdn}` | — | record TTL = QR TTL | single-active QR cache (`CachedQr`) |
+
+> **One collection for events + agents, no separate event or session store.** There is **no** `event`
+> collection and **no** `event_agent_whitelist`/`event_agent_sessions`: a single `event_agent`
+> collection holds one row per **(agent, event)** — composite key `msisdn::eventId` — carrying the
+> agent's checkpoints/active **and** that one event's info (name/venue/window). Event info is set the
+> first time an event is whitelisted and inherited by its later agents. Agents scan inside the
+> authenticated Thanks App, so identity is `IV_USER` and authorization is a live check against the
+> `event_agent` row on every scan.
 
 Unique indexes are declared on the documents (`@CompoundIndex` / `@Indexed(unique=true, sparse=true)`),
 and each **TTL index** is `@Indexed(expireAfterSeconds = 0)` on the `cleanupAt` / `expiresAt` date —
@@ -154,26 +157,37 @@ Mongo's background sweeper deletes the doc once that instant passes. See §4A.
 
 ---
 
-## 4A. Agent↔event relation & 30-day retention (TTL)
+## 4A. Agent↔event collection & 30-day retention (TTL)
 
-**Chosen shape: a separate relation document per `(agent, event)`** (`event_agent_whitelist`),
-**not** an embedded `List<events>` on an agent document.
+**Chosen shape: a single `event_agent` collection, one document per (agent, event)** — composite
+primary key `msisdn::eventId` — where each row carries the **agent** (`checkpoints[]`, `active`)
+**and that one event's info** (name, venue, window). There is **no** separate `event` collection and
+**no** embedded agent array. At this scale — **3–5 concurrent events, ≤50 agents each** (≤~250 rows
+total) — a flat join row per (agent, event) is the simplest model, and because every row owns its own
+`cleanupAt` it is also the cleanest fit for a *per-event, per-row* 30-day TTL.
 
-| Why | Separate relation doc | Embedded list on agent |
-|---|---|---|
-| **Per-event 30-day cleanup** | ✅ TTL index deletes each row independently at `endTime+30d` | ❌ TTL can't expire array elements — needs a cron to prune |
-| Unbounded growth | ✅ one small row per event | ❌ agent doc grows forever |
-| Write contention | ✅ independent rows | ❌ one hot doc for all events |
-| "Events for agent" query | ✅ `find({msisdn})` | ✅ single doc |
+| Why | Single `event_agent` row per (agent, event) (chosen) | Two collections (event + whitelist) | Embedded array (agents[] on event, or events[] on agent) |
+|---|---|---|---|
+| **Collections to manage** | ✅ one | ❌ two to keep consistent | ✅ one, but… |
+| **30-day cleanup after event ends** | ✅ each row's own TTL (`endTime+30d`) deletes it independently | ✅ but the whitelist row must copy the event's `cleanupAt` | ⚠️ event doc TTLs whole / ❌ TTL can't expire array elements (needs a cron) |
+| **"Agent with no events for 30 days removed"** | ✅ free — an agent's only rows are its (agent, event) rows; when the last TTLs out, nothing remains | ✅ free | ⚠️/❌ agent-master or array lingers |
+| Growth | ✅ bounded (≤~250 rows) | ✅ bounded | ✅ bounded |
+| "Events for agent" query | ✅ `find({msisdn, active})` on an indexed field | ✅ `find({msisdn})` | ✅ single doc |
+| Per-scan authorize | ✅ `findById(msisdn::eventId)` — a point read | ❌ join event + whitelist | ✅ one doc then array scan |
 
 **How cleanup works end-to-end:**
-1. Admin creates the **`event`** (`POST /v1/admin/events`) with `startTime`/`endTime`; the service sets `cleanupAt = endTime + 30d`.
-2. Whitelisting an agent copies the event's `endTime`/`cleanupAt` onto the relation row (API 1 requires the event to exist first).
-3. At scan time, `event_redemptions` and `event_scan_logs` are stamped with the same `cleanupAt`.
-4. Mongo **TTL indexes** auto-purge every per-event doc 30 days after the event ends — no cron.
-5. **"Agent with no events for 30 days is removed" falls out for free:** we keep **no standalone
-   agent-master doc**; an agent's only footprint is relation rows + sessions + audit, all TTL'd.
-   When the last one expires, nothing about that agent remains.
+1. The **first** time an event is whitelisted (API 1 create), the request carries the event info (`eventName`, `venue`, `startTime`, `endTime`); the service computes `cleanupAt = endTime + 30d` and stamps it on the row. Later agents for the same event may omit the event fields — they are inherited from the existing rows.
+2. Each (agent, event) row therefore carries its own `cleanupAt`; there is no separate event record to keep in sync.
+3. At scan time, `event_redemptions` and `event_scan_logs` are stamped with the same `cleanupAt = endTime + 30d` (read off the authorizing `event_agent` row).
+4. Mongo **TTL indexes** auto-purge every per-event doc — the `event_agent` rows and the redemption/audit docs — 30 days after the event ends. No cron.
+5. **"Agent with no events for 30 days is removed" falls out for free:** an agent has no standalone
+   doc; its only footprint is its (agent, event) rows plus audit rows, all TTL'd. When the last one
+   expires, nothing about that agent remains.
+
+> **No event-admin API.** Because there is no standalone event collection, there is no `POST /v1/admin/events`:
+> an event comes into existence when its first agent is whitelisted (which supplies the event info),
+> and "closing" an event is setting its rows `active=false` (API 1 PUT) or simply letting the 30-day
+> TTL purge them.
 
 **Audit record** = `event_scan_logs`: every scan (allow and deny) writes `{agentMsisdn,
 customerMsisdn, eventId, checkpoint, callback, serverTs, scanRequestId}` — the authoritative record
@@ -298,10 +312,10 @@ eventpass:
 | `ENTRY_ALLOWED` | ✅ | green | yes | first valid scan at checkpoint |
 | `DUPLICATE_ENTRY` | ❌ | red | yes | repeat, same device |
 | `ALREADY_ENTERED_OTHER_DEVICE` | ❌ | red | yes | repeat, different device (returns first deviceId) |
-| `NOT_ENTITLED` | ❌ | red | yes | `session.eventId ∉ token.events` |
+| `NOT_ENTITLED` | ❌ | red | yes | `request.eventId ∉ token.events` |
 | `QR_EXPIRED` | ❌ | grey | yes | past TTL or superseded |
 | `INVALID_QR` | ❌ | red | yes | malformed/forged/unsupported |
-| `STAFF_SESSION_INVALID` | ❌ | red | **no** | session missing/revoked/expired/mismatch |
+| `STAFF_SESSION_INVALID` | ❌ | red | **no** | agent (`IV_USER`) not whitelisted for the requested event/checkpoint |
 | `SERVICE_UNAVAILABLE` | ❌ | grey | yes | unexpected fault — never auto-allow |
 
 Every entry decision returns **HTTP 200 + callback**; only unexpected faults map to `SERVICE_UNAVAILABLE`.
@@ -311,21 +325,20 @@ Every entry decision returns **HTTP 200 + callback**; only unexpected faults map
 ## 7. API surface
 
 All endpoints are on the **User Profile Service**. "Owning component" names the internal module.
-The **agent whitelist is a full admin CRUD** (POST/GET/PUT/DELETE); **agent validation is a single
-API** (validate + open session); the **membership QR has generate / validate (get-or-create) /
+The **agent whitelist is a full admin CRUD** (POST/GET/PUT/DELETE) over the single `event_agent`
+collection — the create also carries the event info the first time an event is whitelisted, so there
+is **no separate event-admin API**; **agent validation is a single API** (pure read — no session; the
+Thanks App login is the auth); the **membership QR has generate / validate (get-or-create) /
 refresh**.
 
 | # | Method / Endpoint | Owning component | Caller | Key inputs | Success output |
 |---|---|---|---|---|---|
-| 0a | `POST /v1/admin/events` | Event Admin | Admin/eng | `eventId`, `eventName`, `startTime`, `endTime`, `venue?` | event (incl. `cleanupAt=endTime+30d`) |
-| 0b | `GET /v1/admin/events/{eventId}` | Event Admin | Admin/eng | `eventId` | event |
-| 0c | `POST /v1/admin/events/{eventId}/close` | Event Admin | Admin/eng | `eventId` | `{status:"CLOSED"}` |
-| 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `msisdn`, `eventId`, `checkpoints[]`, `active?` | `{whitelistId, status}` |
+| 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `msisdn`, `eventId`, `checkpoints[]`, `active?`, **event info** (`eventName`, `venue?`, `startTime`, `endTime` — first time per event) | `{eventId, msisdn, status}` |
 | 1b | `GET /v1/agents/whitelist?eventId=&msisdn=` | Agent Whitelist | Admin/eng | `eventId`, `msisdn?` | `[{eventId, msisdn, checkpoints[], active}]` |
 | 1c | `PUT /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `eventId`, `msisdn`, `checkpoints?`, `active?` | updated row |
 | 1d | `DELETE /v1/agents/whitelist?eventId=&msisdn=` | Agent Whitelist | Admin/eng | `eventId`, `msisdn` | `{status:"DELETED"}` |
-| 2 | `GET /v1/agents/validate` | Agent Whitelist & Session | Thanks App (agent) | agent `msisdn` (`IV_USER`) | `{authorized, events[], agentSessionId}` |
-| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | `qrToken`, `eventId`, `checkpoint`, `scanRequestId` (+ `X-Agent-Session`) | callback |
+| 2 | `GET /v1/agents/validate` | Agent Whitelist | Thanks App (agent) | agent `msisdn` (`IV_USER`) | `{authorized, events[]}` |
+| 3 | `POST /v1/entry` | Entry Validation | Thanks App (agent) | `qrToken`, `eventId`, `checkpoint`, `scanRequestId` (+ `IV_USER` = agent msisdn) | callback |
 | 4a | `POST /v1/membership/qr` | QR Generation | Thanks App (customer) | `deviceId`, `timestamp` (+ `IV_USER`) | `{qrToken, expiresAt}` (always new) |
 | 4b | `POST /v1/membership/qr/validate` | QR Generation | Thanks App (customer) | `deviceId` (+ `IV_USER`) | cached live QR if present, else new |
 | 4c | `POST /v1/membership/qr/refresh` | QR Generation | Thanks App (customer) | `deviceId` (+ `IV_USER`) | new QR (supersedes) |
@@ -336,12 +349,11 @@ refresh**.
 
 | API | Controller | Service | Persistence |
 |---|---|---|---|
-| 0 event | `EventAdminController` | `EventAdminService.upsert`/`get`/`close` | `EventDao` → `event` (TTL) |
-| 1a create | `AgentController.createWhitelist` | `AgentAccessService.upsertWhitelist` (requires event) | `AgentWhitelistDao.upsert` |
-| 1b read | `AgentController.getWhitelist` | `AgentAccessService.getWhitelist` | `AgentWhitelistDao.findOne`/`findByEvent` |
-| 1c update | `AgentController.updateWhitelist` | `AgentAccessService.updateWhitelist` | `AgentWhitelistDao.update` |
-| 1d delete | `AgentController.deleteWhitelist` | `AgentAccessService.deleteWhitelist` | `AgentWhitelistDao.delete` |
-| 2 | `AgentController.validate` | `AgentAccessService.validate` (validates + opens session) | `AgentWhitelistDao`, `AgentSessionDao` |
+| 1a create | `AgentController.createWhitelist` | `AgentAccessService.upsertWhitelist` (sets/inherits event info) | `EventAgentDao.upsert` (row `msisdn::eventId`) |
+| 1b read | `AgentController.getWhitelist` | `AgentAccessService.getWhitelist` | `EventAgentDao.findByEvent` / `findByEventAndAgent` |
+| 1c update | `AgentController.updateWhitelist` | `AgentAccessService.updateWhitelist` | `EventAgentDao.update` |
+| 1d delete | `AgentController.deleteWhitelist` | `AgentAccessService.deleteWhitelist` | `EventAgentDao.delete` |
+| 2 | `AgentController.validate` | `AgentAccessService.validate` (pure read) | `EventAgentDao.findActiveByAgent` |
 | 3 | `EventEntryController` | `EventEntryService.recordEntry` | `EventRedemptionDao` + `ScanLogDao` |
 | 4a/4b/4c | `MembershipQrController` | `MembershipQrService.generate` / `validateOrGenerate` / `refresh` | `WinnerLookupService` (read) + `QrTokenService` + `QrIssuanceStore` (get-or-create) |
 | 5 | `WinnerAdminController` | `WinnerAdminService.markWinner` | `ContestWinnerAdminDao` (write `winnerInfo`) |
@@ -349,17 +361,18 @@ refresh**.
 **Request/response contracts**
 
 ```
-API 1a POST   /v1/agents/whitelist            body { msisdn, eventId, checkpoints[], active? }
-                                              -> 200 { whitelistId, status:"UPSERTED" }
+API 1a POST   /v1/agents/whitelist            body { msisdn, eventId, checkpoints[], active?, eventName?, venue?, startTime?, endTime? }
+                                              // event info set on first whitelist of the event, inherited after; endTime drives the 30-day TTL
+                                              -> 200 { eventId, msisdn, status:"UPSERTED" }
 API 1b GET    /v1/agents/whitelist?eventId=&msisdn=   (msisdn optional → all rows for the event)
-                                              -> 200 [ { eventId, msisdn, checkpoints[], active, updatedAt } ]
+                                              -> 200 [ { eventId, eventName, venue, msisdn, checkpoints[], active, updatedAt } ]
 API 1c PUT    /v1/agents/whitelist            body { eventId, msisdn, checkpoints?, active? }
                                               -> 200 { eventId, msisdn, checkpoints[], active }   (400 if absent)
 API 1d DELETE /v1/agents/whitelist?eventId=&msisdn=
                                               -> 200 { eventId, msisdn, status:"DELETED" }        (400 if absent)
-API 2  GET    /v1/agents/validate             (IV_USER = agent msisdn)   // validates AND opens the session
-                                              -> { authorized, events:[{eventId,name?,venue?,checkpoints[]}], agentSessionId }
-API 3  POST   /v1/entry                       Header X-Agent-Session; body { qrToken, eventId, checkpoint, scanRequestId }
+API 2  GET    /v1/agents/validate             (IV_USER = agent msisdn)   // pure read — no session
+                                              -> { authorized, events:[{eventId,name?,venue?,checkpoints[]}] }
+API 3  POST   /v1/entry                       Header IV_USER = agent msisdn; body { qrToken, eventId, checkpoint, scanRequestId }
                                               -> 200 { callback, admit, displayColor, message, holderMasked?, firstClaimAt?, otherDeviceId? }
 API 4a POST   /v1/membership/qr               Header IV_USER; body { deviceId, timestamp }   // always new
                                               -> 200 { qrToken, expiresAt }        (else 400 non-member)
@@ -376,24 +389,26 @@ API 5  POST   /v1/admin/winners               Header IV_USER; body { eventId, ms
 ## 8. API sequences & conditions
 
 ### API 1 — Whitelist agent (admin)
-Idempotent upsert on `(eventId, msisdn)`; one MSISDN may serve many events; mid-event appends supported.
+Idempotent upsert of the `event_agent` row (composite id `msisdn::eventId`); one MSISDN may serve
+many events (one row each); mid-event appends supported. The **first** whitelist for an event
+supplies the event info (`eventName`/`venue`/`startTime`/`endTime` → `cleanupAt = endTime+30d`);
+later agents for that event inherit it, so no separate event-admin step is needed.
 
-### API 2 — Validate agent + open session (single call; no OTP)
+### API 2 — Validate agent (pure read; no OTP, no session)
 ```mermaid
 sequenceDiagram
   autonumber
   participant App as Thanks App (agent)
   participant UPS as User Profile Service
-  participant DB as whitelist / sessions
+  participant DB as whitelist
   App->>UPS: GET /v1/agents/validate (IV_USER = agent msisdn)
   UPS->>DB: active whitelist rows for msisdn
   alt authorized
-    UPS->>DB: revoke prior sessions; insert agent_session (per-agent, TTL 24h)
-    UPS-->>App: { authorized:true, events[], agentSessionId }
+    UPS-->>App: { authorized:true, events[] }
   else not an agent
-    UPS-->>App: { authorized:false }   (no session)
+    UPS-->>App: { authorized:false }
   end
-  Note over App: agent picks event + checkpoint per scan (sent in the entry body)
+  Note over App: agent picks event + checkpoint per scan (sent in the entry body); authorization is re-checked live on every scan
 ```
 
 ### API 3 — Entry after scan (the gate decision)
@@ -402,7 +417,7 @@ Ordered conditions (short-circuit on first match):
 | Step | Condition | Result |
 |---|---|---|
 | 0 | `scanRequestId` already logged | replay stored callback (idempotent) |
-| 1–2 | session invalid, or agent not whitelisted for `(request.eventId, checkpoint)` | `STAFF_SESSION_INVALID` |
+| 1–2 | agent (`IV_USER`) not whitelisted for `(request.eventId, checkpoint)` | `STAFF_SESSION_INVALID` |
 | 3 | signature/version bad, unresolvable subject | `INVALID_QR` |
 | 4 | past TTL or superseded | `QR_EXPIRED` |
 | 5 | `request.eventId ∉ token.events` | `NOT_ENTITLED` |
@@ -418,16 +433,16 @@ sequenceDiagram
   participant App as Thanks App (agent)
   participant EVS as Entry Validation
   participant Lg as event_scan_logs
-  participant Ag as Agent Session
+  participant Ag as Agent Whitelist
   participant Tk as QR Token
   participant Rd as event_redemptions
-  App->>EVS: POST /v1/entry {qrToken, eventId, checkpoint, scanRequestId} (X-Agent-Session)
+  App->>EVS: POST /v1/entry {qrToken, eventId, checkpoint, scanRequestId} (IV_USER = agent msisdn)
   EVS->>Lg: findByScanRequestId
   alt already logged
     EVS-->>App: replay(callback)
   else new
-    EVS->>Ag: requireAuthorizedSession(sessionId, eventId, checkpoint)
-    alt invalid / not whitelisted
+    EVS->>Ag: requireAuthorized(agentMsisdn, eventId, checkpoint)
+    alt not whitelisted for event/checkpoint
       EVS-->>App: STAFF_SESSION_INVALID
     else ok
       EVS->>Tk: verify(qrToken)
@@ -538,48 +553,55 @@ POST /v1/agents/whitelist
 IV_USER: 9812300000            # actor (engineering)
 Content-Type: application/json
 
-{ "eventId": "ARTLPPAZK", "msisdn": "7023398743", "checkpoints": ["ENTRY", "GOODIE"] }
+{ "eventId": "ARTLPPAZK", "msisdn": "7023398743", "checkpoints": ["ENTRY", "GOODIE"],
+  "eventName": "Advantage Club Live", "venue": "Delhi",
+  "startTime": "2026-10-10T14:00:00Z", "endTime": "2026-10-10T22:00:00Z" }
 ```
+> The event info (`eventName`/`venue`/`startTime`/`endTime`) is supplied the **first** time an event
+> is whitelisted and sets the row's `cleanupAt = endTime + 30d`; for later agents of the same event
+> it may be omitted and is inherited.
+
 **Success — 200**
 ```json
-{ "successful": true, "data": { "whitelistId": "6f2e1c40-...", "status": "UPSERTED" } }
+{ "successful": true, "data": { "eventId": "ARTLPPAZK", "msisdn": "7023398743", "status": "UPSERTED" } }
 ```
 **Errors**
 
 | HTTP | When | Body |
 |---|---|---|
 | 400 | missing/blank field, empty `checkpoints` | `{ "successful": false, "error": { "code": "bad_request", "message": "checkpoints must not be empty" } }` |
+| 400 | first whitelist of an event with no `endTime` | `{ "successful": false, "error": { "code": "bad_request", "message": "endTime is required the first time event ARTLPPAZK is whitelisted (drives 30-day cleanup)" } }` |
 | 400 | unknown checkpoint value | `{ "successful": false, "error": { "code": "bad_request", "message": "Unsupported checkpoint: VIP" } }` |
 | 401/403 | caller not engineering (enforced upstream) | `{ "successful": false, "error": { "code": "forbidden", "message": "Not authorized" } }` |
 
-### API 2 — `GET /v1/agents/validate` (agent) — validates **and** opens the session
+### API 2 — `GET /v1/agents/validate` (agent) — pure read (no session)
 
 **Request**
 ```http
 GET /v1/agents/validate
 IV_USER: 7000000001            # agent msisdn (from app auth)
 ```
-**Success — 200 (authorized — events + a session, in one call)**
+**Success — 200 (authorized — the events this agent may scan)**
 ```json
 { "successful": true,
   "data": { "authorized": true,
-            "agentSessionId": "sess-3f9ac2b1-...",
             "events": [ { "eventId": "ARTLPPAZK", "eventName": "Advantage Club Live", "venue": "Delhi", "checkpoints": ["ENTRY","GOODIE"] },
                         { "eventId": "ARTLXYZ12", "checkpoints": ["GOODIE"] } ] } }
 ```
-**Success — 200 (not an event agent — no event data, no session)**
+**Success — 200 (not an event agent — no event data)**
 ```json
 { "successful": true, "data": { "authorized": false } }
 ```
-The agent picks an event + checkpoint in the UI and sends them on each scan (API 3); a new
-`validate` call revokes any prior session for the MSISDN (single-active).
+The agent picks an event + checkpoint in the UI and sends them on each scan (API 3). There is no
+session to open — identity is the `IV_USER` from the app login, and authorization is re-checked live
+against the whitelist on every scan.
 
 ### API 3 — `POST /v1/entry` (agent) — every decision is HTTP 200 + callback
 
 **Request**
 ```http
 POST /v1/entry
-X-Agent-Session: sess-3f9ac2b1-...
+IV_USER: 7000000001            # agent msisdn (from app auth)
 Content-Type: application/json
 
 { "qrToken": "eyJraWQiOiJrMSIsImFsZyI6IkVTMjU2In0...", "eventId": "ARTLPPAZK", "checkpoint": "ENTRY", "scanRequestId": "7b3d9e2a-..." }
@@ -599,7 +621,7 @@ Content-Type: application/json
 | `NOT_ENTITLED` | false | `{ "callback":"NOT_ENTITLED","admit":false,"displayColor":"red","message":"Member is not a winner for this event.","holderMasked":"***** 8743" }` |
 | `QR_EXPIRED` | false | `{ "callback":"QR_EXPIRED","admit":false,"displayColor":"grey","message":"QR expired. Ask the customer to refresh and re-present." }` |
 | `INVALID_QR` | false | `{ "callback":"INVALID_QR","admit":false,"displayColor":"red","message":"Invalid QR. Ask the customer to open it from the Airtel app." }` |
-| `STAFF_SESSION_INVALID` | false | `{ "callback":"STAFF_SESSION_INVALID","admit":false,"displayColor":"red","message":"Session expired. Re-open the scanner to continue." }` |
+| `STAFF_SESSION_INVALID` | false | `{ "callback":"STAFF_SESSION_INVALID","admit":false,"displayColor":"red","message":"You are not authorized to scan for this event. Re-open the scanner." }` |
 | `SERVICE_UNAVAILABLE` | false | `{ "callback":"SERVICE_UNAVAILABLE","admit":false,"displayColor":"grey","message":"Service error. Retry the scan." }` |
 
 Full body for a deny, e.g. `NOT_ENTITLED`:
@@ -613,10 +635,11 @@ Full body for a deny, e.g. `NOT_ENTITLED`:
 | HTTP | When | Body |
 |---|---|---|
 | 400 | missing `qrToken` / `eventId` / `checkpoint` / `scanRequestId` | `{ "successful": false, "error": { "code": "bad_request", "message": "qrToken must not be blank" } }` |
-| 400 | missing `X-Agent-Session` header | `{ "successful": false, "error": { "code": "bad_request", "message": "Required header 'X-Agent-Session' is not present" } }` |
+| 400 | missing `IV_USER` header | `{ "successful": false, "error": { "code": "bad_request", "message": "Required header 'IV_USER' is not present" } }` |
 
-> Note: a revoked/expired session is **not** a 4xx — it returns 200 `STAFF_SESSION_INVALID` so the
-> scanner renders the "re-open" screen. `SERVICE_UNAVAILABLE` is likewise 200 (never auto-allow).
+> Note: an agent who is **not authorized** for the event/checkpoint is **not** a 4xx — it returns
+> 200 `STAFF_SESSION_INVALID` so the scanner renders the "re-open" screen. `SERVICE_UNAVAILABLE` is
+> likewise 200 (never auto-allow).
 
 ### API 4 — `POST /v1/membership/qr` (customer)
 
@@ -667,29 +690,24 @@ Content-Type: application/json
 
 ---
 
-## 8B. curl — event admin, whitelist CRUD & QR validate/refresh
+## 8B. curl — whitelist CRUD & QR validate/refresh
 
 `$BASE` = service base URL (e.g. `https://userprofile.internal`).
 
-**Event — CREATE (must exist before whitelisting agents; sets cleanupAt = endTime + 30d)**
-```bash
-curl -sS -X POST "$BASE/v1/admin/events" \
-  -H "IV_USER: 9812300000" -H "Content-Type: application/json" \
-  -d '{ "eventId":"ARTLPPAZK","eventName":"Advantage Club Live","venue":"Delhi",
-        "startTime":"2026-10-10T14:00:00Z","endTime":"2026-10-10T22:00:00Z",
-        "checkpointsEnabled":["ENTRY","GOODIE"] }'
-# 200 { "successful": true, "data": { "eventId":"ARTLPPAZK", ..., "cleanupAt":"2026-11-09T22:00:00Z" } }
-
-curl -sS "$BASE/v1/admin/events/ARTLPPAZK" -H "IV_USER: 9812300000"           # read
-curl -sS -X POST "$BASE/v1/admin/events/ARTLPPAZK/close" -H "IV_USER: 9812300000"   # close (active=false)
-```
-
-**Whitelist — CREATE (POST)**
+**Whitelist — CREATE the first agent of an event (POST; supplies the event info + endTime → sets cleanupAt = endTime + 30d)**
 ```bash
 curl -sS -X POST "$BASE/v1/agents/whitelist" \
   -H "IV_USER: 9812300000" -H "Content-Type: application/json" \
-  -d '{ "eventId":"ARTLPPAZK", "msisdn":"7000000001", "checkpoints":["ENTRY","GOODIE"] }'
-# 200 { "successful": true, "data": { "whitelistId":"6f2e...", "status":"UPSERTED" } }
+  -d '{ "eventId":"ARTLPPAZK", "msisdn":"7000000001", "checkpoints":["ENTRY","GOODIE"],
+        "eventName":"Advantage Club Live", "venue":"Delhi",
+        "startTime":"2026-10-10T14:00:00Z", "endTime":"2026-10-10T22:00:00Z" }'
+# 200 { "successful": true, "data": { "eventId":"ARTLPPAZK", "msisdn":"7000000001", "status":"UPSERTED" } }
+
+# Later agents for the same event may omit the event info — it is inherited from the first row:
+curl -sS -X POST "$BASE/v1/agents/whitelist" \
+  -H "IV_USER: 9812300000" -H "Content-Type: application/json" \
+  -d '{ "eventId":"ARTLPPAZK", "msisdn":"7000000002", "checkpoints":["GOODIE"] }'
+# 200 { "successful": true, "data": { "eventId":"ARTLPPAZK", "msisdn":"7000000002", "status":"UPSERTED" } }
 ```
 **Whitelist — READ (GET one, or all rows for an event)**
 ```bash
@@ -735,9 +753,9 @@ curl -sS -X POST "$BASE/v1/membership/qr/refresh" \
 curl -sS -X POST "$BASE/v1/membership/qr" -H "IV_USER: 7023398743" \
   -H "Content-Type: application/json" -d '{ "deviceId":"a1b2c3d4-stable-install-id","timestamp":1790000000000 }'
 
-curl -sS "$BASE/v1/agents/validate" -H "IV_USER: 7000000001"     # validate + open session
+curl -sS "$BASE/v1/agents/validate" -H "IV_USER: 7000000001"     # validate (pure read — no session)
 
-curl -sS -X POST "$BASE/v1/entry" -H "X-Agent-Session: sess-3f9ac2b1-..." \
+curl -sS -X POST "$BASE/v1/entry" -H "IV_USER: 7000000001" \
   -H "Content-Type: application/json" \
   -d '{ "qrToken":"eyJ...","eventId":"ARTLPPAZK","checkpoint":"ENTRY","scanRequestId":"7b3d9e2a-..." }'
 
@@ -803,11 +821,11 @@ the scanner reuses one `scanRequestId` per decoded QR.
 |---|---|
 | `QrInvalid` / `QrExpired` / `AgentSessionInvalid` (entry path) | 200 `INVALID_QR` / `QR_EXPIRED` / `STAFF_SESSION_INVALID` |
 | any other exception (entry path) | 200 `SERVICE_UNAVAILABLE` |
-| `AgentSessionInvalidException` (open session) | 401 |
+| `AgentSessionInvalidException` (uncaught, outside the entry path) | 401 |
 | `IllegalArgumentException` (bad input / non-member / no entry to mark) | 400 |
 
 **Config** (`eventpass.*`, `@RefreshScope`): `qrTtlSeconds=300` (shared by API 3 & 4),
-`agentSessionTtlSeconds=86400`, `tokenVersion=1`, `issuer`, `signingKeyId`. QR **image style** is a
+`tokenVersion=1`, `issuer`, `signingKeyId`. QR **image style** is a
 separate `@RefreshScope` block `eventpass.qr-style.*` (see §5A) — colours, module shape, centre text —
 so branding is retuned without a redeploy.
 
@@ -827,13 +845,13 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 | Layer | Files |
 |---|---|
 | enums | `Checkpoint`, `EntryCallback` |
-| document | `EventDocument`, `EventRedemptionDocument`, `AgentWhitelistDocument`, `AgentSessionDocument`, `ScanLogDocument` |
-| dto/request | `EventUpsertRequest`, `QrGenerateRequest`, `QrRenderRequest`, `EntryScanRequest`, `WhitelistUpsertRequest`, `WinnerUpsertRequest` |
-| dto/response | `EventResponse`, `QrGenerateResponse`, `QrRenderResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse` |
-| dao | `EventDao`(+impl), `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `AgentWhitelistDao`(+impl), `AgentSessionDao`(+impl), `ContestWinnerAdminDao`(+impl) |
-| service | `EventAdminService`(+impl), `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `QrImageService`(+impl), `MembershipEligibilityService`, `QrClaims`, `CachedQr` |
+| document | `EventAgentDocument` (the single `event_agent` collection — agent + one event), `EventRedemptionDocument`, `ScanLogDocument` |
+| dto/request | `QrGenerateRequest`, `QrRenderRequest`, `EntryScanRequest`, `WhitelistUpsertRequest` (carries event info), `WinnerUpsertRequest` |
+| dto/response | `QrGenerateResponse`, `QrRenderResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse` |
+| dao | `EventAgentDao`(+impl, single-collection whitelist CRUD + agent lookups), `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `ContestWinnerAdminDao`(+impl) |
+| service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `QrImageService`(+impl), `MembershipEligibilityService`, `QrClaims`, `CachedQr` |
 | util | `CircularQrGenerator` (render styled circular QR), `QrImageDecoder` (decode/validate QR image), `HexColors` (hex→`Color` parsing) |
-| controller | `MembershipQrController`, `MembershipQrImageController`, `AgentController`, `EventEntryController`, `WinnerAdminController`, `EventAdminController` |
+| controller | `MembershipQrController`, `MembershipQrImageController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
 | exception | `QrInvalidException`, `QrExpiredException`, `AgentSessionInvalidException`, `EventPassExceptionHandler` |
 | converter | `CheckpointConverter` |
 | config | `EventPassProperties`, `QrStyleProperties` |
@@ -844,10 +862,6 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 
 The complete reference implementation follows, grouped by layer. Drop into
 `src/main/java/com/airtel/userprofile/eventpass/` in the User Profile Service.
-
-
-
-
 
 
 ### Enums
@@ -918,7 +932,7 @@ public enum EntryCallback {
 	NOT_ENTITLED("red", false, true, "Member is not a winner for this event."),
 	QR_EXPIRED("grey", false, true, "QR expired. Ask the customer to refresh and re-present."),
 	INVALID_QR("red", false, true, "Invalid QR. Ask the customer to open it from the Airtel app."),
-	STAFF_SESSION_INVALID("red", false, false, "Session expired. Re-open the scanner to continue."),
+	STAFF_SESSION_INVALID("red", false, false, "You are not authorized to scan for this event. Re-open the scanner."),
 	SERVICE_UNAVAILABLE("grey", false, true, "Service error. Retry the scan.");
 
 	private final String color;
@@ -937,113 +951,7 @@ public enum EntryCallback {
 
 ### Documents (Mongo collections)
 
-#### `com/airtel/userprofile/eventpass/document/AgentSessionDocument.java`
-
-```java
-package com.airtel.userprofile.eventpass.document;
-
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.time.Instant;
-
-/**
- * An active agent scanning session, opened by the single {@code GET /v1/agents/validate} call. It
- * is per-agent (not bound to one event/checkpoint) — the agent may scan any (event, checkpoint) it
- * is whitelisted for, checked live per scan. Single-active per msisdn: opening a new session
- * revokes prior non-expired ones. Identity is already proven by the Thanks App login.
- */
-@Data
-@Document(collection = "event_agent_sessions")
-@JsonIgnoreProperties(ignoreUnknown = true)
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class AgentSessionDocument {
-
-	@Id
-	private String id;
-
-	@Indexed
-	private String msisdn;
-	private boolean revoked;
-	private Instant createdAt;
-
-	/** Session TTL (24h). TTL index auto-purges stale sessions at expiry. */
-	@Indexed(name = "ttl_session_expiry", expireAfterSeconds = 0)
-	private Instant expiresAt;
-
-	private String deviceInfo;
-}
-```
-
-#### `com/airtel/userprofile/eventpass/document/AgentWhitelistDocument.java`
-
-```java
-package com.airtel.userprofile.eventpass.document;
-
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.time.Instant;
-import java.util.Set;
-
-/**
- * The <b>agent ↔ event relation</b> (one doc per {@code (agent, event)}) — the recommended shape
- * over an embedded event list, because each row can be TTL-expired independently. Holds which
- * {@code checkpoints} the agent is authorized for at that event. One agent MSISDN holds many rows.
- *
- * <p>{@code endTime}/{@code cleanupAt} are copied from the event at whitelist time; the TTL index on
- * {@code cleanupAt} ({@code = endTime + 30d}) auto-deletes the relation 30 days after the event ends.
- * When an agent's last relation row expires, the agent has no Event-Pass data left in Mongo.
- */
-@Data
-@Document(collection = "event_agent_whitelist")
-@JsonIgnoreProperties(ignoreUnknown = true)
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-@CompoundIndexes({
-		@CompoundIndex(name = "uq_event_agent", def = "{'eventId': 1, 'msisdn': 1}", unique = true)
-})
-public class AgentWhitelistDocument {
-
-	@Id
-	private String id;
-
-	private String eventId;
-	private String msisdn;              // agent MSISDN
-	private Set<Checkpoint> checkpoints;
-	private boolean active;
-
-	private Instant endTime;            // copied from the event (for cleanup alignment)
-
-	/** = endTime + 30d. TTL index purges the relation 30 days after the event ends. */
-	@Indexed(name = "ttl_whitelist_cleanup", expireAfterSeconds = 0)
-	private Instant cleanupAt;
-
-	private String createdBy;
-	private Instant createdAt;
-	private Instant updatedAt;
-}
-```
-
-#### `com/airtel/userprofile/eventpass/document/EventDocument.java`
+#### `com/airtel/userprofile/eventpass/document/EventAgentDocument.java`
 
 ```java
 package com.airtel.userprofile.eventpass.document;
@@ -1058,49 +966,71 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
 
 /**
- * A live Advantage Club event. {@code active} is flipped false at {@code endTime}; the document
- * then lives for a 30-day dispute window and is auto-deleted by the <b>TTL index</b> on
- * {@code cleanupAt} ({@code = endTime + 30d}).
+ * The <b>single</b> Event-Pass collection: one document per <b>(agent, event)</b>, keyed by a
+ * composite {@code _id} of {@code msisdn::eventId}. Each row carries the <b>agent</b> (which
+ * {@code checkpoints} they may scan, {@code active}) <b>and that one event's info</b> (name, venue,
+ * window) denormalized onto it — there is no separate {@code event} collection and no embedded agent
+ * array. One agent whitelisted for three events is three rows; one event with 50 agents is 50 rows.
  *
- * <p>TTL: a Mongo TTL index with {@code expireAfterSeconds = 0} deletes a document once the date in
- * {@code cleanupAt} is in the past. Setting {@code cleanupAt = endTime + 30d} means the row is
- * purged exactly 30 days after the event ends — no cron needed.
+ * <p>TTL: {@code cleanupAt = endTime + 30d}; the per-row TTL index auto-deletes each row 30 days
+ * after its event ends. When an agent's last row expires, no Event-Pass data about that agent
+ * remains — so "an agent with no events for 30 days is removed" falls out for free, with no cron.
  */
 @Data
-@Document(collection = "event")
+@Document(collection = "event_agent")
 @JsonIgnoreProperties(ignoreUnknown = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class EventDocument {
+public class EventAgentDocument {
 
 	/** 30-day retention window after an event ends. */
 	public static final long CLEANUP_AFTER_DAYS = 30L;
 
+	/** Composite primary key: {@code msisdn::eventId} (one row per agent per event). */
 	@Id
-	private String eventId;          // e.g. ARTLPPAZK
+	private String id;
 
+	// ---- agent ----
+	/** Agent MSISDN. */
+	@Indexed(name = "idx_ea_msisdn")
+	private String msisdn;
+
+	/** Checkpoints this agent may scan at this event. */
+	private Set<Checkpoint> checkpoints;
+
+	/** Soft on/off without deleting the row. */
+	private boolean active;
+
+	// ---- the one event this row is about ----
+	@Indexed(name = "idx_ea_event")
+	private String eventId;          // e.g. ARTLPPAZK
 	private String eventName;
 	private String venue;
 	private Instant startTime;
 	private Instant endTime;
-	private boolean active;
-	private Set<Checkpoint> checkpointsEnabled;
 
-	/** = endTime + 30d. TTL index deletes the doc once this instant passes. */
-	@Indexed(name = "ttl_event_cleanup", expireAfterSeconds = 0)
+	// ---- lifecycle ----
+	/** = endTime + 30d. TTL index deletes this row once this instant passes. */
+	@Indexed(name = "ttl_event_agent_cleanup", expireAfterSeconds = 0)
 	private Instant cleanupAt;
 
 	private String createdBy;
 	private Instant createdAt;
 	private Instant updatedAt;
 
+	/** Composite id for a (agent, event) pair. */
+	public static String idOf(String msisdn, String eventId) {
+		return msisdn + "::" + eventId;
+	}
+
 	public static Instant cleanupFrom(Instant endTime) {
-		return endTime == null ? null : endTime.plus(java.time.Duration.ofDays(CLEANUP_AFTER_DAYS));
+		return endTime == null ? null : endTime.plus(Duration.ofDays(CLEANUP_AFTER_DAYS));
 	}
 }
 ```
@@ -1159,7 +1089,7 @@ public class EventRedemptionDocument {
 	/** Customer device that generated the QR used for the FIRST successful redemption. */
 	private String deviceId;
 
-	/** MSISDN of the agent whose session recorded the redemption. */
+	/** MSISDN of the agent who recorded the redemption. */
 	private String redeemedByAgentMsisdn;
 
 	/** Idempotency key from the scanner; unique so a retried scan cannot create a second row. */
@@ -1249,8 +1179,9 @@ import lombok.NoArgsConstructor;
 
 /**
  * API 3 — agent posts a decoded QR for a decision. {@code eventId} + {@code checkpoint} are the
- * gate the agent is operating; both are validated against the agent's whitelist (via the session),
- * so a client cannot self-authorize an event it is not whitelisted for. {@code scanRequestId} is
+ * gate the agent is operating; both are validated live against the agent's whitelist (keyed by the
+ * {@code IV_USER} agent msisdn), so a client cannot self-authorize an event it is not whitelisted
+ * for. {@code scanRequestId} is
  * the idempotency key (reuse the same value on retry).
  */
 @Data
@@ -1270,47 +1201,6 @@ public class EntryScanRequest {
 
 	@NotBlank
 	private String scanRequestId;
-}
-```
-
-#### `com/airtel/userprofile/eventpass/dto/request/EventUpsertRequest.java`
-
-```java
-package com.airtel.userprofile.eventpass.dto.request;
-
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-import java.time.Instant;
-import java.util.Set;
-
-/** Admin — create/update an event. {@code endTime} drives the 30-day cleanup (TTL). */
-@Data
-@NoArgsConstructor
-@JsonIgnoreProperties(ignoreUnknown = true)
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public class EventUpsertRequest {
-
-	@NotBlank
-	private String eventId;
-
-	@NotBlank
-	private String eventName;
-
-	private String venue;
-
-	@NotNull
-	private Instant startTime;
-
-	@NotNull
-	private Instant endTime;
-
-	private Set<Checkpoint> checkpointsEnabled;
 }
 ```
 
@@ -1398,9 +1288,19 @@ import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.Set;
 
-/** API 1 — engineering whitelists an agent MSISDN for an event with the checkpoints they may scan. */
+/**
+ * API 1 — whitelist an agent MSISDN for an event with the checkpoints they may scan. Each row is
+ * one (agent, event) pair in the single {@code event_agent} collection.
+ *
+ * <p>The event fields ({@code eventName}, {@code venue}, {@code startTime}, {@code endTime}) are
+ * supplied the <b>first</b> time an event is whitelisted (they set the row's info and, via
+ * {@code endTime}, the TTL); on later agents for the same event they may be omitted and are
+ * inherited from the existing rows. {@code endTime} must be known (given or inherited) so the 30-day
+ * cleanup can be computed.
+ */
 @Data
 @NoArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -1418,6 +1318,12 @@ public class WhitelistUpsertRequest {
 
 	/** Optional on create (defaults to true). On UPDATE (PUT) it toggles the row active/inactive. */
 	private Boolean active;
+
+	// ---- event info (first whitelist of the event; inherited afterwards) ----
+	private String eventName;
+	private String venue;
+	private Instant startTime;
+	private Instant endTime;
 }
 ```
 
@@ -1500,9 +1406,10 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * API 2 response — the events + checkpoints this agent MSISDN may scan. Empty {@code events}
- * means "not an event agent" (no data leaked). {@code agentSessionId} is issued once the agent
- * picks an event + checkpoint (single-active per msisdn).
+ * API 2 response — the events + checkpoints this agent MSISDN may scan. Empty {@code events} /
+ * {@code authorized=false} means "not an event agent" (no data leaked). Pure read: no session is
+ * created — the agent is already authenticated by the Thanks App (IV_USER), and each scan is
+ * authorized live against the whitelist.
  */
 @Data
 @NoArgsConstructor
@@ -1513,7 +1420,6 @@ public class AgentValidateResponse {
 
 	private boolean authorized;
 	private List<AgentEventAccess> events;
-	private String agentSessionId;
 }
 ```
 
@@ -1522,7 +1428,7 @@ public class AgentValidateResponse {
 ```java
 package com.airtel.userprofile.eventpass.dto.response;
 
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
 import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
@@ -1542,14 +1448,18 @@ import java.util.Set;
 public class AgentWhitelistResponse {
 
 	private String eventId;
+	private String eventName;
+	private String venue;
 	private String msisdn;
 	private Set<Checkpoint> checkpoints;
 	private boolean active;
 	private Instant updatedAt;
 
-	public static AgentWhitelistResponse from(AgentWhitelistDocument d) {
+	public static AgentWhitelistResponse from(EventAgentDocument d) {
 		return AgentWhitelistResponse.builder()
 				.eventId(d.getEventId())
+				.eventName(d.getEventName())
+				.venue(d.getVenue())
 				.msisdn(d.getMsisdn())
 				.checkpoints(d.getCheckpoints())
 				.active(d.isActive())
@@ -1601,54 +1511,6 @@ public class EntryScanResponse {
 				.admit(cb.isAdmit())
 				.displayColor(cb.getColor())
 				.message(cb.getDefaultMessage())
-				.build();
-	}
-}
-```
-
-#### `com/airtel/userprofile/eventpass/dto/response/EventResponse.java`
-
-```java
-package com.airtel.userprofile.eventpass.dto.response;
-
-import com.airtel.userprofile.eventpass.document.EventDocument;
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-import java.time.Instant;
-import java.util.Set;
-
-/** Admin event view, including the computed {@code cleanupAt} (when the TTL will purge it). */
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public class EventResponse {
-
-	private String eventId;
-	private String eventName;
-	private String venue;
-	private Instant startTime;
-	private Instant endTime;
-	private boolean active;
-	private Set<Checkpoint> checkpointsEnabled;
-	private Instant cleanupAt;
-
-	public static EventResponse from(EventDocument d) {
-		return EventResponse.builder()
-				.eventId(d.getEventId())
-				.eventName(d.getEventName())
-				.venue(d.getVenue())
-				.startTime(d.getStartTime())
-				.endTime(d.getEndTime())
-				.active(d.isActive())
-				.checkpointsEnabled(d.getCheckpointsEnabled())
-				.cleanupAt(d.getCleanupAt())
 				.build();
 	}
 }
@@ -1718,62 +1580,6 @@ public class QrRenderResponse {
 
 ### DAO interfaces
 
-#### `com/airtel/userprofile/eventpass/dao/AgentSessionDao.java`
-
-```java
-package com.airtel.userprofile.eventpass.dao;
-
-import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
-
-import java.util.Optional;
-
-public interface AgentSessionDao {
-
-	/** Revoke all non-revoked sessions for a msisdn (single-active), then persist the new one. */
-	AgentSessionDocument openExclusive(AgentSessionDocument session);
-
-	/** Active (not revoked, not expired) session by id — used to authorize a scan. */
-	Optional<AgentSessionDocument> findActiveById(String sessionId);
-}
-```
-
-#### `com/airtel/userprofile/eventpass/dao/AgentWhitelistDao.java`
-
-```java
-package com.airtel.userprofile.eventpass.dao;
-
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
-
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-
-public interface AgentWhitelistDao {
-
-	/** Idempotent upsert on (eventId, msisdn) — admin CREATE (POST). */
-	AgentWhitelistDocument upsert(AgentWhitelistDocument doc);
-
-	/** All active whitelist rows for an agent — API 2 lists the events/checkpoints they may scan. */
-	List<AgentWhitelistDocument> findActiveByMsisdn(String msisdn);
-
-	/** The active row for a specific (eventId, msisdn) — used to authorize a scan. */
-	Optional<AgentWhitelistDocument> findActive(String eventId, String msisdn);
-
-	/** READ: a single row (active or not) for (eventId, msisdn). */
-	Optional<AgentWhitelistDocument> findOne(String eventId, String msisdn);
-
-	/** READ: all whitelist rows for an event (admin listing). */
-	List<AgentWhitelistDocument> findByEvent(String eventId);
-
-	/** UPDATE: set checkpoints and/or active on an existing (eventId, msisdn) row. @return matched count. */
-	long update(String eventId, String msisdn, Set<Checkpoint> checkpoints, Boolean active);
-
-	/** DELETE: hard-delete the (eventId, msisdn) row. @return deleted count. */
-	long delete(String eventId, String msisdn);
-}
-```
-
 #### `com/airtel/userprofile/eventpass/dao/ContestWinnerAdminDao.java`
 
 ```java
@@ -1796,24 +1602,48 @@ public interface ContestWinnerAdminDao {
 }
 ```
 
-#### `com/airtel/userprofile/eventpass/dao/EventDao.java`
+#### `com/airtel/userprofile/eventpass/dao/EventAgentDao.java`
 
 ```java
 package com.airtel.userprofile.eventpass.dao;
 
-import com.airtel.userprofile.eventpass.document.EventDocument;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
-public interface EventDao {
+/**
+ * The single {@code event_agent} collection — one row per (agent, event), keyed by the composite
+ * {@code _id = msisdn::eventId}. All whitelist CRUD (API 1), the agent-centric lookups (API 2 +
+ * per-scan authorization), and event-info reuse are served from here; there is no event collection.
+ */
+public interface EventAgentDao {
 
-	/** Create or update an event; recomputes {@code cleanupAt = endTime + 30d}. */
-	EventDocument upsert(EventDocument event);
+	/** Idempotent create/replace of the (agent, event) row (by composite id). */
+	EventAgentDocument upsert(EventAgentDocument doc);
 
-	Optional<EventDocument> findById(String eventId);
+	/** The row for a specific (eventId, msisdn), active or not. */
+	Optional<EventAgentDocument> findByEventAndAgent(String eventId, String msisdn);
 
-	/** Flip {@code active=false} (e.g. at endTime); the TTL still purges at endTime+30d. @return matched. */
-	long setActive(String eventId, boolean active);
+	/** The <b>active</b> row for (eventId, msisdn) — used to authorize a scan. */
+	Optional<EventAgentDocument> findActive(String eventId, String msisdn);
+
+	/** All rows for an event (admin listing of its agents). */
+	List<EventAgentDocument> findByEvent(String eventId);
+
+	/** Any one existing row for an event — used to inherit event info when adding another agent. */
+	Optional<EventAgentDocument> findAnyByEvent(String eventId);
+
+	/** All <b>active</b> rows for an agent — API 2 lists the events/checkpoints they may scan. */
+	List<EventAgentDocument> findActiveByAgent(String msisdn);
+
+	/** UPDATE: set checkpoints and/or active on an existing (eventId, msisdn) row. @return matched. */
+	long update(String eventId, String msisdn, Set<Checkpoint> checkpoints, Boolean active);
+
+	/** DELETE: hard-delete the (eventId, msisdn) row. @return deleted count. */
+	long delete(String eventId, String msisdn);
 }
 ```
 
@@ -1898,128 +1728,6 @@ public interface ScanLogDao {
 
 ### DAO implementations
 
-#### `com/airtel/userprofile/eventpass/dao/impl/AgentSessionDaoImpl.java`
-
-```java
-package com.airtel.userprofile.eventpass.dao.impl;
-
-import com.airtel.userprofile.eventpass.dao.AgentSessionDao;
-import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Repository;
-
-import java.time.Instant;
-import java.util.Optional;
-
-@Repository
-@RequiredArgsConstructor
-public class AgentSessionDaoImpl implements AgentSessionDao {
-
-	private final MongoTemplate mongoTemplate;
-
-	@Override
-	public AgentSessionDocument openExclusive(AgentSessionDocument session) {
-		// single-active: revoke any prior live session for this msisdn
-		Query prior = new Query(Criteria.where("msisdn").is(session.getMsisdn()).and("revoked").is(false));
-		mongoTemplate.updateMulti(prior, new Update().set("revoked", true), AgentSessionDocument.class);
-		return mongoTemplate.insert(session);
-	}
-
-	@Override
-	public Optional<AgentSessionDocument> findActiveById(String sessionId) {
-		Query q = new Query(Criteria.where("_id").is(sessionId)
-				.and("revoked").is(false)
-				.and("expiresAt").gt(Instant.now()));
-		return Optional.ofNullable(mongoTemplate.findOne(q, AgentSessionDocument.class));
-	}
-}
-```
-
-#### `com/airtel/userprofile/eventpass/dao/impl/AgentWhitelistDaoImpl.java`
-
-```java
-package com.airtel.userprofile.eventpass.dao.impl;
-
-import com.airtel.userprofile.eventpass.dao.AgentWhitelistDao;
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
-import com.airtel.userprofile.eventpass.enums.Checkpoint;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Repository;
-
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-
-@Repository
-@RequiredArgsConstructor
-public class AgentWhitelistDaoImpl implements AgentWhitelistDao {
-
-	private final MongoTemplate mongoTemplate;
-
-	@Override
-	public AgentWhitelistDocument upsert(AgentWhitelistDocument doc) {
-		Query q = new Query(Criteria.where("eventId").is(doc.getEventId()).and("msisdn").is(doc.getMsisdn()));
-		Update u = new Update()
-				.set("checkpoints", doc.getCheckpoints())
-				.set("active", doc.isActive())
-				.set("endTime", doc.getEndTime())
-				.set("cleanupAt", doc.getCleanupAt())
-				.set("createdBy", doc.getCreatedBy())
-				.set("updatedAt", Instant.now())
-				.setOnInsert("createdAt", Instant.now());
-		mongoTemplate.upsert(u, q, AgentWhitelistDocument.class);
-		return findActive(doc.getEventId(), doc.getMsisdn()).orElse(doc);
-	}
-
-	@Override
-	public List<AgentWhitelistDocument> findActiveByMsisdn(String msisdn) {
-		Query q = new Query(Criteria.where("msisdn").is(msisdn).and("active").is(true));
-		return mongoTemplate.find(q, AgentWhitelistDocument.class);
-	}
-
-	@Override
-	public Optional<AgentWhitelistDocument> findActive(String eventId, String msisdn) {
-		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn).and("active").is(true));
-		return Optional.ofNullable(mongoTemplate.findOne(q, AgentWhitelistDocument.class));
-	}
-
-	@Override
-	public Optional<AgentWhitelistDocument> findOne(String eventId, String msisdn) {
-		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn));
-		return Optional.ofNullable(mongoTemplate.findOne(q, AgentWhitelistDocument.class));
-	}
-
-	@Override
-	public List<AgentWhitelistDocument> findByEvent(String eventId) {
-		return mongoTemplate.find(new Query(Criteria.where("eventId").is(eventId)), AgentWhitelistDocument.class);
-	}
-
-	@Override
-	public long update(String eventId, String msisdn, Set<Checkpoint> checkpoints, Boolean active) {
-		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn));
-		Update u = new Update().set("updatedAt", Instant.now());
-		if (checkpoints != null) u.set("checkpoints", checkpoints);
-		if (active != null) u.set("active", active);
-		return mongoTemplate.updateFirst(u, q, AgentWhitelistDocument.class).getMatchedCount();
-	}
-
-	@Override
-	public long delete(String eventId, String msisdn) {
-		Query q = new Query(Criteria.where("eventId").is(eventId).and("msisdn").is(msisdn));
-		return mongoTemplate.remove(q, AgentWhitelistDocument.class).getDeletedCount();
-	}
-}
-```
-
 #### `com/airtel/userprofile/eventpass/dao/impl/ContestWinnerAdminDaoImpl.java`
 
 ```java
@@ -2063,13 +1771,14 @@ public class ContestWinnerAdminDaoImpl implements ContestWinnerAdminDao {
 }
 ```
 
-#### `com/airtel/userprofile/eventpass/dao/impl/EventDaoImpl.java`
+#### `com/airtel/userprofile/eventpass/dao/impl/EventAgentDaoImpl.java`
 
 ```java
 package com.airtel.userprofile.eventpass.dao.impl;
 
-import com.airtel.userprofile.eventpass.dao.EventDao;
-import com.airtel.userprofile.eventpass.document.EventDocument;
+import com.airtel.userprofile.eventpass.dao.EventAgentDao;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -2078,34 +1787,69 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 @RequiredArgsConstructor
-public class EventDaoImpl implements EventDao {
+public class EventAgentDaoImpl implements EventAgentDao {
 
 	private final MongoTemplate mongoTemplate;
 
 	@Override
-	public EventDocument upsert(EventDocument event) {
-		event.setCleanupAt(EventDocument.cleanupFrom(event.getEndTime()));
-		event.setUpdatedAt(Instant.now());
-		if (event.getCreatedAt() == null) {
-			event.setCreatedAt(Instant.now());
+	public EventAgentDocument upsert(EventAgentDocument doc) {
+		doc.setId(EventAgentDocument.idOf(doc.getMsisdn(), doc.getEventId()));
+		doc.setCleanupAt(EventAgentDocument.cleanupFrom(doc.getEndTime()));
+		doc.setUpdatedAt(Instant.now());
+		if (doc.getCreatedAt() == null) {
+			doc.setCreatedAt(Instant.now());
 		}
-		return mongoTemplate.save(event);   // _id == eventId → create or replace
+		return mongoTemplate.save(doc);   // _id == msisdn::eventId → create or replace
 	}
 
 	@Override
-	public Optional<EventDocument> findById(String eventId) {
-		return Optional.ofNullable(mongoTemplate.findById(eventId, EventDocument.class));
+	public Optional<EventAgentDocument> findByEventAndAgent(String eventId, String msisdn) {
+		return Optional.ofNullable(mongoTemplate.findById(
+				EventAgentDocument.idOf(msisdn, eventId), EventAgentDocument.class));
 	}
 
 	@Override
-	public long setActive(String eventId, boolean active) {
-		Query q = new Query(Criteria.where("_id").is(eventId));
-		Update u = new Update().set("active", active).set("updatedAt", Instant.now());
-		return mongoTemplate.updateFirst(u, q, EventDocument.class).getMatchedCount();
+	public Optional<EventAgentDocument> findActive(String eventId, String msisdn) {
+		Query q = new Query(Criteria.where("_id").is(EventAgentDocument.idOf(msisdn, eventId)).and("active").is(true));
+		return Optional.ofNullable(mongoTemplate.findOne(q, EventAgentDocument.class));
+	}
+
+	@Override
+	public List<EventAgentDocument> findByEvent(String eventId) {
+		return mongoTemplate.find(new Query(Criteria.where("eventId").is(eventId)), EventAgentDocument.class);
+	}
+
+	@Override
+	public Optional<EventAgentDocument> findAnyByEvent(String eventId) {
+		return Optional.ofNullable(mongoTemplate.findOne(
+				new Query(Criteria.where("eventId").is(eventId)), EventAgentDocument.class));
+	}
+
+	@Override
+	public List<EventAgentDocument> findActiveByAgent(String msisdn) {
+		Query q = new Query(Criteria.where("msisdn").is(msisdn).and("active").is(true));
+		return mongoTemplate.find(q, EventAgentDocument.class);
+	}
+
+	@Override
+	public long update(String eventId, String msisdn, Set<Checkpoint> checkpoints, Boolean active) {
+		Query q = new Query(Criteria.where("_id").is(EventAgentDocument.idOf(msisdn, eventId)));
+		Update u = new Update().set("updatedAt", Instant.now());
+		if (checkpoints != null) u.set("checkpoints", checkpoints);
+		if (active != null) u.set("active", active);
+		return mongoTemplate.updateFirst(u, q, EventAgentDocument.class).getMatchedCount();
+	}
+
+	@Override
+	public long delete(String eventId, String msisdn) {
+		Query q = new Query(Criteria.where("_id").is(EventAgentDocument.idOf(msisdn, eventId)));
+		return mongoTemplate.remove(q, EventAgentDocument.class).getDeletedCount();
 	}
 }
 ```
@@ -2238,44 +1982,48 @@ public class ScanLogDaoImpl implements ScanLogDao {
 ```java
 package com.airtel.userprofile.eventpass.service;
 
-import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
 import com.airtel.userprofile.eventpass.enums.Checkpoint;
 
-/** Agent whitelist validation + scanning-session lifecycle (all inside the User Profile Service). */
+import java.util.List;
+
+/**
+ * Agent whitelist CRUD + per-scan authorization (no session — app login is the auth). Every row is
+ * one (agent, event) document in the single {@code event_agent} collection; there is no separate
+ * event or session collection.
+ */
 public interface AgentAccessService {
 
-	// ---- Whitelist admin CRUD (API 1) ----
+	// ---- Whitelist admin CRUD (API 1), each a (agent, event) row ----
 
 	/** CREATE (POST) — idempotently whitelist an agent MSISDN for an event with its checkpoints. */
-	AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor);
+	EventAgentDocument upsertWhitelist(WhitelistUpsertRequest request, String actor);
 
-	/** READ (GET) — one whitelist row for (eventId, msisdn), or all rows for an event when msisdn is null. */
-	java.util.List<AgentWhitelistDocument> getWhitelist(String eventId, String msisdn);
+	/** READ (GET) — rows for an event (all, or one when msisdn is given). */
+	List<EventAgentDocument> getWhitelist(String eventId, String msisdn);
 
 	/** UPDATE (PUT) — change checkpoints and/or active on an existing row. @throws IllegalArgumentException if absent. */
-	AgentWhitelistDocument updateWhitelist(WhitelistUpsertRequest request, String actor);
+	EventAgentDocument updateWhitelist(WhitelistUpsertRequest request, String actor);
 
 	/** DELETE — remove the (eventId, msisdn) row. @throws IllegalArgumentException if absent. */
 	void deleteWhitelist(String eventId, String msisdn, String actor);
 
 	/**
-	 * API 2 (single call) — validate the agent and **open a single-active session** in one shot.
-	 * Returns the events + checkpoints the agent may scan plus an {@code agentSessionId}; empty /
-	 * {@code authorized=false} (and no session) if the MSISDN is not an event agent.
+	 * API 2 — pure read: the events + checkpoints this agent MSISDN may scan, enriched with event
+	 * name/venue. {@code authorized=false} with no events if the MSISDN is not an event agent. No session.
 	 */
-	AgentValidateResponse validate(String agentMsisdn, String deviceInfo);
+	AgentValidateResponse validate(String agentMsisdn);
 
 	/**
-	 * Resolve an active session and confirm the agent is (still) whitelisted for the requested
-	 * (eventId, checkpoint) — checked live against the whitelist, since the session is per-agent.
-	 * @return the authorizing whitelist relation (carries agent msisdn, endTime and cleanupAt).
-	 * @throws com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException if missing,
-	 *         revoked, expired, or not whitelisted for that event/checkpoint.
+	 * Confirm the (already app-authenticated) agent is whitelisted for the requested
+	 * (eventId, checkpoint) — checked live against the {@code event_agent} row on every scan.
+	 * @return the authorizing row (carries {@code endTime} and {@code cleanupAt} for the entry path).
+	 * @throws com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException if the agent
+	 *         is not whitelisted for that event/checkpoint.
 	 */
-	AgentWhitelistDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
+	EventAgentDocument requireAuthorized(String agentMsisdn, String eventId, Checkpoint requestedCheckpoint);
 }
 ```
 
@@ -2311,26 +2059,6 @@ public class CachedQr {
 }
 ```
 
-#### `com/airtel/userprofile/eventpass/service/EventAdminService.java`
-
-```java
-package com.airtel.userprofile.eventpass.service;
-
-import com.airtel.userprofile.eventpass.document.EventDocument;
-import com.airtel.userprofile.eventpass.dto.request.EventUpsertRequest;
-
-/** Admin — manage events (the source of {@code endTime} that drives the 30-day TTL cleanup). */
-public interface EventAdminService {
-
-	EventDocument upsert(EventUpsertRequest request, String actor);
-
-	EventDocument get(String eventId);
-
-	/** Close an event (active=false) without deleting it; the TTL still purges at endTime+30d. */
-	void close(String eventId, String actor);
-}
-```
-
 #### `com/airtel/userprofile/eventpass/service/EventEntryService.java`
 
 ```java
@@ -2346,10 +2074,10 @@ import java.util.List;
 public interface EventEntryService {
 
 	/**
-	 * @param agentSessionId the agent's active scanning session (event + checkpoint bound to it)
-	 * @param request        decoded qrToken + checkpoint + scanRequestId (idempotency key)
+	 * @param agentMsisdn the authenticated agent MSISDN (Thanks App {@code IV_USER})
+	 * @param request     decoded qrToken + eventId + checkpoint + scanRequestId (idempotency key)
 	 */
-	EntryScanResponse recordEntry(String agentSessionId, EntryScanRequest request);
+	EntryScanResponse recordEntry(String agentMsisdn, EntryScanRequest request);
 
 	/** Admin (FR35) — full chronological scan history for a customer, for dispute resolution. */
 	List<ScanLogDocument> scanHistory(String customerMsisdn);
@@ -2554,72 +2282,84 @@ public interface WinnerLookupService {
 ```java
 package com.airtel.userprofile.eventpass.service.impl;
 
-import com.airtel.userprofile.eventpass.config.EventPassProperties;
-import com.airtel.userprofile.eventpass.dao.AgentSessionDao;
-import com.airtel.userprofile.eventpass.dao.AgentWhitelistDao;
-import com.airtel.userprofile.eventpass.dao.EventDao;
-import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
-import com.airtel.userprofile.eventpass.document.EventDocument;
+import com.airtel.userprofile.eventpass.dao.EventAgentDao;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentEventAccess;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
 import com.airtel.userprofile.eventpass.enums.Checkpoint;
 import com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException;
+import com.airtel.userprofile.eventpass.service.AgentAccessService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Agent whitelist CRUD + per-scan authorization. No session store: the agent scans inside the
+ * Thanks App (already authenticated as {@code IV_USER}), so each scan is authorized live against
+ * the {@code event_agent} row by {@code (agentMsisdn, eventId, checkpoint)}.
+ *
+ * <p>The whitelist is the single {@code event_agent} collection — one row per (agent, event),
+ * carrying the agent + that event's info. The row is purged by its own TTL ({@code endTime + 30d}).
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class AgentAccessServiceImpl implements AgentAccessService {
 
-	private final AgentWhitelistDao whitelistDao;
-	private final AgentSessionDao sessionDao;
-	private final EventDao eventDao;
-	private final EventPassProperties props;
+	private final EventAgentDao eventAgentDao;
 
 	@Override
-	public AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor) {
-		// Require the event to exist so we can align the relation's cleanup with the event's end.
-		EventDocument event = eventDao.findById(request.getEventId())
-				.orElseThrow(() -> new IllegalArgumentException(
-						"Unknown event " + request.getEventId() + "; create the event first"));
-		AgentWhitelistDocument doc = AgentWhitelistDocument.builder()
-				.eventId(request.getEventId())
+	public EventAgentDocument upsertWhitelist(WhitelistUpsertRequest request, String actor) {
+		// Event info is set on the first whitelist of the event, then inherited by later agents.
+		EventAgentDocument existing = eventAgentDao.findAnyByEvent(request.getEventId()).orElse(null);
+
+		String eventName = firstNonNull(request.getEventName(), existing == null ? null : existing.getEventName());
+		String venue     = firstNonNull(request.getVenue(),     existing == null ? null : existing.getVenue());
+		Instant startTime = firstNonNull(request.getStartTime(), existing == null ? null : existing.getStartTime());
+		Instant endTime   = firstNonNull(request.getEndTime(),   existing == null ? null : existing.getEndTime());
+
+		if (endTime == null) {
+			throw new IllegalArgumentException(
+					"endTime is required the first time event " + request.getEventId() + " is whitelisted (drives 30-day cleanup)");
+		}
+
+		Instant now = Instant.now();
+		EventAgentDocument doc = EventAgentDocument.builder()
 				.msisdn(request.getMsisdn())
 				.checkpoints(request.getCheckpoints())
 				.active(request.getActive() == null || request.getActive())   // defaults active
-				.endTime(event.getEndTime())
-				.cleanupAt(event.getCleanupAt())                              // = endTime + 30d (TTL)
+				.eventId(request.getEventId())
+				.eventName(eventName)
+				.venue(venue)
+				.startTime(startTime)
+				.endTime(endTime)
 				.createdBy(actor)
 				.build();
-		AgentWhitelistDocument saved = whitelistDao.upsert(doc);
+		EventAgentDocument saved = eventAgentDao.upsert(doc);   // sets id + cleanupAt = endTime + 30d
 		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={} cleanupAt={}",
 				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints(), saved.getCleanupAt());
 		return saved;
 	}
 
 	@Override
-	public java.util.List<AgentWhitelistDocument> getWhitelist(String eventId, String msisdn) {
+	public List<EventAgentDocument> getWhitelist(String eventId, String msisdn) {
 		if (msisdn != null && !msisdn.isBlank()) {
-			AgentWhitelistDocument row = whitelistDao.findOne(eventId, msisdn)
+			EventAgentDocument row = eventAgentDao.findByEventAndAgent(eventId, msisdn)
 					.orElseThrow(() -> new IllegalArgumentException(
 							"No whitelist row for event " + eventId + " / msisdn " + msisdn));
-			return java.util.List.of(row);
+			return List.of(row);
 		}
-		return whitelistDao.findByEvent(eventId);
+		return eventAgentDao.findByEvent(eventId);
 	}
 
 	@Override
-	public AgentWhitelistDocument updateWhitelist(WhitelistUpsertRequest request, String actor) {
-		long matched = whitelistDao.update(
+	public EventAgentDocument updateWhitelist(WhitelistUpsertRequest request, String actor) {
+		long matched = eventAgentDao.update(
 				request.getEventId(), request.getMsisdn(), request.getCheckpoints(), request.getActive());
 		if (matched == 0) {
 			throw new IllegalArgumentException(
@@ -2627,12 +2367,12 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 		}
 		log.info("Whitelist updated by {}: event={} msisdn={} checkpoints={} active={}",
 				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints(), request.getActive());
-		return whitelistDao.findOne(request.getEventId(), request.getMsisdn()).orElseThrow();
+		return eventAgentDao.findByEventAndAgent(request.getEventId(), request.getMsisdn()).orElseThrow();
 	}
 
 	@Override
 	public void deleteWhitelist(String eventId, String msisdn, String actor) {
-		long deleted = whitelistDao.delete(eventId, msisdn);
+		long deleted = eventAgentDao.delete(eventId, msisdn);
 		if (deleted == 0) {
 			throw new IllegalArgumentException(
 					"No whitelist row to delete for event " + eventId + " / msisdn " + msisdn);
@@ -2641,108 +2381,35 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 	}
 
 	@Override
-	public AgentValidateResponse validate(String agentMsisdn, String deviceInfo) {
-		List<AgentWhitelistDocument> rows = whitelistDao.findActiveByMsisdn(agentMsisdn);
+	public AgentValidateResponse validate(String agentMsisdn) {
+		List<EventAgentDocument> rows = eventAgentDao.findActiveByAgent(agentMsisdn);
 		if (rows.isEmpty()) {
-			return AgentValidateResponse.builder().authorized(false).build();  // no event data / no session
+			return AgentValidateResponse.builder().authorized(false).build();  // no event data leaked
 		}
 		List<AgentEventAccess> events = rows.stream()
 				.map(r -> AgentEventAccess.builder()
 						.eventId(r.getEventId())
+						.eventName(r.getEventName())
+						.venue(r.getVenue())
 						.checkpoints(r.getCheckpoints())
-						// eventName/venue enriched from event/program metadata where available
 						.build())
 				.collect(Collectors.toList());
-
-		// open a single-active per-agent session in the same call (revokes any prior session)
-		Instant now = Instant.now();
-		AgentSessionDocument session = AgentSessionDocument.builder()
-				.id(UUID.randomUUID().toString())
-				.msisdn(agentMsisdn)
-				.revoked(false)
-				.createdAt(now)
-				.expiresAt(now.plusSeconds(props.getAgentSessionTtlSeconds()))
-				.deviceInfo(deviceInfo)
-				.build();
-		sessionDao.openExclusive(session);
-		log.info("Agent validated + session opened: msisdn={} events={}", agentMsisdn, events.size());
-
-		return AgentValidateResponse.builder()
-				.authorized(true)
-				.events(events)
-				.agentSessionId(session.getId())
-				.build();
+		return AgentValidateResponse.builder().authorized(true).events(events).build();
 	}
 
 	@Override
-	public AgentWhitelistDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
-		AgentSessionDocument session = sessionDao.findActiveById(sessionId)
-				.orElseThrow(() -> new AgentSessionInvalidException("Session missing, revoked, or expired"));
-
-		// authorize live against the whitelist for the (eventId, checkpoint) this scan targets
-		AgentWhitelistDocument wl = whitelistDao.findActive(eventId, session.getMsisdn())
-				.orElseThrow(() -> new AgentSessionInvalidException("Not whitelisted for event " + eventId));
-		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(requestedCheckpoint)) {
+	public EventAgentDocument requireAuthorized(String agentMsisdn, String eventId, Checkpoint requestedCheckpoint) {
+		EventAgentDocument row = eventAgentDao.findActive(eventId, agentMsisdn)
+				.orElseThrow(() -> new AgentSessionInvalidException(
+						"Agent " + agentMsisdn + " not whitelisted for event " + eventId));
+		if (row.getCheckpoints() == null || !row.getCheckpoints().contains(requestedCheckpoint)) {
 			throw new AgentSessionInvalidException("Not authorized for checkpoint " + requestedCheckpoint);
 		}
-		return wl;   // carries agent msisdn + endTime + cleanupAt for the entry path
-	}
-}
-```
-
-#### `com/airtel/userprofile/eventpass/service/impl/EventAdminServiceImpl.java`
-
-```java
-package com.airtel.userprofile.eventpass.service.impl;
-
-import com.airtel.userprofile.eventpass.dao.EventDao;
-import com.airtel.userprofile.eventpass.document.EventDocument;
-import com.airtel.userprofile.eventpass.dto.request.EventUpsertRequest;
-import com.airtel.userprofile.eventpass.service.EventAdminService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
-@Service
-@Slf4j
-@RequiredArgsConstructor
-public class EventAdminServiceImpl implements EventAdminService {
-
-	private final EventDao eventDao;
-
-	@Override
-	public EventDocument upsert(EventUpsertRequest r, String actor) {
-		if (r.getEndTime().isBefore(r.getStartTime())) {
-			throw new IllegalArgumentException("endTime must be after startTime");
-		}
-		EventDocument event = EventDocument.builder()
-				.eventId(r.getEventId())
-				.eventName(r.getEventName())
-				.venue(r.getVenue())
-				.startTime(r.getStartTime())
-				.endTime(r.getEndTime())
-				.active(true)
-				.checkpointsEnabled(r.getCheckpointsEnabled())
-				.createdBy(actor)
-				.build();
-		EventDocument saved = eventDao.upsert(event);   // sets cleanupAt = endTime + 30d
-		log.info("Event upserted by {}: eventId={} endTime={} cleanupAt={}",
-				actor, saved.getEventId(), saved.getEndTime(), saved.getCleanupAt());
-		return saved;
+		return row;   // carries endTime + cleanupAt for the entry path
 	}
 
-	@Override
-	public EventDocument get(String eventId) {
-		return eventDao.findById(eventId)
-				.orElseThrow(() -> new IllegalArgumentException("No event " + eventId));
-	}
-
-	@Override
-	public void close(String eventId, String actor) {
-		if (eventDao.setActive(eventId, false) == 0) {
-			throw new IllegalArgumentException("No event " + eventId);
-		}
-		log.info("Event closed by {}: eventId={}", actor, eventId);
+	private static <T> T firstNonNull(T a, T b) {
+		return a != null ? a : b;
 	}
 }
 ```
@@ -2755,7 +2422,7 @@ package com.airtel.userprofile.eventpass.service.impl;
 import com.airtel.userprofile.eventpass.dao.EventRedemptionDao;
 import com.airtel.userprofile.eventpass.dao.RedeemOutcome;
 import com.airtel.userprofile.eventpass.dao.ScanLogDao;
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
 import com.airtel.userprofile.eventpass.document.EventRedemptionDocument;
 import com.airtel.userprofile.eventpass.document.ScanLogDocument;
 import com.airtel.userprofile.eventpass.dto.request.EntryScanRequest;
@@ -2778,7 +2445,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * The gate authority. Order mirrors the HLD validation chain: session → token → winner → atomic
+ * The gate authority. Order mirrors the HLD validation chain: agent authorization → token → winner → atomic
  * redeem → audit. Every DECISION (allow and deny) is returned as a 200 {@link EntryScanResponse};
  * only unexpected infra faults become {@code SERVICE_UNAVAILABLE} and never auto-allow.
  */
@@ -2793,7 +2460,7 @@ public class EventEntryServiceImpl implements EventEntryService {
 	private final ScanLogDao scanLogDao;
 
 	@Override
-	public EntryScanResponse recordEntry(String agentSessionId, EntryScanRequest request) {
+	public EntryScanResponse recordEntry(String agentMsisdn, EntryScanRequest request) {
 		try {
 			// 0) Idempotency: a retried scanRequestId replays the original decision (no re-redeem)
 			Optional<ScanLogDocument> prior = scanLogDao.findByScanRequestId(request.getScanRequestId());
@@ -2803,19 +2470,18 @@ public class EventEntryServiceImpl implements EventEntryService {
 				return rebuild(prior.get());
 			}
 
-			// 1–2) Agent session valid & agent whitelisted for the requested (eventId, checkpoint)
+			// 1–2) Agent (authenticated IV_USER) whitelisted for the requested (eventId, checkpoint)?
 			String eventId = request.getEventId();
 			Checkpoint checkpoint = request.getCheckpoint();
-			AgentWhitelistDocument wl;
+			EventAgentDocument eventAgent;
 			try {
-				wl = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
+				eventAgent = agentAccess.requireAuthorized(agentMsisdn, eventId, checkpoint);
 			} catch (AgentSessionInvalidException e) {
-				log.warn("Scan rejected — session/authorization invalid: {}", e.getMessage());
+				log.warn("Scan rejected — agent not authorized: {}", e.getMessage());
 				return audit(EntryScanResponse.of(EntryCallback.STAFF_SESSION_INVALID),
-						eventId, null, request, null, null);
+						eventId, null, request, agentMsisdn, null);
 			}
-			String agentMsisdn = wl.getMsisdn();
-			Instant cleanupAt = wl.getCleanupAt();          // = event.endTime + 30d (drives TTL)
+			Instant cleanupAt = eventAgent.getCleanupAt();   // = event.endTime + 30d (drives TTL)
 
 			// 3–5) Verify token (signature, version, TTL, single-active)
 			QrClaims claims;
@@ -4057,9 +3723,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * API 1 (admin whitelist) + API 2 (single agent validate — which also opens the scanning session).
- * No OTP, no microsite — the agent uses the Thanks App in agent mode, so {@code IV_USER} is the
- * authenticated agent MSISDN.
+ * API 1 (admin whitelist CRUD) + API 2 (agent validate — a pure read of the agent's authorized
+ * events/checkpoints). No OTP, no microsite, no session — the agent uses the Thanks App in agent
+ * mode, so {@code IV_USER} is the authenticated agent MSISDN on every call.
  */
 @RestController
 @Api(value = "Event Pass — Agent")
@@ -4079,7 +3745,8 @@ public class AgentController {
 			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
 			@Valid @RequestBody WhitelistUpsertRequest request) {
 		var saved = agentAccessService.upsertWhitelist(request, actor);
-		return Response.getSuccessResponse(Map.of("whitelistId", saved.getId(), "status", "UPSERTED"));
+		return Response.getSuccessResponse(
+				Map.of("eventId", request.getEventId(), "msisdn", saved.getMsisdn(), "status", "UPSERTED"));
 	}
 
 	// READ (one when msisdn given, else all rows for the event)
@@ -4118,76 +3785,13 @@ public class AgentController {
 		return Response.getSuccessResponse(Map.of("eventId", eventId, "msisdn", msisdn, "status", "DELETED"));
 	}
 
-	// ---- API 2: validate agent + open session (single call) ----
+	// ---- API 2: validate agent (pure read — no session) ----
 	@GetMapping("/v1/agents/validate")
-	@ApiOperation(value = "Validate the agent and open a scanning session; returns authorized events + checkpoints + agentSessionId")
+	@ApiOperation(value = "List the events + checkpoints this agent may scan (no session; app login is the auth)")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<AgentValidateResponse> validate(
-			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
-			@RequestHeader(name = "User-Agent", required = false) String userAgent) {
-		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn, userAgent));
-	}
-}
-```
-
-#### `com/airtel/userprofile/eventpass/controller/EventAdminController.java`
-
-```java
-package com.airtel.userprofile.eventpass.controller;
-
-import com.airtel.core.dto.genericResponse.Response;
-import com.airtel.core.enums.Entity;
-import com.airtel.core.enums.Operation;
-import com.airtel.core.logging.AuditLog;
-import com.airtel.userprofile.constants.UserProfileConstants;
-import com.airtel.userprofile.eventpass.dto.request.EventUpsertRequest;
-import com.airtel.userprofile.eventpass.dto.response.EventResponse;
-import com.airtel.userprofile.eventpass.service.EventAdminService;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.*;
-
-import jakarta.validation.Valid;
-import java.util.Map;
-
-/**
- * Admin — create/update, read, and close events (engineering only; secured upstream). The event's
- * {@code endTime} drives the 30-day TTL cleanup of the event and all its per-event data.
- */
-@RestController
-@Api(value = "Event Pass — Event Admin")
-@Slf4j
-@RequiredArgsConstructor
-public class EventAdminController {
-
-	private final EventAdminService eventAdminService;
-
-	@PostMapping("/v1/admin/events")
-	@ApiOperation(value = "Create/update an event (endTime drives the 30-day cleanup)")
-	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
-	public Response<EventResponse> upsert(
-			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
-			@Valid @RequestBody EventUpsertRequest request) {
-		return Response.getSuccessResponse(EventResponse.from(eventAdminService.upsert(request, actor)));
-	}
-
-	@GetMapping("/v1/admin/events/{eventId}")
-	@ApiOperation(value = "Get an event")
-	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
-	public Response<EventResponse> get(@PathVariable String eventId) {
-		return Response.getSuccessResponse(EventResponse.from(eventAdminService.get(eventId)));
-	}
-
-	@PostMapping("/v1/admin/events/{eventId}/close")
-	@ApiOperation(value = "Close an event (active=false); TTL still purges at endTime+30d")
-	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
-	public Response<Map<String, Object>> close(
-			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
-			@PathVariable String eventId) {
-		eventAdminService.close(eventId, actor);
-		return Response.getSuccessResponse(Map.of("eventId", eventId, "status", "CLOSED"));
+			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn) {
+		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn));
 	}
 }
 ```
@@ -4201,6 +3805,7 @@ import com.airtel.core.dto.genericResponse.Response;
 import com.airtel.core.enums.Entity;
 import com.airtel.core.enums.Operation;
 import com.airtel.core.logging.AuditLog;
+import com.airtel.userprofile.constants.UserProfileConstants;
 import com.airtel.userprofile.eventpass.document.ScanLogDocument;
 import com.airtel.userprofile.eventpass.dto.request.EntryScanRequest;
 import com.airtel.userprofile.eventpass.dto.response.EntryScanResponse;
@@ -4215,9 +3820,9 @@ import jakarta.validation.Valid;
 import java.util.List;
 
 /**
- * API 3 — record an entry after scanning (agent mode). The event is taken from the agent session
- * (header {@code X-Agent-Session}); the body carries only qrToken + checkpoint + scanRequestId.
- * Also exposes the admin scan-history API (FR35).
+ * API 3 — record an entry after scanning (agent mode). The agent MSISDN is the authenticated
+ * {@code IV_USER} (no session); {@code eventId} + {@code checkpoint} in the body are authorized
+ * live against the agent's whitelist. Also exposes the admin scan-history API (FR35).
  */
 @RestController
 @Api(value = "Event Pass — Entry")
@@ -4225,18 +3830,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EventEntryController {
 
-	public static final String HEADER_AGENT_SESSION = "X-Agent-Session";
-
 	private final EventEntryService eventEntryService;
 
 	@PostMapping("/v1/entry")
 	@ApiOperation(value = "Record entry/goodie redemption after scanning a customer QR")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<EntryScanResponse> recordEntry(
-			@RequestHeader(name = HEADER_AGENT_SESSION) String agentSessionId,
+			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
 			@Valid @RequestBody EntryScanRequest request) {
 		// Every gate decision (allow/deny) returns 200 with a callback so the scanner always renders.
-		return Response.getSuccessResponse(eventEntryService.recordEntry(agentSessionId, request));
+		return Response.getSuccessResponse(eventEntryService.recordEntry(agentMsisdn, request));
 	}
 
 	@GetMapping("/v1/admin/scan-history")
@@ -4450,7 +4053,7 @@ public class WinnerAdminController {
 ```java
 package com.airtel.userprofile.eventpass.exception;
 
-/** Agent session missing, revoked, expired, or not authorized for the event/checkpoint. */
+/** Agent (authenticated {@code IV_USER}) is not whitelisted for the requested event/checkpoint. */
 public class AgentSessionInvalidException extends RuntimeException {
 
 	public AgentSessionInvalidException(String message) {
@@ -4490,7 +4093,7 @@ public class EventPassExceptionHandler {
 
 	@ExceptionHandler(AgentSessionInvalidException.class)
 	public ResponseEntity<Response<Object>> handleSession(AgentSessionInvalidException ex) {
-		log.warn("EventPass agent session invalid: {}", ex.getMessage());
+		log.warn("EventPass agent not authorized: {}", ex.getMessage());
 		return failure(ex.getMessage(), "staff_session_invalid", HttpStatus.UNAUTHORIZED);
 	}
 
@@ -4575,9 +4178,6 @@ public class EventPassProperties {
 
 	/** QR token TTL in seconds (Q1 — recommend 300). */
 	private long qrTtlSeconds = 300;
-
-	/** Agent scanning session TTL in seconds (24h). */
-	private long agentSessionTtlSeconds = 86_400;
 
 	/** Token schema version currently issued; verifier accepts this and older supported versions. */
 	private int tokenVersion = 1;

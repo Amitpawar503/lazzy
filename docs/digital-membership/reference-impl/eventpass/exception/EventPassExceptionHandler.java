@@ -26,7 +26,7 @@ public class EventPassExceptionHandler {
 
 	@ExceptionHandler(AgentSessionInvalidException.class)
 	public ResponseEntity<Response<Object>> handleSession(AgentSessionInvalidException ex) {
-		log.warn("EventPass agent session invalid: {}", ex.getMessage());
+		log.warn("EventPass agent not authorized: {}", ex.getMessage());
 		return failure(ex.getMessage(), "staff_session_invalid", HttpStatus.UNAUTHORIZED);
 	}
 

@@ -10,10 +10,10 @@ import java.util.List;
 public interface EventEntryService {
 
 	/**
-	 * @param agentSessionId the agent's active scanning session (event + checkpoint bound to it)
-	 * @param request        decoded qrToken + checkpoint + scanRequestId (idempotency key)
+	 * @param agentMsisdn the authenticated agent MSISDN (Thanks App {@code IV_USER})
+	 * @param request     decoded qrToken + eventId + checkpoint + scanRequestId (idempotency key)
 	 */
-	EntryScanResponse recordEntry(String agentSessionId, EntryScanRequest request);
+	EntryScanResponse recordEntry(String agentMsisdn, EntryScanRequest request);
 
 	/** Admin (FR35) — full chronological scan history for a customer, for dispute resolution. */
 	List<ScanLogDocument> scanHistory(String customerMsisdn);

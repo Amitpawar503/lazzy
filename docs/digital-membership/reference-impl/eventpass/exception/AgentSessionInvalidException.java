@@ -1,6 +1,6 @@
 package com.airtel.userprofile.eventpass.exception;
 
-/** Agent session missing, revoked, expired, or not authorized for the event/checkpoint. */
+/** Agent (authenticated {@code IV_USER}) is not whitelisted for the requested event/checkpoint. */
 public class AgentSessionInvalidException extends RuntimeException {
 
 	public AgentSessionInvalidException(String message) {

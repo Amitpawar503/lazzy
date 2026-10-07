@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * API 2 response — the events + checkpoints this agent MSISDN may scan. Empty {@code events}
- * means "not an event agent" (no data leaked). {@code agentSessionId} is issued once the agent
- * picks an event + checkpoint (single-active per msisdn).
+ * API 2 response — the events + checkpoints this agent MSISDN may scan. Empty {@code events} /
+ * {@code authorized=false} means "not an event agent" (no data leaked). Pure read: no session is
+ * created — the agent is already authenticated by the Thanks App (IV_USER), and each scan is
+ * authorized live against the whitelist.
  */
 @Data
 @NoArgsConstructor
@@ -22,5 +23,4 @@ public class AgentValidateResponse {
 
 	private boolean authorized;
 	private List<AgentEventAccess> events;
-	private String agentSessionId;
 }

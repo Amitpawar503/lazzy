@@ -21,9 +21,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * API 1 (admin whitelist) + API 2 (single agent validate — which also opens the scanning session).
- * No OTP, no microsite — the agent uses the Thanks App in agent mode, so {@code IV_USER} is the
- * authenticated agent MSISDN.
+ * API 1 (admin whitelist CRUD) + API 2 (agent validate — a pure read of the agent's authorized
+ * events/checkpoints). No OTP, no microsite, no session — the agent uses the Thanks App in agent
+ * mode, so {@code IV_USER} is the authenticated agent MSISDN on every call.
  */
 @RestController
 @Api(value = "Event Pass — Agent")
@@ -43,7 +43,8 @@ public class AgentController {
 			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
 			@Valid @RequestBody WhitelistUpsertRequest request) {
 		var saved = agentAccessService.upsertWhitelist(request, actor);
-		return Response.getSuccessResponse(Map.of("whitelistId", saved.getId(), "status", "UPSERTED"));
+		return Response.getSuccessResponse(
+				Map.of("eventId", request.getEventId(), "msisdn", saved.getMsisdn(), "status", "UPSERTED"));
 	}
 
 	// READ (one when msisdn given, else all rows for the event)
@@ -82,13 +83,12 @@ public class AgentController {
 		return Response.getSuccessResponse(Map.of("eventId", eventId, "msisdn", msisdn, "status", "DELETED"));
 	}
 
-	// ---- API 2: validate agent + open session (single call) ----
+	// ---- API 2: validate agent (pure read — no session) ----
 	@GetMapping("/v1/agents/validate")
-	@ApiOperation(value = "Validate the agent and open a scanning session; returns authorized events + checkpoints + agentSessionId")
+	@ApiOperation(value = "List the events + checkpoints this agent may scan (no session; app login is the auth)")
 	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
 	public Response<AgentValidateResponse> validate(
-			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
-			@RequestHeader(name = "User-Agent", required = false) String userAgent) {
-		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn, userAgent));
+			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn) {
+		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn));
 	}
 }

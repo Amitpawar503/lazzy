@@ -49,7 +49,7 @@ public class EventRedemptionDocument {
 	/** Customer device that generated the QR used for the FIRST successful redemption. */
 	private String deviceId;
 
-	/** MSISDN of the agent whose session recorded the redemption. */
+	/** MSISDN of the agent who recorded the redemption. */
 	private String redeemedByAgentMsisdn;
 
 	/** Idempotency key from the scanner; unique so a retried scan cannot create a second row. */

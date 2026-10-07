@@ -3,7 +3,7 @@ package com.airtel.userprofile.eventpass.service.impl;
 import com.airtel.userprofile.eventpass.dao.EventRedemptionDao;
 import com.airtel.userprofile.eventpass.dao.RedeemOutcome;
 import com.airtel.userprofile.eventpass.dao.ScanLogDao;
-import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.document.EventAgentDocument;
 import com.airtel.userprofile.eventpass.document.EventRedemptionDocument;
 import com.airtel.userprofile.eventpass.document.ScanLogDocument;
 import com.airtel.userprofile.eventpass.dto.request.EntryScanRequest;
@@ -26,7 +26,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 /**
- * The gate authority. Order mirrors the HLD validation chain: session → token → winner → atomic
+ * The gate authority. Order mirrors the HLD validation chain: agent authorization → token → winner → atomic
  * redeem → audit. Every DECISION (allow and deny) is returned as a 200 {@link EntryScanResponse};
  * only unexpected infra faults become {@code SERVICE_UNAVAILABLE} and never auto-allow.
  */
@@ -41,7 +41,7 @@ public class EventEntryServiceImpl implements EventEntryService {
 	private final ScanLogDao scanLogDao;
 
 	@Override
-	public EntryScanResponse recordEntry(String agentSessionId, EntryScanRequest request) {
+	public EntryScanResponse recordEntry(String agentMsisdn, EntryScanRequest request) {
 		try {
 			// 0) Idempotency: a retried scanRequestId replays the original decision (no re-redeem)
 			Optional<ScanLogDocument> prior = scanLogDao.findByScanRequestId(request.getScanRequestId());
@@ -51,19 +51,18 @@ public class EventEntryServiceImpl implements EventEntryService {
 				return rebuild(prior.get());
 			}
 
-			// 1–2) Agent session valid & agent whitelisted for the requested (eventId, checkpoint)
+			// 1–2) Agent (authenticated IV_USER) whitelisted for the requested (eventId, checkpoint)?
 			String eventId = request.getEventId();
 			Checkpoint checkpoint = request.getCheckpoint();
-			AgentWhitelistDocument wl;
+			EventAgentDocument eventAgent;
 			try {
-				wl = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
+				eventAgent = agentAccess.requireAuthorized(agentMsisdn, eventId, checkpoint);
 			} catch (AgentSessionInvalidException e) {
-				log.warn("Scan rejected — session/authorization invalid: {}", e.getMessage());
+				log.warn("Scan rejected — agent not authorized: {}", e.getMessage());
 				return audit(EntryScanResponse.of(EntryCallback.STAFF_SESSION_INVALID),
-						eventId, null, request, null, null);
+						eventId, null, request, agentMsisdn, null);
 			}
-			String agentMsisdn = wl.getMsisdn();
-			Instant cleanupAt = wl.getCleanupAt();          // = event.endTime + 30d (drives TTL)
+			Instant cleanupAt = eventAgent.getCleanupAt();   // = event.endTime + 30d (drives TTL)
 
 			// 3–5) Verify token (signature, version, TTL, single-active)
 			QrClaims claims;

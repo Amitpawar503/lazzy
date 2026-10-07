@@ -10,8 +10,9 @@ import lombok.NoArgsConstructor;
 
 /**
  * API 3 — agent posts a decoded QR for a decision. {@code eventId} + {@code checkpoint} are the
- * gate the agent is operating; both are validated against the agent's whitelist (via the session),
- * so a client cannot self-authorize an event it is not whitelisted for. {@code scanRequestId} is
+ * gate the agent is operating; both are validated live against the agent's whitelist (keyed by the
+ * {@code IV_USER} agent msisdn), so a client cannot self-authorize an event it is not whitelisted
+ * for. {@code scanRequestId} is
  * the idempotency key (reuse the same value on retry).
  */
 @Data

@@ -16,7 +16,7 @@ public enum EntryCallback {
 	NOT_ENTITLED("red", false, true, "Member is not a winner for this event."),
 	QR_EXPIRED("grey", false, true, "QR expired. Ask the customer to refresh and re-present."),
 	INVALID_QR("red", false, true, "Invalid QR. Ask the customer to open it from the Airtel app."),
-	STAFF_SESSION_INVALID("red", false, false, "Session expired. Re-open the scanner to continue."),
+	STAFF_SESSION_INVALID("red", false, false, "You are not authorized to scan for this event. Re-open the scanner."),
 	SERVICE_UNAVAILABLE("grey", false, true, "Service error. Retry the scan.");
 
 	private final String color;
