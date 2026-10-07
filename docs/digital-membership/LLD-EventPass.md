@@ -155,6 +155,11 @@ Unique indexes are declared on the documents (`@CompoundIndex` / `@Indexed(uniqu
 and each **TTL index** is `@Indexed(expireAfterSeconds = 0)` on the `cleanupAt` / `expiresAt` date —
 Mongo's background sweeper deletes the doc once that instant passes. See §4A.
 
+> **Collection setup script:** `reference-impl/eventpass/mongo/event_agent.collection.mongo.js`
+> creates `event_agent` with a `$jsonSchema` validator + indexes. It ships a **5-minute demo TTL**
+> (each row auto-removed 5 min after insert, to watch cleanup quickly); the file also carries the
+> commented **production** TTL (`cleanupAt`, `expireAfterSeconds: 0`, set to `endTime + 30d`).
+
 ---
 
 ## 4A. Agent↔event collection & 30-day retention (TTL)
