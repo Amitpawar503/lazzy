@@ -18,7 +18,8 @@ public interface EventRedemptionDao {
 	 * the impl converts into {@code firstClaim=false} + the existing row. No read-then-write race.
 	 */
 	RedeemOutcome tryRedeem(String eventId, String msisdn, Checkpoint checkpoint,
-							String deviceId, String agentMsisdn, String scanRequestId);
+							String deviceId, String agentMsisdn, String scanRequestId,
+							java.time.Instant cleanupAt);
 
 	Optional<com.airtel.userprofile.eventpass.document.EventRedemptionDocument> find(
 			String eventId, String msisdn, Checkpoint checkpoint);

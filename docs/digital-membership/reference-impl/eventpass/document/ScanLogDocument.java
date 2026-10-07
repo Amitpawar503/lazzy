@@ -46,4 +46,8 @@ public class ScanLogDocument {
 	private EntryCallback callback;
 	private String tokenJti;
 	private Instant serverTs;
+
+	/** = event.endTime + 30d. TTL index purges the audit log 30 days after the event ends. */
+	@Indexed(name = "ttl_scanlog_cleanup", expireAfterSeconds = 0)
+	private Instant cleanupAt;
 }

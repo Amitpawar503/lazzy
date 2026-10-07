@@ -27,6 +27,8 @@ public class AgentWhitelistDaoImpl implements AgentWhitelistDao {
 		Update u = new Update()
 				.set("checkpoints", doc.getCheckpoints())
 				.set("active", doc.isActive())
+				.set("endTime", doc.getEndTime())
+				.set("cleanupAt", doc.getCleanupAt())
 				.set("createdBy", doc.getCreatedBy())
 				.set("updatedAt", Instant.now())
 				.setOnInsert("createdAt", Instant.now());

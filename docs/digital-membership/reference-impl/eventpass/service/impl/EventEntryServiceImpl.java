@@ -3,7 +3,7 @@ package com.airtel.userprofile.eventpass.service.impl;
 import com.airtel.userprofile.eventpass.dao.EventRedemptionDao;
 import com.airtel.userprofile.eventpass.dao.RedeemOutcome;
 import com.airtel.userprofile.eventpass.dao.ScanLogDao;
-import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
+import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
 import com.airtel.userprofile.eventpass.document.EventRedemptionDocument;
 import com.airtel.userprofile.eventpass.document.ScanLogDocument;
 import com.airtel.userprofile.eventpass.dto.request.EntryScanRequest;
@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -53,36 +54,37 @@ public class EventEntryServiceImpl implements EventEntryService {
 			// 1–2) Agent session valid & agent whitelisted for the requested (eventId, checkpoint)
 			String eventId = request.getEventId();
 			Checkpoint checkpoint = request.getCheckpoint();
-			AgentSessionDocument session;
+			AgentWhitelistDocument wl;
 			try {
-				session = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
+				wl = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
 			} catch (AgentSessionInvalidException e) {
 				log.warn("Scan rejected — session/authorization invalid: {}", e.getMessage());
 				return audit(EntryScanResponse.of(EntryCallback.STAFF_SESSION_INVALID),
-						eventId, null, request, null);
+						eventId, null, request, null, null);
 			}
-			String agentMsisdn = session.getMsisdn();
+			String agentMsisdn = wl.getMsisdn();
+			Instant cleanupAt = wl.getCleanupAt();          // = event.endTime + 30d (drives TTL)
 
 			// 3–5) Verify token (signature, version, TTL, single-active)
 			QrClaims claims;
 			try {
 				claims = qrTokenService.verify(request.getQrToken());
 			} catch (QrExpiredException e) {
-				return audit(EntryScanResponse.of(EntryCallback.QR_EXPIRED), eventId, null, request, agentMsisdn);
+				return audit(EntryScanResponse.of(EntryCallback.QR_EXPIRED), eventId, null, request, agentMsisdn, cleanupAt);
 			} catch (QrInvalidException e) {
-				return audit(EntryScanResponse.of(EntryCallback.INVALID_QR), eventId, null, request, agentMsisdn);
+				return audit(EntryScanResponse.of(EntryCallback.INVALID_QR), eventId, null, request, agentMsisdn, cleanupAt);
 			}
 
 			// 6) Winner check — the scanned event must be among the QR's won events
 			if (claims.getWonEventIds() == null || !claims.getWonEventIds().contains(eventId)) {
 				return audit(EntryScanResponse.of(EntryCallback.NOT_ENTITLED),
-						eventId, claims, request, agentMsisdn);
+						eventId, claims, request, agentMsisdn, cleanupAt);
 			}
 
 			// 7) Atomic redeem (event, msisdn, checkpoint) — exactly one first-claim
 			RedeemOutcome outcome = redemptionDao.tryRedeem(
 					eventId, claims.getMsisdn(), checkpoint,
-					claims.getDeviceId(), agentMsisdn, request.getScanRequestId());
+					claims.getDeviceId(), agentMsisdn, request.getScanRequestId(), cleanupAt);
 
 			EntryScanResponse response;
 			if (outcome.isFirstClaim()) {
@@ -101,7 +103,7 @@ public class EventEntryServiceImpl implements EventEntryService {
 			response.setHolderMasked(mask(claims.getMsisdn()));
 
 			// 8) Audit (always)
-			return audit(response, eventId, claims, request, agentMsisdn);
+			return audit(response, eventId, claims, request, agentMsisdn, cleanupAt);
 
 		} catch (Exception e) {
 			// Never auto-allow on infra failure; nothing that committed is lost (idempotency replays it)
@@ -111,7 +113,9 @@ public class EventEntryServiceImpl implements EventEntryService {
 	}
 
 	private EntryScanResponse audit(EntryScanResponse response, String eventId, QrClaims claims,
-									EntryScanRequest request, String agentMsisdn) {
+									EntryScanRequest request, String agentMsisdn, Instant cleanupAt) {
+		// Even a failed-auth audit row must expire: fall back to now + 30d when the event is unknown.
+		Instant effectiveCleanup = cleanupAt != null ? cleanupAt : Instant.now().plus(Duration.ofDays(30));
 		try {
 			scanLogDao.save(ScanLogDocument.builder()
 					.scanRequestId(request.getScanRequestId())
@@ -123,6 +127,7 @@ public class EventEntryServiceImpl implements EventEntryService {
 					.callback(response.getCallback())
 					.tokenJti(claims != null ? claims.getJti() : null)
 					.serverTs(Instant.now())
+					.cleanupAt(effectiveCleanup)
 					.build());
 		} catch (Exception logEx) {
 			// A duplicate scanRequestId here means a concurrent retry already logged it — replay that.

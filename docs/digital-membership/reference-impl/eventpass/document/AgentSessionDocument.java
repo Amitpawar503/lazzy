@@ -32,6 +32,10 @@ public class AgentSessionDocument {
 	private String msisdn;
 	private boolean revoked;
 	private Instant createdAt;
+
+	/** Session TTL (24h). TTL index auto-purges stale sessions at expiry. */
+	@Indexed(name = "ttl_session_expiry", expireAfterSeconds = 0)
 	private Instant expiresAt;
+
 	private String deviceInfo;
 }

@@ -57,4 +57,8 @@ public class EventRedemptionDocument {
 	private String scanRequestId;
 
 	private Instant redeemedAt;
+
+	/** = event.endTime + 30d. TTL index purges redemptions 30 days after the event ends. */
+	@Indexed(name = "ttl_redemption_cleanup", expireAfterSeconds = 0)
+	private Instant cleanupAt;
 }

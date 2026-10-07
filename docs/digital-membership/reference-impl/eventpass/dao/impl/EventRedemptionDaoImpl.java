@@ -34,7 +34,8 @@ public class EventRedemptionDaoImpl implements EventRedemptionDao {
 
 	@Override
 	public RedeemOutcome tryRedeem(String eventId, String msisdn, Checkpoint checkpoint,
-								   String deviceId, String agentMsisdn, String scanRequestId) {
+								   String deviceId, String agentMsisdn, String scanRequestId,
+								   java.time.Instant cleanupAt) {
 		EventRedemptionDocument doc = EventRedemptionDocument.builder()
 				.id(UUID.randomUUID().toString())
 				.eventId(eventId)
@@ -44,6 +45,7 @@ public class EventRedemptionDaoImpl implements EventRedemptionDao {
 				.redeemedByAgentMsisdn(agentMsisdn)
 				.scanRequestId(scanRequestId)
 				.redeemedAt(Instant.now())
+				.cleanupAt(cleanupAt)          // = event.endTime + 30d (TTL)
 				.build();
 		try {
 			mongoTemplate.insert(doc);

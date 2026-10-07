@@ -33,8 +33,9 @@ public interface AgentAccessService {
 	/**
 	 * Resolve an active session and confirm the agent is (still) whitelisted for the requested
 	 * (eventId, checkpoint) — checked live against the whitelist, since the session is per-agent.
+	 * @return the authorizing whitelist relation (carries agent msisdn, endTime and cleanupAt).
 	 * @throws com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException if missing,
 	 *         revoked, expired, or not whitelisted for that event/checkpoint.
 	 */
-	AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
+	AgentWhitelistDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
 }

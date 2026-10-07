@@ -309,12 +309,12 @@ erDiagram
 |---|---|---|
 | Customer / eligibility | **User Profile Service** | Membership status, customer reference |
 | QR issuance (`qr_issuance`) | **User Profile Service** | Per-customer latest `jti` + issue time + **won `eventId`s** (fast store, TTL'd) — powers single-active + TTL |
-| Event | Admin | Event id, name, venue, window, checkpoints enabled |
+| **Event** (`event`) | **Event Admin component** | Event id, name, venue, `startTime`/`endTime`, `active`, checkpoints; **`cleanupAt = endTime+30d`** (TTL) |
 | **Contest** (existing `contest_entries`) | **Contest component** | The **winner source of truth**: a `contest_entries` row with **`winnerInfo`** set is a winner; **event = `programId`**. Read at QR generation; **written** only by API 5 (winner override, sets `winnerInfo`) |
-| **Agent whitelist** (`event_agent_whitelist`) | **Agent Whitelist component** | Per **`(eventId, msisdn)`**: the **checkpoints** (ENTRY / GOODIE / both) that agent may scan. One agent MSISDN can hold **many** rows (many events) |
-| Agent session (`event_agent_sessions`) | **Agent Whitelist & Session component** | Active scanning session bound to `(msisdn, eventId, checkpoint)`; single-active per MSISDN |
-| Redemption (`event_redemptions`) | **Entry Validation component** | unique `(eventId, msisdn, checkpoint)` + **first-claim deviceId & time** — **the exactly-once anchor** |
-| Scan audit log (`event_scan_logs`) | **Entry Validation component** | Append-only record of every scan attempt (for the history API) |
+| **Agent↔event whitelist** (`event_agent_whitelist`) | **Agent Whitelist component** | **One relation doc per `(eventId, msisdn)`**: the **checkpoints** that agent may scan + inherited `endTime`/**`cleanupAt`** (TTL). One agent MSISDN holds many rows |
+| Agent session (`event_agent_sessions`) | **Agent Whitelist & Session component** | Per-agent single-active session; TTL on `expiresAt` (24h) |
+| Redemption (`event_redemptions`) | **Entry Validation component** | unique `(eventId, msisdn, checkpoint)` + first-claim deviceId & time + **`cleanupAt`** (TTL) — the exactly-once anchor |
+| Scan audit log (`event_scan_logs`) | **Entry Validation component** | Append-only **audit: which agent scanned which customer for which event** (+ callback, ts); **`cleanupAt`** (TTL) |
 
 *(Concrete schema, columns, and constraints in the [consolidated LLD](./LLD-EventPass.md).)*
 
@@ -458,7 +458,10 @@ column names the internal module that handles each.
 
 | # | Method / Endpoint | Owning component (in User Profile Service) | Caller | Purpose | Key inputs | Success output |
 |---|---|---|---|---|---|---|
-| 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Create** — whitelist an agent MSISDN for an event with checkpoints | `msisdn`, `eventId`, `checkpoints[]`, `active?` | `{whitelistId, status}` |
+| 0a | `POST /v1/admin/events` | Event Admin | Admin / eng | **Create/update event** — sets `cleanupAt = endTime + 30d` (drives TTL) | `eventId`, `eventName`, `startTime`, `endTime`, `venue?` | event |
+| 0b | `GET /v1/admin/events/{eventId}` | Event Admin | Admin / eng | **Read event** | `eventId` | event |
+| 0c | `POST /v1/admin/events/{eventId}/close` | Event Admin | Admin / eng | **Close event** (`active=false`); TTL still purges at `endTime+30d` | `eventId` | `{status:"CLOSED"}` |
+| 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Create** — whitelist an agent MSISDN for an event with checkpoints (event must exist) | `msisdn`, `eventId`, `checkpoints[]`, `active?` | `{whitelistId, status}` |
 | 1b | `GET /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Read** — one row (`eventId`+`msisdn`) or all rows for an event | `eventId`, `msisdn?` | `[{eventId, msisdn, checkpoints[], active}]` |
 | 1c | `PUT /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Update** — change checkpoints and/or active flag | `eventId`, `msisdn`, `checkpoints?`, `active?` | updated row |
 | 1d | `DELETE /v1/agents/whitelist` | Agent Whitelist | Admin / eng | **Delete** — remove the `(eventId, msisdn)` row | `eventId`, `msisdn` | `{status:"DELETED"}` |
@@ -476,7 +479,8 @@ column names the internal module that handles each.
 - **Whitelist carries checkpoints** — a `(eventId, msisdn)` row lists ENTRY, GOODIE, or both; every scan's `(eventId, checkpoint)` is re-checked live against it.
 - **Every entry decision is HTTP 200 + callback** (INVALID_QR / QR_EXPIRED / STAFF_SESSION_INVALID included) so the scanner always renders a result; only unexpected faults map to `SERVICE_UNAVAILABLE`.
 - **Winners: draw or admin API** — winners are normally produced by the existing **contest draw** (`contest_entries.winnerInfo`). **API 5** is a manual override that sets `winnerInfo` on the customer's existing entry; it **never creates an entry** (the customer must have played the contest). A newly-marked win is picked up on the customer's next QR refresh.
-- **Whitelist CRUD** — API 1 is a full admin CRUD (`POST` create, `GET` read, `PUT` update, `DELETE`) on `event_agent_whitelist`.
+- **Whitelist CRUD** — API 1 is a full admin CRUD (`POST` create, `GET` read, `PUT` update, `DELETE`) on `event_agent_whitelist`. The whitelist create requires the **event (API 0) to exist first** so the relation can inherit the event's `endTime`/`cleanupAt`.
+- **Agent↔event relation + 30-day retention (TTL)** — the relation is a **separate `event_agent_whitelist` doc per (agent, event)** (not an embedded event list on an agent), so each row can be TTL-expired independently. The `event`, `event_agent_whitelist`, `event_redemptions`, and `event_scan_logs` docs all carry **`cleanupAt = event.endTime + 30d`** with a Mongo **TTL index** that auto-deletes them 30 days after the event ends — no cron. There is **no standalone agent master doc**, so an agent with no events for 30 days leaves no data behind. The **audit record** of *which agent scanned which customer for which event* is `event_scan_logs`, retained for the same 30-day window.
 - **QR generate vs validate vs refresh** — `validate` (4b) is get-or-create: it returns the **cached live QR** from the Aerospike active-QR store if one exists for this customer+device, else mints a new one (the default the app calls on card open). `generate` (4a) and `refresh` (4c) always mint a fresh QR (supersede). The active-QR store now caches the **whole token** (not just the `jti`) so validate can return it as-is.
 
 ### 9.1 API 1 — Whitelist an agent MSISDN (with checkpoints)
@@ -678,6 +682,7 @@ flowchart TD
 | **Platform parity** | iOS/Android functionally equivalent; only intentional divergence is screenshot handling (block vs. detect) — see Q5 |
 | **Idempotency** | `scanRequestId` makes API 3 retries safe — return the original stored result |
 | **Winner source of truth** | Only the **Contest component** declares winners — `contest_entries` rows with `winnerInfo` set (event = `programId`); read at generation (embedded in token) and re-checkable at entry |
+| **Retention / cleanup** | All per-event data (`event`, `event_agent_whitelist`, `event_redemptions`, `event_scan_logs`) carries `cleanupAt = endTime + 30d` with a **Mongo TTL index** → auto-purged 30 days after the event ends, no cron. Sessions TTL on `expiresAt`. No standalone agent doc → an agent with no events for 30 days leaves nothing behind |
 | **DTOs vs entities** | Controllers speak DTOs; DB entities never cross the API boundary (§5) |
 
 ---
@@ -691,6 +696,7 @@ flowchart TD
 | **Q10** | **Agent auth is whitelist-only (no OTP).** Possession of the MSISDN is proven by the Thanks App's own login; is the app-auth + whitelist combination sufficient, or add an extra agent step? | Agent-side security |
 | **Q22** | `deviceId` is the **customer's** QR-generating device (agent whitelist is MSISDN + checkpoints, no deviceId). Needs a **stable** id; screenshots carry the original deviceId → read as `DUPLICATE_ENTRY` | API 3 dedup semantics |
 | **Q23** | **Event ↔ contest mapping.** The winner check treats a live event as a contest **`programId`** (winner = `contest_entries` row with `winnerInfo`). Confirm this holds — if an event spans multiple contests or keys on `campaignId`, the winner query and the token's `events[]` change accordingly. | Winner resolution |
+| **Q24** | **30-day retention** — TTL purges `event` + whitelist + redemptions + **scan audit** 30 days after `endTime`. Confirm the audit/redemption retention is acceptable (disputes closed within 30d), and whether an **archival export** is needed before purge. | Compliance / audit |
 
 ---
 

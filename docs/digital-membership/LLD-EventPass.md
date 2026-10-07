@@ -125,27 +125,62 @@ DTOs never cross into the DB layer; the signing key stays behind KMS/HSM.
 
 ```mermaid
 erDiagram
+  EVENT ||--o{ EVENT_AGENT_WHITELIST : "agent↔event relation"
+  EVENT ||--o{ EVENT_REDEMPTIONS : scoped_to
   CONTEST_ENTRIES ||--o{ EVENT_REDEMPTIONS : "winner (winnerInfo) redeems"
   EVENT_AGENT_WHITELIST ||--o| EVENT_AGENT_SESSIONS : opens
   EVENT_AGENT_SESSIONS ||--o{ EVENT_SCAN_LOGS : records
-  EVENT_REDEMPTIONS { string eventId  string msisdn  string checkpoint  string deviceId  string scanRequestId  instant redeemedAt }
-  EVENT_AGENT_WHITELIST { string eventId  string msisdn  set checkpoints  bool active }
-  EVENT_AGENT_SESSIONS { string msisdn  string eventId  string checkpoint  bool revoked  instant expiresAt }
-  EVENT_SCAN_LOGS { string scanRequestId  string customerMsisdn  string agentMsisdn  string callback  instant serverTs }
+  EVENT { string eventId  string eventName  string venue  instant startTime  instant endTime  bool active  instant cleanupAt }
+  EVENT_REDEMPTIONS { string eventId  string msisdn  string checkpoint  string deviceId  string scanRequestId  instant redeemedAt  instant cleanupAt }
+  EVENT_AGENT_WHITELIST { string eventId  string msisdn  set checkpoints  bool active  instant endTime  instant cleanupAt }
+  EVENT_AGENT_SESSIONS { string msisdn  bool revoked  instant expiresAt }
+  EVENT_SCAN_LOGS { string scanRequestId  string eventId  string customerMsisdn  string agentMsisdn  string callback  instant serverTs  instant cleanupAt }
   CONTEST_ENTRIES { string programId  string msisdn  object winnerInfo }
 ```
 
-| Collection | Key index | Purpose |
-|---|---|---|
-| `event_redemptions` | **unique** `(eventId, msisdn, checkpoint)`; unique sparse `scanRequestId` | exactly-once redemption + idempotency |
-| `event_agent_whitelist` | **unique** `(eventId, msisdn)` | agent authority (events + checkpoints) |
-| `event_agent_sessions` | `msisdn` | single-active scanning session |
-| `event_scan_logs` | unique sparse `scanRequestId`; `customerMsisdn`, `agentMsisdn`, `eventId` | audit + idempotency + history API |
-| `contest_entries` *(existing)* | `winnerInfo` presence + `programId` | winner source (read at API 4; **written** by API 5) |
-| Aerospike `qr:latest:{msisdn}` | TTL = QR TTL | single-active QR pointer |
+| Collection | Key index | TTL (auto-delete) | Purpose |
+|---|---|---|---|
+| `event` | `_id = eventId` | `cleanupAt` (`endTime+30d`) | event master; name/venue/window/active |
+| `event_agent_whitelist` | **unique** `(eventId, msisdn)` | `cleanupAt` (`endTime+30d`) | **agent↔event relation** (events + checkpoints an agent may scan) |
+| `event_redemptions` | **unique** `(eventId, msisdn, checkpoint)`; unique sparse `scanRequestId` | `cleanupAt` (`endTime+30d`) | exactly-once redemption + idempotency |
+| `event_scan_logs` | unique sparse `scanRequestId`; `customerMsisdn`, `agentMsisdn`, `eventId` | `cleanupAt` (`endTime+30d`) | **audit** (agent↔customer↔event) + idempotency + history |
+| `event_agent_sessions` | `msisdn` | `expiresAt` (24h) | single-active scanning session |
+| `contest_entries` *(existing)* | `winnerInfo` presence + `programId` | — (owned by contest) | winner source (read at API 4; **written** by API 5) |
+| Aerospike `qr:latest:{msisdn}` | — | record TTL = QR TTL | single-active QR cache (`CachedQr`) |
 
-Unique indexes are declared on the documents (`@CompoundIndex` / `@Indexed(unique=true, sparse=true)`)
-so Spring Data auto-creates them, same as `EntryDocument.orderId` in `contest`.
+Unique indexes are declared on the documents (`@CompoundIndex` / `@Indexed(unique=true, sparse=true)`),
+and each **TTL index** is `@Indexed(expireAfterSeconds = 0)` on the `cleanupAt` / `expiresAt` date —
+Mongo's background sweeper deletes the doc once that instant passes. See §4A.
+
+---
+
+## 4A. Agent↔event relation & 30-day retention (TTL)
+
+**Chosen shape: a separate relation document per `(agent, event)`** (`event_agent_whitelist`),
+**not** an embedded `List<events>` on an agent document.
+
+| Why | Separate relation doc | Embedded list on agent |
+|---|---|---|
+| **Per-event 30-day cleanup** | ✅ TTL index deletes each row independently at `endTime+30d` | ❌ TTL can't expire array elements — needs a cron to prune |
+| Unbounded growth | ✅ one small row per event | ❌ agent doc grows forever |
+| Write contention | ✅ independent rows | ❌ one hot doc for all events |
+| "Events for agent" query | ✅ `find({msisdn})` | ✅ single doc |
+
+**How cleanup works end-to-end:**
+1. Admin creates the **`event`** (`POST /v1/admin/events`) with `startTime`/`endTime`; the service sets `cleanupAt = endTime + 30d`.
+2. Whitelisting an agent copies the event's `endTime`/`cleanupAt` onto the relation row (API 1 requires the event to exist first).
+3. At scan time, `event_redemptions` and `event_scan_logs` are stamped with the same `cleanupAt`.
+4. Mongo **TTL indexes** auto-purge every per-event doc 30 days after the event ends — no cron.
+5. **"Agent with no events for 30 days is removed" falls out for free:** we keep **no standalone
+   agent-master doc**; an agent's only footprint is relation rows + sessions + audit, all TTL'd.
+   When the last one expires, nothing about that agent remains.
+
+**Audit record** = `event_scan_logs`: every scan (allow and deny) writes `{agentMsisdn,
+customerMsisdn, eventId, checkpoint, callback, serverTs, scanRequestId}` — the authoritative record
+of *which agent scanned which customer for which event*, retained for the 30-day dispute window.
+
+> A **failed-auth** scan log (no event resolved) still gets `cleanupAt = now + 30d` so it cannot
+> leak past retention.
 
 ---
 
@@ -282,6 +317,9 @@ refresh**.
 
 | # | Method / Endpoint | Owning component | Caller | Key inputs | Success output |
 |---|---|---|---|---|---|
+| 0a | `POST /v1/admin/events` | Event Admin | Admin/eng | `eventId`, `eventName`, `startTime`, `endTime`, `venue?` | event (incl. `cleanupAt=endTime+30d`) |
+| 0b | `GET /v1/admin/events/{eventId}` | Event Admin | Admin/eng | `eventId` | event |
+| 0c | `POST /v1/admin/events/{eventId}/close` | Event Admin | Admin/eng | `eventId` | `{status:"CLOSED"}` |
 | 1a | `POST /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `msisdn`, `eventId`, `checkpoints[]`, `active?` | `{whitelistId, status}` |
 | 1b | `GET /v1/agents/whitelist?eventId=&msisdn=` | Agent Whitelist | Admin/eng | `eventId`, `msisdn?` | `[{eventId, msisdn, checkpoints[], active}]` |
 | 1c | `PUT /v1/agents/whitelist` | Agent Whitelist | Admin/eng | `eventId`, `msisdn`, `checkpoints?`, `active?` | updated row |
@@ -298,7 +336,8 @@ refresh**.
 
 | API | Controller | Service | Persistence |
 |---|---|---|---|
-| 1a create | `AgentController.createWhitelist` | `AgentAccessService.upsertWhitelist` | `AgentWhitelistDao.upsert` |
+| 0 event | `EventAdminController` | `EventAdminService.upsert`/`get`/`close` | `EventDao` → `event` (TTL) |
+| 1a create | `AgentController.createWhitelist` | `AgentAccessService.upsertWhitelist` (requires event) | `AgentWhitelistDao.upsert` |
 | 1b read | `AgentController.getWhitelist` | `AgentAccessService.getWhitelist` | `AgentWhitelistDao.findOne`/`findByEvent` |
 | 1c update | `AgentController.updateWhitelist` | `AgentAccessService.updateWhitelist` | `AgentWhitelistDao.update` |
 | 1d delete | `AgentController.deleteWhitelist` | `AgentAccessService.deleteWhitelist` | `AgentWhitelistDao.delete` |
@@ -628,9 +667,22 @@ Content-Type: application/json
 
 ---
 
-## 8B. curl — whitelist CRUD & QR validate/refresh
+## 8B. curl — event admin, whitelist CRUD & QR validate/refresh
 
 `$BASE` = service base URL (e.g. `https://userprofile.internal`).
+
+**Event — CREATE (must exist before whitelisting agents; sets cleanupAt = endTime + 30d)**
+```bash
+curl -sS -X POST "$BASE/v1/admin/events" \
+  -H "IV_USER: 9812300000" -H "Content-Type: application/json" \
+  -d '{ "eventId":"ARTLPPAZK","eventName":"Advantage Club Live","venue":"Delhi",
+        "startTime":"2026-10-10T14:00:00Z","endTime":"2026-10-10T22:00:00Z",
+        "checkpointsEnabled":["ENTRY","GOODIE"] }'
+# 200 { "successful": true, "data": { "eventId":"ARTLPPAZK", ..., "cleanupAt":"2026-11-09T22:00:00Z" } }
+
+curl -sS "$BASE/v1/admin/events/ARTLPPAZK" -H "IV_USER: 9812300000"           # read
+curl -sS -X POST "$BASE/v1/admin/events/ARTLPPAZK/close" -H "IV_USER: 9812300000"   # close (active=false)
+```
 
 **Whitelist — CREATE (POST)**
 ```bash
@@ -775,13 +827,13 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 | Layer | Files |
 |---|---|
 | enums | `Checkpoint`, `EntryCallback` |
-| document | `EventRedemptionDocument`, `AgentWhitelistDocument`, `AgentSessionDocument`, `ScanLogDocument` |
-| dto/request | `QrGenerateRequest`, `EntryScanRequest`, `WhitelistUpsertRequest`, `WinnerUpsertRequest`, `QrRenderRequest` |
-| dto/response | `QrGenerateResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse`, `QrRenderResponse` |
-| dao | `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `AgentWhitelistDao`(+impl), `AgentSessionDao`(+impl), `ContestWinnerAdminDao`(+impl) |
-| service | `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `MembershipEligibilityService`, `QrClaims`, `CachedQr`, `QrImageService`(+impl) |
+| document | `EventDocument`, `EventRedemptionDocument`, `AgentWhitelistDocument`, `AgentSessionDocument`, `ScanLogDocument` |
+| dto/request | `EventUpsertRequest`, `QrGenerateRequest`, `QrRenderRequest`, `EntryScanRequest`, `WhitelistUpsertRequest`, `WinnerUpsertRequest` |
+| dto/response | `EventResponse`, `QrGenerateResponse`, `QrRenderResponse`, `EntryScanResponse`, `AgentValidateResponse`, `AgentEventAccess`, `AgentWhitelistResponse` |
+| dao | `EventDao`(+impl), `EventRedemptionDao`(+impl), `RedeemOutcome`, `ScanLogDao`(+impl), `AgentWhitelistDao`(+impl), `AgentSessionDao`(+impl), `ContestWinnerAdminDao`(+impl) |
+| service | `EventAdminService`(+impl), `MembershipQrService`(+impl), `EventEntryService`(+impl), `AgentAccessService`(+impl), `WinnerLookupService`(+impl), `WinnerAdminService`(+impl), `QrTokenService`(+impl), `QrIssuanceStore`(+impl, caches `CachedQr`), `QrImageService`(+impl), `MembershipEligibilityService`, `QrClaims`, `CachedQr` |
 | util | `CircularQrGenerator` (render styled circular QR), `QrImageDecoder` (decode/validate QR image), `HexColors` (hex→`Color` parsing) |
-| controller | `MembershipQrController`, `MembershipQrImageController`, `AgentController`, `EventEntryController`, `WinnerAdminController` |
+| controller | `MembershipQrController`, `MembershipQrImageController`, `AgentController`, `EventEntryController`, `WinnerAdminController`, `EventAdminController` |
 | exception | `QrInvalidException`, `QrExpiredException`, `AgentSessionInvalidException`, `EventPassExceptionHandler` |
 | converter | `CheckpointConverter` |
 | config | `EventPassProperties`, `QrStyleProperties` |
@@ -792,6 +844,8 @@ Every file is **new** under `com.airtel.userprofile.eventpass`; the `contest` mo
 
 The complete reference implementation follows, grouped by layer. Drop into
 `src/main/java/com/airtel/userprofile/eventpass/` in the User Profile Service.
+
+
 
 
 
@@ -920,7 +974,11 @@ public class AgentSessionDocument {
 	private String msisdn;
 	private boolean revoked;
 	private Instant createdAt;
+
+	/** Session TTL (24h). TTL index auto-purges stale sessions at expiry. */
+	@Indexed(name = "ttl_session_expiry", expireAfterSeconds = 0)
 	private Instant expiresAt;
+
 	private String deviceInfo;
 }
 ```
@@ -939,15 +997,20 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.Set;
 
 /**
- * Which events, and which checkpoints, an agent MSISDN may scan. One agent MSISDN can hold many
- * rows (one per event). {@code checkpoints} is the set the agent is authorized for at that event —
- * {@code ENTRY} only, {@code GOODIE} only, or both. Loaded/appended by engineering (admin API 1).
+ * The <b>agent ↔ event relation</b> (one doc per {@code (agent, event)}) — the recommended shape
+ * over an embedded event list, because each row can be TTL-expired independently. Holds which
+ * {@code checkpoints} the agent is authorized for at that event. One agent MSISDN holds many rows.
+ *
+ * <p>{@code endTime}/{@code cleanupAt} are copied from the event at whitelist time; the TTL index on
+ * {@code cleanupAt} ({@code = endTime + 30d}) auto-deletes the relation 30 days after the event ends.
+ * When an agent's last relation row expires, the agent has no Event-Pass data left in Mongo.
  */
 @Data
 @Document(collection = "event_agent_whitelist")
@@ -964,12 +1027,81 @@ public class AgentWhitelistDocument {
 	private String id;
 
 	private String eventId;
-	private String msisdn;
+	private String msisdn;              // agent MSISDN
 	private Set<Checkpoint> checkpoints;
 	private boolean active;
+
+	private Instant endTime;            // copied from the event (for cleanup alignment)
+
+	/** = endTime + 30d. TTL index purges the relation 30 days after the event ends. */
+	@Indexed(name = "ttl_whitelist_cleanup", expireAfterSeconds = 0)
+	private Instant cleanupAt;
+
 	private String createdBy;
 	private Instant createdAt;
 	private Instant updatedAt;
+}
+```
+
+#### `com/airtel/userprofile/eventpass/document/EventDocument.java`
+
+```java
+package com.airtel.userprofile.eventpass.document;
+
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.time.Instant;
+import java.util.Set;
+
+/**
+ * A live Advantage Club event. {@code active} is flipped false at {@code endTime}; the document
+ * then lives for a 30-day dispute window and is auto-deleted by the <b>TTL index</b> on
+ * {@code cleanupAt} ({@code = endTime + 30d}).
+ *
+ * <p>TTL: a Mongo TTL index with {@code expireAfterSeconds = 0} deletes a document once the date in
+ * {@code cleanupAt} is in the past. Setting {@code cleanupAt = endTime + 30d} means the row is
+ * purged exactly 30 days after the event ends — no cron needed.
+ */
+@Data
+@Document(collection = "event")
+@JsonIgnoreProperties(ignoreUnknown = true)
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class EventDocument {
+
+	/** 30-day retention window after an event ends. */
+	public static final long CLEANUP_AFTER_DAYS = 30L;
+
+	@Id
+	private String eventId;          // e.g. ARTLPPAZK
+
+	private String eventName;
+	private String venue;
+	private Instant startTime;
+	private Instant endTime;
+	private boolean active;
+	private Set<Checkpoint> checkpointsEnabled;
+
+	/** = endTime + 30d. TTL index deletes the doc once this instant passes. */
+	@Indexed(name = "ttl_event_cleanup", expireAfterSeconds = 0)
+	private Instant cleanupAt;
+
+	private String createdBy;
+	private Instant createdAt;
+	private Instant updatedAt;
+
+	public static Instant cleanupFrom(Instant endTime) {
+		return endTime == null ? null : endTime.plus(java.time.Duration.ofDays(CLEANUP_AFTER_DAYS));
+	}
 }
 ```
 
@@ -1035,6 +1167,10 @@ public class EventRedemptionDocument {
 	private String scanRequestId;
 
 	private Instant redeemedAt;
+
+	/** = event.endTime + 30d. TTL index purges redemptions 30 days after the event ends. */
+	@Indexed(name = "ttl_redemption_cleanup", expireAfterSeconds = 0)
+	private Instant cleanupAt;
 }
 ```
 
@@ -1089,6 +1225,10 @@ public class ScanLogDocument {
 	private EntryCallback callback;
 	private String tokenJti;
 	private Instant serverTs;
+
+	/** = event.endTime + 30d. TTL index purges the audit log 30 days after the event ends. */
+	@Indexed(name = "ttl_scanlog_cleanup", expireAfterSeconds = 0)
+	private Instant cleanupAt;
 }
 ```
 
@@ -1133,6 +1273,47 @@ public class EntryScanRequest {
 }
 ```
 
+#### `com/airtel/userprofile/eventpass/dto/request/EventUpsertRequest.java`
+
+```java
+package com.airtel.userprofile.eventpass.dto.request;
+
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+import java.util.Set;
+
+/** Admin — create/update an event. {@code endTime} drives the 30-day cleanup (TTL). */
+@Data
+@NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class EventUpsertRequest {
+
+	@NotBlank
+	private String eventId;
+
+	@NotBlank
+	private String eventName;
+
+	private String venue;
+
+	@NotNull
+	private Instant startTime;
+
+	@NotNull
+	private Instant endTime;
+
+	private Set<Checkpoint> checkpointsEnabled;
+}
+```
+
 #### `com/airtel/userprofile/eventpass/dto/request/QrGenerateRequest.java`
 
 ```java
@@ -1157,6 +1338,50 @@ public class QrGenerateRequest {
 
 	/** Client timestamp (advisory only — the server clock is authoritative for iat/exp). */
 	private Long timestamp;
+}
+```
+
+#### `com/airtel/userprofile/eventpass/dto/request/QrRenderRequest.java`
+
+```java
+package com.airtel.userprofile.eventpass.dto.request;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * Render a styled circular QR for any payload. {@code data} is what the QR carries and what a camera
+ * reads back — a signed membership token, a deeplink ({@code airtelthanks://…} / {@code https://…}),
+ * or any opaque info string. On scan the app decodes {@code data} locally and POSTs it to the backend
+ * (e.g. API 3 {@code /v1/entry}); the image is purely a carrier, so any string round-trips unchanged.
+ *
+ * <p>The style fields are optional per-request overrides on top of {@code eventpass.qr-style.*}; any
+ * left null falls back to config. Only {@code data} is required.
+ */
+@Data
+@NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class QrRenderRequest {
+
+	/** The token / deeplink / info to encode. This exact string is what a scanner recovers. */
+	@NotBlank
+	private String data;
+
+	/** Overrides the configured centre text (newline-separated lines). Blank string hides the text. */
+	private String centerText;
+
+	/** Optional colour overrides (hex {@code #RRGGBB} / {@code #AARRGGBB}); null ⇒ use config. */
+	private String gradientInnerColor;
+	private String gradientOuterColor;
+	private String finderColor;
+	private String backgroundColor;
+
+	/** Optional size override in px; null/<=0 ⇒ use config. */
+	private Integer size;
 }
 ```
 
@@ -1381,6 +1606,54 @@ public class EntryScanResponse {
 }
 ```
 
+#### `com/airtel/userprofile/eventpass/dto/response/EventResponse.java`
+
+```java
+package com.airtel.userprofile.eventpass.dto.response;
+
+import com.airtel.userprofile.eventpass.document.EventDocument;
+import com.airtel.userprofile.eventpass.enums.Checkpoint;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+import java.util.Set;
+
+/** Admin event view, including the computed {@code cleanupAt} (when the TTL will purge it). */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class EventResponse {
+
+	private String eventId;
+	private String eventName;
+	private String venue;
+	private Instant startTime;
+	private Instant endTime;
+	private boolean active;
+	private Set<Checkpoint> checkpointsEnabled;
+	private Instant cleanupAt;
+
+	public static EventResponse from(EventDocument d) {
+		return EventResponse.builder()
+				.eventId(d.getEventId())
+				.eventName(d.getEventName())
+				.venue(d.getVenue())
+				.startTime(d.getStartTime())
+				.endTime(d.getEndTime())
+				.active(d.isActive())
+				.checkpointsEnabled(d.getCheckpointsEnabled())
+				.cleanupAt(d.getCleanupAt())
+				.build();
+	}
+}
+```
+
 #### `com/airtel/userprofile/eventpass/dto/response/QrGenerateResponse.java`
 
 ```java
@@ -1405,6 +1678,41 @@ public class QrGenerateResponse {
 	/** Opaque signed token to render as a QR (not a URL). */
 	private String qrToken;
 	private Instant expiresAt;
+}
+```
+
+#### `com/airtel/userprofile/eventpass/dto/response/QrRenderResponse.java`
+
+```java
+package com.airtel.userprofile.eventpass.dto.response;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * A rendered styled QR image. {@code imageDataUri} is a ready-to-use {@code data:image/png;base64,…}
+ * string the app can drop straight into an {@code <img>} / {@code Image}. {@code width}/{@code height}
+ * are the pixel dimensions. {@code encoded} echoes the exact payload embedded, so callers can assert
+ * the round-trip without re-decoding.
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class QrRenderResponse {
+
+	/** {@code data:image/png;base64,<...>} — renderable as-is. */
+	private String imageDataUri;
+
+	private int width;
+	private int height;
+
+	/** The payload embedded in the image (== request {@code data}). */
+	private String encoded;
 }
 ```
 
@@ -1488,6 +1796,27 @@ public interface ContestWinnerAdminDao {
 }
 ```
 
+#### `com/airtel/userprofile/eventpass/dao/EventDao.java`
+
+```java
+package com.airtel.userprofile.eventpass.dao;
+
+import com.airtel.userprofile.eventpass.document.EventDocument;
+
+import java.util.Optional;
+
+public interface EventDao {
+
+	/** Create or update an event; recomputes {@code cleanupAt = endTime + 30d}. */
+	EventDocument upsert(EventDocument event);
+
+	Optional<EventDocument> findById(String eventId);
+
+	/** Flip {@code active=false} (e.g. at endTime); the TTL still purges at endTime+30d. @return matched. */
+	long setActive(String eventId, boolean active);
+}
+```
+
 #### `com/airtel/userprofile/eventpass/dao/EventRedemptionDao.java`
 
 ```java
@@ -1511,7 +1840,8 @@ public interface EventRedemptionDao {
 	 * the impl converts into {@code firstClaim=false} + the existing row. No read-then-write race.
 	 */
 	RedeemOutcome tryRedeem(String eventId, String msisdn, Checkpoint checkpoint,
-							String deviceId, String agentMsisdn, String scanRequestId);
+							String deviceId, String agentMsisdn, String scanRequestId,
+							java.time.Instant cleanupAt);
 
 	Optional<com.airtel.userprofile.eventpass.document.EventRedemptionDocument> find(
 			String eventId, String msisdn, Checkpoint checkpoint);
@@ -1641,6 +1971,8 @@ public class AgentWhitelistDaoImpl implements AgentWhitelistDao {
 		Update u = new Update()
 				.set("checkpoints", doc.getCheckpoints())
 				.set("active", doc.isActive())
+				.set("endTime", doc.getEndTime())
+				.set("cleanupAt", doc.getCleanupAt())
 				.set("createdBy", doc.getCreatedBy())
 				.set("updatedAt", Instant.now())
 				.setOnInsert("createdAt", Instant.now());
@@ -1731,6 +2063,53 @@ public class ContestWinnerAdminDaoImpl implements ContestWinnerAdminDao {
 }
 ```
 
+#### `com/airtel/userprofile/eventpass/dao/impl/EventDaoImpl.java`
+
+```java
+package com.airtel.userprofile.eventpass.dao.impl;
+
+import com.airtel.userprofile.eventpass.dao.EventDao;
+import com.airtel.userprofile.eventpass.document.EventDocument;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
+import java.util.Optional;
+
+@Repository
+@RequiredArgsConstructor
+public class EventDaoImpl implements EventDao {
+
+	private final MongoTemplate mongoTemplate;
+
+	@Override
+	public EventDocument upsert(EventDocument event) {
+		event.setCleanupAt(EventDocument.cleanupFrom(event.getEndTime()));
+		event.setUpdatedAt(Instant.now());
+		if (event.getCreatedAt() == null) {
+			event.setCreatedAt(Instant.now());
+		}
+		return mongoTemplate.save(event);   // _id == eventId → create or replace
+	}
+
+	@Override
+	public Optional<EventDocument> findById(String eventId) {
+		return Optional.ofNullable(mongoTemplate.findById(eventId, EventDocument.class));
+	}
+
+	@Override
+	public long setActive(String eventId, boolean active) {
+		Query q = new Query(Criteria.where("_id").is(eventId));
+		Update u = new Update().set("active", active).set("updatedAt", Instant.now());
+		return mongoTemplate.updateFirst(u, q, EventDocument.class).getMatchedCount();
+	}
+}
+```
+
 #### `com/airtel/userprofile/eventpass/dao/impl/EventRedemptionDaoImpl.java`
 
 ```java
@@ -1770,7 +2149,8 @@ public class EventRedemptionDaoImpl implements EventRedemptionDao {
 
 	@Override
 	public RedeemOutcome tryRedeem(String eventId, String msisdn, Checkpoint checkpoint,
-								   String deviceId, String agentMsisdn, String scanRequestId) {
+								   String deviceId, String agentMsisdn, String scanRequestId,
+								   java.time.Instant cleanupAt) {
 		EventRedemptionDocument doc = EventRedemptionDocument.builder()
 				.id(UUID.randomUUID().toString())
 				.eventId(eventId)
@@ -1780,6 +2160,7 @@ public class EventRedemptionDaoImpl implements EventRedemptionDao {
 				.redeemedByAgentMsisdn(agentMsisdn)
 				.scanRequestId(scanRequestId)
 				.redeemedAt(Instant.now())
+				.cleanupAt(cleanupAt)          // = event.endTime + 30d (TTL)
 				.build();
 		try {
 			mongoTemplate.insert(doc);
@@ -1890,10 +2271,11 @@ public interface AgentAccessService {
 	/**
 	 * Resolve an active session and confirm the agent is (still) whitelisted for the requested
 	 * (eventId, checkpoint) — checked live against the whitelist, since the session is per-agent.
+	 * @return the authorizing whitelist relation (carries agent msisdn, endTime and cleanupAt).
 	 * @throws com.airtel.userprofile.eventpass.exception.AgentSessionInvalidException if missing,
 	 *         revoked, expired, or not whitelisted for that event/checkpoint.
 	 */
-	AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
+	AgentWhitelistDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint);
 }
 ```
 
@@ -1926,6 +2308,26 @@ public class CachedQr {
 	private String token;
 	private String deviceId;
 	private Instant expiresAt;
+}
+```
+
+#### `com/airtel/userprofile/eventpass/service/EventAdminService.java`
+
+```java
+package com.airtel.userprofile.eventpass.service;
+
+import com.airtel.userprofile.eventpass.document.EventDocument;
+import com.airtel.userprofile.eventpass.dto.request.EventUpsertRequest;
+
+/** Admin — manage events (the source of {@code endTime} that drives the 30-day TTL cleanup). */
+public interface EventAdminService {
+
+	EventDocument upsert(EventUpsertRequest request, String actor);
+
+	EventDocument get(String eventId);
+
+	/** Close an event (active=false) without deleting it; the TTL still purges at endTime+30d. */
+	void close(String eventId, String actor);
 }
 ```
 
@@ -2018,6 +2420,34 @@ public class QrClaims {
 	private final Set<String> wonEventIds;
 	private final String jti;
 	private final Instant issuedAt;
+}
+```
+
+#### `com/airtel/userprofile/eventpass/service/QrImageService.java`
+
+```java
+package com.airtel.userprofile.eventpass.service;
+
+import com.airtel.userprofile.eventpass.dto.request.QrRenderRequest;
+import com.airtel.userprofile.eventpass.dto.response.QrRenderResponse;
+
+/**
+ * Generates styled circular QR images and reads them back. Wraps the low-level utils with the
+ * configured {@code eventpass.qr-style.*} defaults and per-request overrides.
+ */
+public interface QrImageService {
+
+	/** Render a styled QR carrying {@code request.data} (token / deeplink / info) as a PNG data URI. */
+	QrRenderResponse render(QrRenderRequest request);
+
+	/** Render raw PNG bytes for {@code data} using the configured defaults (no overrides). */
+	byte[] renderPng(String data);
+
+	/**
+	 * Decode a QR image to its payload (structural validation).
+	 * @throws com.airtel.userprofile.eventpass.exception.QrInvalidException if unreadable.
+	 */
+	String decode(byte[] imageBytes);
 }
 ```
 
@@ -2127,8 +2557,10 @@ package com.airtel.userprofile.eventpass.service.impl;
 import com.airtel.userprofile.eventpass.config.EventPassProperties;
 import com.airtel.userprofile.eventpass.dao.AgentSessionDao;
 import com.airtel.userprofile.eventpass.dao.AgentWhitelistDao;
+import com.airtel.userprofile.eventpass.dao.EventDao;
 import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
 import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.document.EventDocument;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentEventAccess;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
@@ -2150,20 +2582,27 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 
 	private final AgentWhitelistDao whitelistDao;
 	private final AgentSessionDao sessionDao;
+	private final EventDao eventDao;
 	private final EventPassProperties props;
 
 	@Override
 	public AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor) {
+		// Require the event to exist so we can align the relation's cleanup with the event's end.
+		EventDocument event = eventDao.findById(request.getEventId())
+				.orElseThrow(() -> new IllegalArgumentException(
+						"Unknown event " + request.getEventId() + "; create the event first"));
 		AgentWhitelistDocument doc = AgentWhitelistDocument.builder()
 				.eventId(request.getEventId())
 				.msisdn(request.getMsisdn())
 				.checkpoints(request.getCheckpoints())
 				.active(request.getActive() == null || request.getActive())   // defaults active
+				.endTime(event.getEndTime())
+				.cleanupAt(event.getCleanupAt())                              // = endTime + 30d (TTL)
 				.createdBy(actor)
 				.build();
 		AgentWhitelistDocument saved = whitelistDao.upsert(doc);
-		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={}",
-				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints());
+		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={} cleanupAt={}",
+				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints(), saved.getCleanupAt());
 		return saved;
 	}
 
@@ -2236,7 +2675,7 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 	}
 
 	@Override
-	public AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
+	public AgentWhitelistDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
 		AgentSessionDocument session = sessionDao.findActiveById(sessionId)
 				.orElseThrow(() -> new AgentSessionInvalidException("Session missing, revoked, or expired"));
 
@@ -2246,7 +2685,64 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(requestedCheckpoint)) {
 			throw new AgentSessionInvalidException("Not authorized for checkpoint " + requestedCheckpoint);
 		}
-		return session;
+		return wl;   // carries agent msisdn + endTime + cleanupAt for the entry path
+	}
+}
+```
+
+#### `com/airtel/userprofile/eventpass/service/impl/EventAdminServiceImpl.java`
+
+```java
+package com.airtel.userprofile.eventpass.service.impl;
+
+import com.airtel.userprofile.eventpass.dao.EventDao;
+import com.airtel.userprofile.eventpass.document.EventDocument;
+import com.airtel.userprofile.eventpass.dto.request.EventUpsertRequest;
+import com.airtel.userprofile.eventpass.service.EventAdminService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class EventAdminServiceImpl implements EventAdminService {
+
+	private final EventDao eventDao;
+
+	@Override
+	public EventDocument upsert(EventUpsertRequest r, String actor) {
+		if (r.getEndTime().isBefore(r.getStartTime())) {
+			throw new IllegalArgumentException("endTime must be after startTime");
+		}
+		EventDocument event = EventDocument.builder()
+				.eventId(r.getEventId())
+				.eventName(r.getEventName())
+				.venue(r.getVenue())
+				.startTime(r.getStartTime())
+				.endTime(r.getEndTime())
+				.active(true)
+				.checkpointsEnabled(r.getCheckpointsEnabled())
+				.createdBy(actor)
+				.build();
+		EventDocument saved = eventDao.upsert(event);   // sets cleanupAt = endTime + 30d
+		log.info("Event upserted by {}: eventId={} endTime={} cleanupAt={}",
+				actor, saved.getEventId(), saved.getEndTime(), saved.getCleanupAt());
+		return saved;
+	}
+
+	@Override
+	public EventDocument get(String eventId) {
+		return eventDao.findById(eventId)
+				.orElseThrow(() -> new IllegalArgumentException("No event " + eventId));
+	}
+
+	@Override
+	public void close(String eventId, String actor) {
+		if (eventDao.setActive(eventId, false) == 0) {
+			throw new IllegalArgumentException("No event " + eventId);
+		}
+		log.info("Event closed by {}: eventId={}", actor, eventId);
 	}
 }
 ```
@@ -2259,7 +2755,7 @@ package com.airtel.userprofile.eventpass.service.impl;
 import com.airtel.userprofile.eventpass.dao.EventRedemptionDao;
 import com.airtel.userprofile.eventpass.dao.RedeemOutcome;
 import com.airtel.userprofile.eventpass.dao.ScanLogDao;
-import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
+import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
 import com.airtel.userprofile.eventpass.document.EventRedemptionDocument;
 import com.airtel.userprofile.eventpass.document.ScanLogDocument;
 import com.airtel.userprofile.eventpass.dto.request.EntryScanRequest;
@@ -2277,6 +2773,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
@@ -2309,36 +2806,37 @@ public class EventEntryServiceImpl implements EventEntryService {
 			// 1–2) Agent session valid & agent whitelisted for the requested (eventId, checkpoint)
 			String eventId = request.getEventId();
 			Checkpoint checkpoint = request.getCheckpoint();
-			AgentSessionDocument session;
+			AgentWhitelistDocument wl;
 			try {
-				session = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
+				wl = agentAccess.requireAuthorizedSession(agentSessionId, eventId, checkpoint);
 			} catch (AgentSessionInvalidException e) {
 				log.warn("Scan rejected — session/authorization invalid: {}", e.getMessage());
 				return audit(EntryScanResponse.of(EntryCallback.STAFF_SESSION_INVALID),
-						eventId, null, request, null);
+						eventId, null, request, null, null);
 			}
-			String agentMsisdn = session.getMsisdn();
+			String agentMsisdn = wl.getMsisdn();
+			Instant cleanupAt = wl.getCleanupAt();          // = event.endTime + 30d (drives TTL)
 
 			// 3–5) Verify token (signature, version, TTL, single-active)
 			QrClaims claims;
 			try {
 				claims = qrTokenService.verify(request.getQrToken());
 			} catch (QrExpiredException e) {
-				return audit(EntryScanResponse.of(EntryCallback.QR_EXPIRED), eventId, null, request, agentMsisdn);
+				return audit(EntryScanResponse.of(EntryCallback.QR_EXPIRED), eventId, null, request, agentMsisdn, cleanupAt);
 			} catch (QrInvalidException e) {
-				return audit(EntryScanResponse.of(EntryCallback.INVALID_QR), eventId, null, request, agentMsisdn);
+				return audit(EntryScanResponse.of(EntryCallback.INVALID_QR), eventId, null, request, agentMsisdn, cleanupAt);
 			}
 
 			// 6) Winner check — the scanned event must be among the QR's won events
 			if (claims.getWonEventIds() == null || !claims.getWonEventIds().contains(eventId)) {
 				return audit(EntryScanResponse.of(EntryCallback.NOT_ENTITLED),
-						eventId, claims, request, agentMsisdn);
+						eventId, claims, request, agentMsisdn, cleanupAt);
 			}
 
 			// 7) Atomic redeem (event, msisdn, checkpoint) — exactly one first-claim
 			RedeemOutcome outcome = redemptionDao.tryRedeem(
 					eventId, claims.getMsisdn(), checkpoint,
-					claims.getDeviceId(), agentMsisdn, request.getScanRequestId());
+					claims.getDeviceId(), agentMsisdn, request.getScanRequestId(), cleanupAt);
 
 			EntryScanResponse response;
 			if (outcome.isFirstClaim()) {
@@ -2357,7 +2855,7 @@ public class EventEntryServiceImpl implements EventEntryService {
 			response.setHolderMasked(mask(claims.getMsisdn()));
 
 			// 8) Audit (always)
-			return audit(response, eventId, claims, request, agentMsisdn);
+			return audit(response, eventId, claims, request, agentMsisdn, cleanupAt);
 
 		} catch (Exception e) {
 			// Never auto-allow on infra failure; nothing that committed is lost (idempotency replays it)
@@ -2367,7 +2865,9 @@ public class EventEntryServiceImpl implements EventEntryService {
 	}
 
 	private EntryScanResponse audit(EntryScanResponse response, String eventId, QrClaims claims,
-									EntryScanRequest request, String agentMsisdn) {
+									EntryScanRequest request, String agentMsisdn, Instant cleanupAt) {
+		// Even a failed-auth audit row must expire: fall back to now + 30d when the event is unknown.
+		Instant effectiveCleanup = cleanupAt != null ? cleanupAt : Instant.now().plus(Duration.ofDays(30));
 		try {
 			scanLogDao.save(ScanLogDocument.builder()
 					.scanRequestId(request.getScanRequestId())
@@ -2379,6 +2879,7 @@ public class EventEntryServiceImpl implements EventEntryService {
 					.callback(response.getCallback())
 					.tokenJti(claims != null ? claims.getJti() : null)
 					.serverTs(Instant.now())
+					.cleanupAt(effectiveCleanup)
 					.build());
 		} catch (Exception logEx) {
 			// A duplicate scanRequestId here means a concurrent retry already logged it — replay that.
@@ -2481,6 +2982,73 @@ public class MembershipQrServiceImpl implements MembershipQrService {
 				.qrToken(qr.getToken())
 				.expiresAt(qr.getExpiresAt())
 				.build();
+	}
+}
+```
+
+#### `com/airtel/userprofile/eventpass/service/impl/QrImageServiceImpl.java`
+
+```java
+package com.airtel.userprofile.eventpass.service.impl;
+
+import com.airtel.userprofile.eventpass.config.QrStyleProperties;
+import com.airtel.userprofile.eventpass.dto.request.QrRenderRequest;
+import com.airtel.userprofile.eventpass.dto.response.QrRenderResponse;
+import com.airtel.userprofile.eventpass.service.QrImageService;
+import com.airtel.userprofile.eventpass.util.CircularQrGenerator;
+import com.airtel.userprofile.eventpass.util.CircularQrGenerator.Style;
+import com.airtel.userprofile.eventpass.util.HexColors;
+import com.airtel.userprofile.eventpass.util.QrImageDecoder;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+/**
+ * Adapts the web layer to the render utils: resolves the configured {@link QrStyleProperties} into a
+ * {@link Style}, layers the request's non-null overrides on top, and delegates to {@link
+ * CircularQrGenerator}/{@link QrImageDecoder}.
+ */
+@Service
+@Slf4j
+@RequiredArgsConstructor
+public class QrImageServiceImpl implements QrImageService {
+
+	private final QrStyleProperties props;
+	private final CircularQrGenerator generator;
+	private final QrImageDecoder decoder;
+
+	@Override
+	public QrRenderResponse render(QrRenderRequest request) {
+		Style style = resolve(request);
+		return QrRenderResponse.builder()
+				.imageDataUri(generator.renderDataUri(request.getData(), style))
+				.width(style.getSize())
+				.height(style.getSize())
+				.encoded(request.getData())
+				.build();
+	}
+
+	@Override
+	public byte[] renderPng(String data) {
+		return generator.renderPng(data, Style.from(props));
+	}
+
+	@Override
+	public String decode(byte[] imageBytes) {
+		return decoder.decode(imageBytes);
+	}
+
+	/** Config defaults, with the request's non-null fields overriding them ("" centreText hides text). */
+	private Style resolve(QrRenderRequest req) {
+		Style.StyleBuilder b = Style.from(props).toBuilder();
+		if (req.getCenterText() != null) b.centerText(req.getCenterText());
+		if (StringUtils.hasText(req.getGradientInnerColor())) b.gradientInner(HexColors.parse(req.getGradientInnerColor()));
+		if (StringUtils.hasText(req.getGradientOuterColor())) b.gradientOuter(HexColors.parse(req.getGradientOuterColor()));
+		if (StringUtils.hasText(req.getFinderColor())) b.finderColor(HexColors.parse(req.getFinderColor()));
+		if (req.getBackgroundColor() != null) b.background(HexColors.parse(req.getBackgroundColor()));
+		if (req.getSize() != null && req.getSize() > 0) b.size(req.getSize());
+		return b.build();
 	}
 }
 ```
@@ -2811,6 +3379,656 @@ public class WinnerLookupServiceImpl implements WinnerLookupService {
 }
 ```
 
+### Util (QR image render/decode)
+
+#### `com/airtel/userprofile/eventpass/util/CircularQrGenerator.java`
+
+```java
+package com.airtel.userprofile.eventpass.util;
+
+import com.airtel.userprofile.eventpass.config.QrStyleProperties;
+import com.airtel.userprofile.eventpass.config.QrStyleProperties.ModuleShape;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import lombok.Builder;
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import javax.imageio.ImageIO;
+import java.awt.AlphaComposite;
+import java.awt.Color;
+import java.awt.Composite;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics2D;
+import java.awt.MultipleGradientPaint.CycleMethod;
+import java.awt.Paint;
+import java.awt.RadialGradientPaint;
+import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Point2D;
+import java.awt.geom.Rectangle2D;
+import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.EnumMap;
+import java.util.Map;
+
+/**
+ * Renders the styled circular membership QR — dotted modules under a radial gradient, rounded finder
+ * "eyes", and a centre badge carrying a logo or changeable text — from any payload string
+ * (signed token, deeplink, or opaque info). What a camera reads back is exactly the payload; the
+ * styling never touches the encoded bits.
+ *
+ * <p>Stateless and thread-safe: every per-call input arrives through {@link Style}. Resolve a {@link
+ * Style} from {@link QrStyleProperties} with {@link Style#from}, then call {@link #renderPng} /
+ * {@link #renderDataUri} as often as needed. The renderer knows nothing about web DTOs or Spring
+ * config binding — layering per-request overrides onto a {@link Style} is the caller's concern.
+ *
+ * <p>Encoding uses ZXing ({@code com.google.zxing:core}); decoding lives in {@link QrImageDecoder}
+ * ({@code :javase}). See the LLD §5A platform-wiring note for the {@code pom.xml} entries.
+ */
+@Component
+@Slf4j
+public class CircularQrGenerator {
+
+	private static final ResourceLoader RESOURCE_LOADER = new DefaultResourceLoader();
+
+	/** Modules per side of a QR finder pattern (the three corner "eyes"). */
+	private static final int FINDER_MODULES = 7;
+
+	// Centre-text layout, all relative to the badge radius so they scale with the badge.
+	private static final double BRAND_TEXT_RATIO = 0.42; // first (brand) line
+	private static final double LINE_TEXT_RATIO = 0.26;  // remaining lines
+	private static final double LINE_SPACING = 1.12;
+	private static final double TEXT_INNER_WIDTH_RATIO = 1.5;
+	private static final double BADGE_HIGHLIGHT_SPREAD = 1.4; // radial-highlight reach vs badge radius
+	private static final float MIN_FONT_PX = 6f;
+
+	/**
+	 * Immutable, fully-resolved render style. Build from config with {@link #from(QrStyleProperties)}
+	 * and layer any non-null per-request overrides via {@link #toBuilder()} before rendering.
+	 */
+	@Value
+	@Builder(toBuilder = true)
+	public static class Style {
+		int size;
+		int quietZoneModules;
+		Color background;              // null ⇒ transparent
+		ModuleShape moduleShape;
+		double moduleSizeRatio;
+		boolean gradientEnabled;
+		Color gradientInner;
+		Color gradientOuter;
+		Color foreground;
+		boolean styledFinder;
+		double finderCornerRatio;
+		Color finderColor;
+		boolean centerBadgeEnabled;
+		double centerBadgeRatio;
+		Color centerBadgeInner;
+		Color centerBadgeOuter;
+		boolean centerRingEnabled;
+		Color centerRingColor;
+		double centerRingRatio;
+		String centerText;
+		Color centerTextColor;
+		String centerTextFont;
+		String centerLogoResource;
+		ErrorCorrectionLevel errorCorrection;
+		boolean resilient;
+
+		/** Resolve a Style straight from configured defaults (parsing + clamping applied here). */
+		public static Style from(QrStyleProperties p) {
+			return Style.builder()
+					.size(p.getSize())
+					.quietZoneModules(p.getQuietZoneModules())
+					.background(HexColors.parse(p.getBackgroundColor()))
+					.moduleShape(p.getModuleShape())
+					.moduleSizeRatio(clamp(p.getModuleSizeRatio(), 0.4, 1.0))
+					.gradientEnabled(p.isGradientEnabled())
+					.gradientInner(HexColors.parse(p.getGradientInnerColor()))
+					.gradientOuter(HexColors.parse(p.getGradientOuterColor()))
+					.foreground(HexColors.parse(p.getForegroundColor()))
+					.styledFinder(p.isStyledFinder())
+					.finderCornerRatio(clamp(p.getFinderCornerRatio(), 0.0, 0.5))
+					.finderColor(HexColors.parse(p.getFinderColor()))
+					.centerBadgeEnabled(p.isCenterBadgeEnabled())
+					.centerBadgeRatio(clamp(p.getCenterBadgeRatio(), 0.0, 0.32))
+					.centerBadgeInner(HexColors.parse(p.getCenterBadgeInnerColor()))
+					.centerBadgeOuter(HexColors.parse(p.getCenterBadgeOuterColor()))
+					.centerRingEnabled(p.isCenterRingEnabled())
+					.centerRingColor(HexColors.parse(p.getCenterRingColor()))
+					.centerRingRatio(clamp(p.getCenterRingRatio(), 0.0, 0.15))
+					.centerText(p.getCenterText())
+					.centerTextColor(HexColors.parse(p.getCenterTextColor()))
+					.centerTextFont(p.getCenterTextFont())
+					.centerLogoResource(p.getCenterLogoResource())
+					.errorCorrection(parseEc(p.getErrorCorrection()))
+					.resilient(p.isResilientRender())
+					.build();
+		}
+
+		/**
+		 * A guaranteed-scannable variant of this style: plain black square modules on opaque white,
+		 * no gradient, styled finder, or centre overlay. Keeps size, quiet zone and EC level so the
+		 * fallback encodes the same payload at the same dimensions.
+		 */
+		Style toPlain() {
+			return toBuilder()
+					.background(Color.WHITE)
+					.foreground(Color.BLACK)
+					.gradientEnabled(false)
+					.moduleShape(ModuleShape.SQUARE)
+					.styledFinder(false)
+					.centerBadgeEnabled(false)
+					.centerRingEnabled(false)
+					.build();
+		}
+	}
+
+	/** Immutable pixel layout of the code on the canvas — the single source of module geometry. */
+	@Value
+	private static class Grid {
+		BitMatrix matrix;
+		int modules;      // modules per side (quiet zone excluded)
+		int cell;         // px per module
+		int origin;       // px offset of the whole (code + quiet zone) block
+		int quietZone;    // modules
+
+		double x(int col) { return origin + (quietZone + col) * (double) cell; }
+		double y(int row) { return origin + (quietZone + row) * (double) cell; }
+		double codeOrigin() { return origin + quietZone * (double) cell; }
+		double codeSpan() { return modules * (double) cell; }
+	}
+
+	// ---- public API ---------------------------------------------------------
+
+	/** Render to a {@code data:image/png;base64,…} URI, ready for an {@code <img src>}. */
+	public String renderDataUri(String data, Style style) {
+		return "data:image/png;base64," + Base64.getEncoder().encodeToString(renderPng(data, style));
+	}
+
+	/** Render to PNG bytes. */
+	public byte[] renderPng(String data, Style style) {
+		try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+			ImageIO.write(render(data, style), "png", out);
+			return out.toByteArray();
+		} catch (IOException e) {
+			throw new IllegalStateException("Failed to encode QR PNG", e);
+		}
+	}
+
+	/**
+	 * Render to a {@link BufferedImage}. Encoding the payload is the only hard failure (an
+	 * un-encodable/too-long payload throws); if the <em>styling</em> then fails and the style is
+	 * {@link Style#isResilient() resilient}, a plain black-on-white QR of the same matrix is returned
+	 * so a valid payload always yields a scannable code.
+	 */
+	public BufferedImage render(String data, Style style) {
+		Grid grid = layout(data, style); // encode: bad payload → IllegalArgumentException (propagates)
+		try {
+			return draw(grid, style);
+		} catch (RuntimeException e) {
+			if (!style.isResilient()) throw e;
+			log.warn("Styled QR render failed for a valid payload; falling back to a plain QR", e);
+			return draw(grid, style.toPlain());
+		}
+	}
+
+	/** Paint the (already-encoded) grid with the given style onto a fresh canvas. */
+	private BufferedImage draw(Grid grid, Style style) {
+		BufferedImage img = new BufferedImage(style.getSize(), style.getSize(), BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		try {
+			g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+			g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+			fillOrClear(g, new Rectangle2D.Double(0, 0, style.getSize(), style.getSize()), style.getBackground());
+			drawModules(g, style, grid);
+			if (style.isStyledFinder()) {
+				drawFinders(g, style, grid);
+			}
+			if (style.isCenterBadgeEnabled()) {
+				drawCenterBadge(g, style, style.getSize() / 2.0, style.getSize() / 2.0);
+			}
+		} finally {
+			g.dispose();
+		}
+		return img;
+	}
+
+	// ---- encoding & layout --------------------------------------------------
+
+	private Grid layout(String data, Style style) {
+		if (!StringUtils.hasText(data)) {
+			throw new IllegalArgumentException("QR payload must not be blank");
+		}
+		BitMatrix matrix = encodeBareMatrix(data, style.getErrorCorrection());
+		int modules = matrix.getWidth(); // square, quiet zone excluded
+		int dims = modules + 2 * style.getQuietZoneModules();
+		int cell = Math.max(1, style.getSize() / dims);
+		int origin = (style.getSize() - cell * dims) / 2; // centre the block
+		return new Grid(matrix, modules, cell, origin, style.getQuietZoneModules());
+	}
+
+	private BitMatrix encodeBareMatrix(String data, ErrorCorrectionLevel ec) {
+		Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
+		hints.put(EncodeHintType.ERROR_CORRECTION, ec);
+		hints.put(EncodeHintType.CHARACTER_SET, StandardCharsets.UTF_8.name());
+		hints.put(EncodeHintType.MARGIN, 0); // we add the quiet zone ourselves
+		try {
+			// width/height==0 asks ZXing for the natural, one-pixel-per-module matrix.
+			return new QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, 0, 0, hints);
+		} catch (WriterException e) {
+			throw new IllegalArgumentException("Cannot encode QR payload (too long?)", e);
+		}
+	}
+
+	// ---- modules ------------------------------------------------------------
+
+	private void drawModules(Graphics2D g, Style style, Grid grid) {
+		double center = style.getSize() / 2.0;
+		double badgeClearR = style.isCenterBadgeEnabled()
+				? style.getSize() * (style.getCenterBadgeRatio() / 2.0 + style.getCenterRingRatio())
+				: -1;
+		g.setPaint(dataPaint(style, grid));
+
+		for (int row = 0; row < grid.getModules(); row++) {
+			for (int col = 0; col < grid.getModules(); col++) {
+				if (!grid.getMatrix().get(col, row)) continue;
+				if (style.isStyledFinder() && inFinder(col, row, grid.getModules())) continue; // drawn separately
+				double px = grid.x(col);
+				double py = grid.y(row);
+				if (badgeClearR > 0
+						&& Math.hypot(px + grid.getCell() / 2.0 - center, py + grid.getCell() / 2.0 - center) <= badgeClearR) {
+					continue; // under the centre badge
+				}
+				g.fill(moduleShape(style, px, py, grid.getCell()));
+			}
+		}
+	}
+
+	/** Radial gradient (inner→outer) across the code, or a flat colour when disabled. */
+	private Paint dataPaint(Style style, Grid grid) {
+		if (!style.isGradientEnabled()) return style.getForeground();
+		double c = grid.codeOrigin() + grid.codeSpan() / 2.0;
+		double radius = grid.codeSpan() / 2.0 * Math.sqrt(2); // reach the corners
+		return radial(c, c, radius, style.getGradientInner(), style.getGradientOuter());
+	}
+
+	private Shape moduleShape(Style style, double px, double py, int cell) {
+		double d = cell * style.getModuleSizeRatio();
+		double off = (cell - d) / 2.0;
+		switch (style.getModuleShape()) {
+			case SQUARE:
+				return new Rectangle2D.Double(px, py, cell, cell);
+			case ROUNDED:
+				return new RoundRectangle2D.Double(px + off, py + off, d, d, d * 0.5, d * 0.5);
+			case DOTS:
+			default:
+				return new Ellipse2D.Double(px + off, py + off, d, d);
+		}
+	}
+
+	// ---- finders ------------------------------------------------------------
+
+	private void drawFinders(Graphics2D g, Style style, Grid grid) {
+		int box = FINDER_MODULES * grid.getCell();
+		int last = grid.getModules() - FINDER_MODULES;
+		int[][] corners = {{0, 0}, {last, 0}, {0, last}}; // top-left, top-right, bottom-left
+		for (int[] c : corners) {
+			drawFinder(g, style, grid.x(c[0]), grid.y(c[1]), box);
+		}
+	}
+
+	/** Concentric rounded finder: outer ring (7 modules) → hole (5) → solid eye (3). */
+	private void drawFinder(Graphics2D g, Style style, double x, double y, int box) {
+		double arc = box * style.getFinderCornerRatio();
+		double unit = box / (double) FINDER_MODULES;
+		double cornerRatio = arc / box;
+
+		g.setColor(style.getFinderColor());
+		g.fill(roundBox(x, y, box, arc));
+
+		double hole = unit * 5;
+		fillOrClear(g, roundBox(x + unit, y + unit, hole, hole * cornerRatio), style.getBackground());
+
+		double eye = unit * 3;
+		g.setColor(style.getFinderColor());
+		g.fill(roundBox(x + unit * 2, y + unit * 2, eye, eye * cornerRatio));
+	}
+
+	private static RoundRectangle2D.Double roundBox(double x, double y, double size, double arc) {
+		return new RoundRectangle2D.Double(x, y, size, size, arc, arc);
+	}
+
+	private static boolean inFinder(int col, int row, int modules) {
+		return (col < FINDER_MODULES && row < FINDER_MODULES)                       // top-left
+				|| (col >= modules - FINDER_MODULES && row < FINDER_MODULES)        // top-right
+				|| (col < FINDER_MODULES && row >= modules - FINDER_MODULES);       // bottom-left
+	}
+
+	// ---- centre badge -------------------------------------------------------
+
+	private void drawCenterBadge(Graphics2D g, Style style, double cx, double cy) {
+		double badgeR = style.getSize() * style.getCenterBadgeRatio() / 2.0;
+		if (style.isCenterRingEnabled()) {
+			double ringR = badgeR + style.getSize() * style.getCenterRingRatio();
+			g.setColor(style.getCenterRingColor());
+			g.fill(disc(cx, cy, ringR));
+		}
+		// gradient disc, highlight biased to the upper-left for a glossy look
+		g.setPaint(radial(cx - badgeR * 0.25, cy - badgeR * 0.25, badgeR * BADGE_HIGHLIGHT_SPREAD,
+				style.getCenterBadgeInner(), style.getCenterBadgeOuter()));
+		g.fill(disc(cx, cy, badgeR));
+
+		double contentTop = drawCenterLogo(g, style, cx, cy, badgeR);
+		drawCenterText(g, style, cx, cy, badgeR, contentTop);
+	}
+
+	/** @return y where text should start (below the logo), or NaN when there is no logo. */
+	private double drawCenterLogo(Graphics2D g, Style style, double cx, double cy, double badgeR) {
+		if (!StringUtils.hasText(style.getCenterLogoResource())) return Double.NaN;
+		boolean textToo = StringUtils.hasText(style.getCenterText());
+		try {
+			Resource res = RESOURCE_LOADER.getResource(style.getCenterLogoResource());
+			try (InputStream in = res.getInputStream()) {
+				BufferedImage logo = ImageIO.read(in);
+				if (logo == null) return Double.NaN;
+				double max = badgeR * (textToo ? 0.9 : 1.3);
+				double scale = max / Math.max(logo.getWidth(), logo.getHeight());
+				double w = logo.getWidth() * scale, h = logo.getHeight() * scale;
+				double top = textToo ? cy - badgeR * 0.72 : cy - h / 2;
+				g.drawImage(logo, (int) Math.round(cx - w / 2), (int) Math.round(top),
+						(int) Math.round(w), (int) Math.round(h), null);
+				return top + h + badgeR * 0.08;
+			}
+		} catch (IOException e) {
+			log.warn("Centre logo '{}' not loadable, falling back to text", style.getCenterLogoResource(), e);
+			return Double.NaN;
+		}
+	}
+
+	private void drawCenterText(Graphics2D g, Style style, double cx, double cy, double badgeR, double startY) {
+		if (!StringUtils.hasText(style.getCenterText())) return;
+		String[] lines = style.getCenterText().split("\\r?\\n");
+		g.setColor(style.getCenterTextColor());
+		double innerW = badgeR * TEXT_INNER_WIDTH_RATIO;
+
+		Font[] fonts = new Font[lines.length];
+		double totalH = 0;
+		for (int i = 0; i < lines.length; i++) {
+			double px = badgeR * (i == 0 ? BRAND_TEXT_RATIO : LINE_TEXT_RATIO);
+			fonts[i] = fitFont(g, style.getCenterTextFont(), px, lines[i], innerW);
+			totalH += fonts[i].getSize2D() * LINE_SPACING;
+		}
+
+		double y = Double.isNaN(startY) ? cy - totalH / 2 : startY;
+		for (int i = 0; i < lines.length; i++) {
+			g.setFont(fonts[i]);
+			FontMetrics fm = g.getFontMetrics();
+			g.drawString(lines[i],
+					(int) Math.round(cx - fm.stringWidth(lines[i]) / 2.0),
+					(int) Math.round(y + fm.getAscent()));
+			y += fonts[i].getSize2D() * LINE_SPACING;
+		}
+	}
+
+	/** Largest BOLD font at {@code family} whose {@code text} fits {@code maxWidth}, down to a floor. */
+	private Font fitFont(Graphics2D g, String family, double px, String text, double maxWidth) {
+		float sz = (float) px;
+		Font f = new Font(family, Font.BOLD, Math.max(1, Math.round(sz)));
+		while (sz > MIN_FONT_PX) {
+			f = new Font(family, Font.BOLD, Math.round(sz));
+			if (g.getFontMetrics(f).stringWidth(text) <= maxWidth) break;
+			sz -= 1f;
+		}
+		return f;
+	}
+
+	// ---- shared paint helpers ----------------------------------------------
+
+	/** Two-stop radial gradient centred at (cx,cy). */
+	private static RadialGradientPaint radial(double cx, double cy, double radius, Color inner, Color outer) {
+		return new RadialGradientPaint(new Point2D.Double(cx, cy), (float) radius,
+				new float[]{0f, 1f}, new Color[]{inner, outer}, CycleMethod.NO_CYCLE);
+	}
+
+	private static Ellipse2D.Double disc(double cx, double cy, double r) {
+		return new Ellipse2D.Double(cx - r, cy - r, r * 2, r * 2);
+	}
+
+	/** Fill {@code shape} with {@code color}, or clear to transparent when {@code color} is null. */
+	private static void fillOrClear(Graphics2D g, Shape shape, Color color) {
+		if (color == null) {
+			Composite prev = g.getComposite();
+			g.setComposite(AlphaComposite.Clear);
+			g.fill(shape);
+			g.setComposite(prev);
+		} else {
+			g.setColor(color);
+			g.fill(shape);
+		}
+	}
+
+	// ---- misc ---------------------------------------------------------------
+
+	private static ErrorCorrectionLevel parseEc(String level) {
+		if (!StringUtils.hasText(level)) return ErrorCorrectionLevel.H;
+		switch (level.trim().toUpperCase()) {
+			case "L": return ErrorCorrectionLevel.L;
+			case "M": return ErrorCorrectionLevel.M;
+			case "Q": return ErrorCorrectionLevel.Q;
+			case "H":
+			default:  return ErrorCorrectionLevel.H;
+		}
+	}
+
+	private static double clamp(double v, double lo, double hi) {
+		return Math.max(lo, Math.min(hi, v));
+	}
+}
+```
+
+#### `com/airtel/userprofile/eventpass/util/HexColors.java`
+
+```java
+package com.airtel.userprofile.eventpass.util;
+
+import org.springframework.util.StringUtils;
+
+import java.awt.Color;
+
+/**
+ * Parses configured / request colour strings into {@link Color}. One place, one job (SRP) so the
+ * renderer, the config→style mapping, and per-request overrides all agree on the accepted syntax:
+ * {@code #RRGGBB}, {@code #AARRGGBB}, or {@code "transparent"} (→ {@code null}, i.e. no fill).
+ */
+public final class HexColors {
+
+	private HexColors() {
+	}
+
+	/**
+	 * @return the colour, or {@code null} for blank / {@code "transparent"}.
+	 * @throws IllegalArgumentException if non-blank and not a valid 6-/8-digit hex.
+	 */
+	public static Color parse(String hex) {
+		if (!StringUtils.hasText(hex) || "transparent".equalsIgnoreCase(hex.trim())) {
+			return null;
+		}
+		String h = hex.trim();
+		if (h.startsWith("#")) {
+			h = h.substring(1);
+		}
+		try {
+			if (h.length() == 6) {
+				return new Color(Integer.parseInt(h, 16));
+			}
+			if (h.length() == 8) { // AARRGGBB
+				long v = Long.parseLong(h, 16);
+				return new Color((int) (v >> 16) & 0xFF, (int) (v >> 8) & 0xFF, (int) v & 0xFF, (int) (v >> 24) & 0xFF);
+			}
+		} catch (NumberFormatException ignored) {
+			// fall through to the common error
+		}
+		throw new IllegalArgumentException("Invalid colour: " + hex + " (use #RRGGBB, #AARRGGBB, or 'transparent')");
+	}
+}
+```
+
+#### `com/airtel/userprofile/eventpass/util/QrImageDecoder.java`
+
+```java
+package com.airtel.userprofile.eventpass.util;
+
+import com.airtel.userprofile.eventpass.exception.QrInvalidException;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.DecodeHintType;
+import com.google.zxing.LuminanceSource;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.ReaderException;
+import com.google.zxing.Result;
+import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.google.zxing.common.GlobalHistogramBinarizer;
+import com.google.zxing.common.HybridBinarizer;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+
+/**
+ * Reads a QR image back to its payload — the validation half of the util. Verifies that a rendered
+ * image (styled or plain) still decodes to the exact string that was encoded, so callers can prove
+ * the round-trip in tests, and the backend can accept a screenshot/upload and recover the token or
+ * deeplink it carries.
+ *
+ * <p>This is <em>structural</em> validation (the image is a readable QR and yields a payload). Trust
+ * validation of that payload — signature, TTL, single-active — remains {@code QrTokenService.verify}.
+ * A typical agent flow decodes on-device and POSTs the string to API 3; this decoder is the
+ * server-side equivalent for uploads and tests.
+ *
+ * <p><b>Resilience.</b> A marginal image (photographed, compressed, dark-mode screenshot, styled
+ * dots) can defeat a single binarizer. {@link #tryDecode(BufferedImage)} therefore runs a ladder of
+ * strategies — Hybrid then Global-histogram binarizer, then the inverted luminance for light-on-dark
+ * — all with {@code TRY_HARDER}, and returns the first hit. It never throws: unreadable input yields
+ * an empty {@link Optional}; {@link #decode(byte[])} is the throwing wrapper for the gate path.
+ *
+ * <p>Uses ZXing ({@code com.google.zxing:javase} supplies {@link BufferedImageLuminanceSource}).
+ */
+@Component
+@Slf4j
+public class QrImageDecoder {
+
+	/** Binarizer ladder, tried in order until one decodes. Cheap: later passes run only on miss. */
+	private static final List<Function<LuminanceSource, BinaryBitmap>> BINARIZERS = List.of(
+			src -> new BinaryBitmap(new HybridBinarizer(src)),
+			src -> new BinaryBitmap(new GlobalHistogramBinarizer(src)));
+
+	private static final Map<DecodeHintType, Object> HINTS = buildHints();
+
+	/**
+	 * Decode a QR image to its payload.
+	 * @throws QrInvalidException if the bytes are not an image or contain no readable QR.
+	 */
+	public String decode(byte[] imageBytes) {
+		return tryDecode(imageBytes)
+				.orElseThrow(() -> new QrInvalidException("No readable QR found in image"));
+	}
+
+	/** Decode without throwing; empty when the image is unreadable or holds no QR. */
+	public Optional<String> tryDecode(byte[] imageBytes) {
+		if (imageBytes == null || imageBytes.length == 0) return Optional.empty();
+		BufferedImage image;
+		try {
+			image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+		} catch (IOException e) {
+			log.debug("QR decode: bytes are not a readable image", e);
+			return Optional.empty();
+		}
+		return image == null ? Optional.empty() : tryDecode(image);
+	}
+
+	/**
+	 * Decode a {@link BufferedImage}, walking the resilience ladder. Handy when rendering and reading
+	 * in the same process/test.
+	 */
+	public Optional<String> tryDecode(BufferedImage image) {
+		LuminanceSource source = new BufferedImageLuminanceSource(image);
+		// Normal orientation first, then inverted (light-on-dark), each across both binarizers.
+		for (LuminanceSource src : sources(source)) {
+			for (Function<LuminanceSource, BinaryBitmap> binarizer : BINARIZERS) {
+				Optional<String> hit = readQuietly(binarizer.apply(src));
+				if (hit.isPresent()) return hit;
+			}
+		}
+		return Optional.empty();
+	}
+
+	/**
+	 * True when {@code imageBytes} decodes to exactly {@code expectedPayload}. Use in tests / health
+	 * checks to assert a freshly rendered QR round-trips its data.
+	 */
+	public boolean matches(byte[] imageBytes, String expectedPayload) {
+		return tryDecode(imageBytes).map(d -> d.equals(expectedPayload)).orElse(false);
+	}
+
+	// ---- internals ----------------------------------------------------------
+
+	private static List<LuminanceSource> sources(LuminanceSource base) {
+		List<LuminanceSource> list = new ArrayList<>(2);
+		list.add(base);
+		list.add(base.invert()); // dark-mode screenshots / inverted prints
+		return list;
+	}
+
+	/** A single reader pass; MultiFormatReader is not thread-safe, so use a fresh one each call. */
+	private static Optional<String> readQuietly(BinaryBitmap bitmap) {
+		try {
+			Result result = new MultiFormatReader().decode(bitmap, HINTS);
+			return Optional.ofNullable(result.getText());
+		} catch (ReaderException e) {
+			return Optional.empty(); // NotFound / Checksum / Format → try the next strategy
+		}
+	}
+
+	private static Map<DecodeHintType, Object> buildHints() {
+		Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);
+		hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+		hints.put(DecodeHintType.POSSIBLE_FORMATS, EnumSet.of(BarcodeFormat.QR_CODE));
+		hints.put(DecodeHintType.CHARACTER_SET, "UTF-8");
+		return hints;
+	}
+}
+```
+
 ### Controllers
 
 #### `com/airtel/userprofile/eventpass/controller/AgentController.java`
@@ -2908,6 +4126,68 @@ public class AgentController {
 			@RequestHeader(name = UserProfileConstants.IV_USER) String agentMsisdn,
 			@RequestHeader(name = "User-Agent", required = false) String userAgent) {
 		return Response.getSuccessResponse(agentAccessService.validate(agentMsisdn, userAgent));
+	}
+}
+```
+
+#### `com/airtel/userprofile/eventpass/controller/EventAdminController.java`
+
+```java
+package com.airtel.userprofile.eventpass.controller;
+
+import com.airtel.core.dto.genericResponse.Response;
+import com.airtel.core.enums.Entity;
+import com.airtel.core.enums.Operation;
+import com.airtel.core.logging.AuditLog;
+import com.airtel.userprofile.constants.UserProfileConstants;
+import com.airtel.userprofile.eventpass.dto.request.EventUpsertRequest;
+import com.airtel.userprofile.eventpass.dto.response.EventResponse;
+import com.airtel.userprofile.eventpass.service.EventAdminService;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
+import java.util.Map;
+
+/**
+ * Admin — create/update, read, and close events (engineering only; secured upstream). The event's
+ * {@code endTime} drives the 30-day TTL cleanup of the event and all its per-event data.
+ */
+@RestController
+@Api(value = "Event Pass — Event Admin")
+@Slf4j
+@RequiredArgsConstructor
+public class EventAdminController {
+
+	private final EventAdminService eventAdminService;
+
+	@PostMapping("/v1/admin/events")
+	@ApiOperation(value = "Create/update an event (endTime drives the 30-day cleanup)")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<EventResponse> upsert(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
+			@Valid @RequestBody EventUpsertRequest request) {
+		return Response.getSuccessResponse(EventResponse.from(eventAdminService.upsert(request, actor)));
+	}
+
+	@GetMapping("/v1/admin/events/{eventId}")
+	@ApiOperation(value = "Get an event")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<EventResponse> get(@PathVariable String eventId) {
+		return Response.getSuccessResponse(EventResponse.from(eventAdminService.get(eventId)));
+	}
+
+	@PostMapping("/v1/admin/events/{eventId}/close")
+	@ApiOperation(value = "Close an event (active=false); TTL still purges at endTime+30d")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<Map<String, Object>> close(
+			@RequestHeader(name = UserProfileConstants.IV_USER) String actor,
+			@PathVariable String eventId) {
+		eventAdminService.close(eventId, actor);
+		return Response.getSuccessResponse(Map.of("eventId", eventId, "status", "CLOSED"));
 	}
 }
 ```
@@ -3032,6 +4312,79 @@ public class MembershipQrController {
 			@RequestHeader(name = UserProfileConstants.IV_USER) String ivUser,
 			@Valid @RequestBody QrGenerateRequest request) {
 		return Response.getSuccessResponse(membershipQrService.refresh(ivUser, request.getDeviceId()));
+	}
+}
+```
+
+#### `com/airtel/userprofile/eventpass/controller/MembershipQrImageController.java`
+
+```java
+package com.airtel.userprofile.eventpass.controller;
+
+import com.airtel.core.dto.genericResponse.Response;
+import com.airtel.core.enums.Entity;
+import com.airtel.core.enums.Operation;
+import com.airtel.core.logging.AuditLog;
+import com.airtel.userprofile.eventpass.dto.request.QrRenderRequest;
+import com.airtel.userprofile.eventpass.dto.response.QrRenderResponse;
+import com.airtel.userprofile.eventpass.service.QrImageService;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.Map;
+
+/**
+ * Utility surface for the styled circular QR — render any payload into the Advantage-Club image, and
+ * read one back. Colours/centre text come from {@code eventpass.qr-style.*} config, with per-request
+ * overrides on the render body.
+ *
+ * <p>Generation of the <em>member's</em> signed QR string stays on {@link MembershipQrController}
+ * (API 4). This controller turns any payload — that token, or a deeplink / info — into the picture,
+ * and validates a scanned/uploaded picture back to its payload.
+ */
+@RestController
+@Api(value = "Event Pass — QR image util (render & validate)")
+@Slf4j
+@RequiredArgsConstructor
+public class MembershipQrImageController {
+
+	private final QrImageService qrImageService;
+
+	/** Render a styled QR (PNG data URI) for the given payload + optional colour/centre-text overrides. */
+	@PostMapping("/v1/membership/qr/image")
+	@ApiOperation(value = "Render a styled circular QR (data URI) for any token/deeplink/info")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<QrRenderResponse> render(@Valid @RequestBody QrRenderRequest request) {
+		return Response.getSuccessResponse(qrImageService.render(request));
+	}
+
+	/** Same render, but stream the PNG directly (e.g. for an {@code <img src>} URL). */
+	@PostMapping(value = "/v1/membership/qr/image.png", produces = MediaType.IMAGE_PNG_VALUE)
+	@ApiOperation(value = "Render a styled circular QR as raw PNG bytes")
+	public byte[] renderPng(@Valid @RequestBody QrRenderRequest request) {
+		return qrImageService.renderPng(request.getData());
+	}
+
+	/**
+	 * Validate/read a scanned or uploaded QR image back to its payload (structural check). Trust
+	 * validation of the recovered token is the entry path's job ({@code QrTokenService.verify}).
+	 */
+	@PostMapping(value = "/v1/membership/qr/validate-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	@ApiOperation(value = "Decode a QR image and return the payload it carries")
+	@AuditLog(entity = Entity.USERPROFILE, operation = Operation.API, createNewLog = true, publishEvent = false)
+	public Response<Map<String, String>> validateImage(@RequestParam("image") MultipartFile image) throws IOException {
+		String payload = qrImageService.decode(image.getBytes());
+		return Response.getSuccessResponse(Map.of("data", payload));
 	}
 }
 ```
@@ -3237,21 +4590,7 @@ public class EventPassProperties {
 }
 ```
 
-### QR image util (render & validate) — §5A
-
-New files under `com.airtel.userprofile.eventpass` for the styled circular QR. Full source lives in
-the reference tree; the colour/style config is inlined here since it is the tunable surface.
-
-| Path | Role |
-|---|---|
-| `config/QrStyleProperties.java` | `eventpass.qr-style.*` — colours, module shape, centre text, EC level (inlined below). |
-| `util/CircularQrGenerator.java` | `data` → styled PNG / data-URI (ZXing encode + Java2D dots/gradient/finder/badge). Per-call input is an immutable `Style`; a private `Grid` owns the module geometry. |
-| `util/QrImageDecoder.java` | image bytes → payload (ZXing decode); `decode` / `tryDecode` / `matches`. |
-| `util/HexColors.java` | `#RRGGBB` / `#AARRGGBB` / `transparent` → `Color` (one parser shared by config mapping + overrides). |
-| `dto/request/QrRenderRequest.java` | render body — `data` (required) + optional `centerText`, colour & `size` overrides. |
-| `dto/response/QrRenderResponse.java` | `imageDataUri`, `width/height`, `encoded`. |
-| `service/QrImageService.java` (+`impl`) | config defaults + per-request overrides over the two utils. |
-| `controller/MembershipQrImageController.java` | `POST /v1/membership/qr/image`, `…/image.png`, `…/validate-image`. |
+#### `com/airtel/userprofile/eventpass/config/QrStyleProperties.java`
 
 ```java
 package com.airtel.userprofile.eventpass.config;
@@ -3261,56 +4600,113 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
 
-/** Visual style for the rendered membership QR — env-tunable via {@code eventpass.qr-style.*}. */
+/**
+ * Visual style for the rendered membership QR (the circular, dotted, gradient card shown in the
+ * Thanks App). Everything here is environment-tunable via {@code eventpass.qr-style.*} and picked up
+ * without a redeploy ({@link RefreshScope}). Colours are hex strings ({@code #RRGGBB} or
+ * {@code #AARRGGBB}); {@code "transparent"} is accepted for {@link #backgroundColor}.
+ *
+ * <p>These knobs only affect how the QR <em>looks</em>. The payload (the signed token / deeplink /
+ * info) is untouched, so restyling never changes what a scanner reads.
+ */
 @Data
 @Component
 @RefreshScope
 @ConfigurationProperties(prefix = "eventpass.qr-style")
 public class QrStyleProperties {
 
+	/** How each QR module (cell) is drawn. */
 	public enum ModuleShape { DOTS, ROUNDED, SQUARE }
 
+	// ---- canvas -------------------------------------------------------------
+
+	/** Output image edge length in px (square). */
 	private int size = 720;
+
+	/** Quiet zone in modules around the code (ZXing margin). Keep >= 2 so scanners lock on. */
 	private int quietZoneModules = 2;
+
+	/** PNG background. {@code "transparent"} renders on alpha=0 (good for overlaying on a card). */
 	private String backgroundColor = "#FFFFFF";
 
+	// ---- modules ------------------------------------------------------------
+
+	/** Shape used for the data modules. */
 	private ModuleShape moduleShape = ModuleShape.DOTS;
+
+	/** Diameter/size of a drawn module as a fraction of the cell (0.5–1.0). 0.86 leaves airy gaps. */
 	private double moduleSizeRatio = 0.86;
 
+	/**
+	 * When true, data modules are filled with a radial gradient from {@link #gradientInnerColor}
+	 * (centre) to {@link #gradientOuterColor} (edge) — the Advantage-Club look. When false, the flat
+	 * {@link #foregroundColor} is used.
+	 */
 	private boolean gradientEnabled = true;
+
 	private String gradientInnerColor = "#F5A623";
 	private String gradientOuterColor = "#C8102E";
+
+	/** Flat module colour when {@link #gradientEnabled} is false. */
 	private String foregroundColor = "#C8102E";
 
+	// ---- finder patterns (the three "eyes") --------------------------------
+
+	/** Draw the three finder patterns as rounded concentric rings instead of plain modules. */
 	private boolean styledFinder = true;
+
+	/** Corner radius of the finder rings as a fraction of the finder box (0 = square, 0.5 = pill). */
 	private double finderCornerRatio = 0.35;
+
 	private String finderColor = "#C8102E";
 
+	// ---- centre badge (logo / changeable text) -----------------------------
+
+	/** Render the centre badge (circle + text/logo) over the middle of the code. EC level H covers it. */
 	private boolean centerBadgeEnabled = true;
+
+	/** Badge diameter as a fraction of the image edge (0.15–0.30). Larger needs EC level H. */
 	private double centerBadgeRatio = 0.24;
+
 	private String centerBadgeInnerColor = "#E4002B";
 	private String centerBadgeOuterColor = "#8B0000";
+
+	/** White ring drawn between the badge and the surrounding modules for separation. */
 	private boolean centerRingEnabled = true;
 	private String centerRingColor = "#FFFFFF";
 	private double centerRingRatio = 0.04;
 
+	/**
+	 * Default centre text. Newlines split into stacked lines; the first line is drawn largest
+	 * (brand line). Override per request via {@code QrRenderRequest.centerText}. Empty/blank hides it
+	 * (e.g. when {@link #centerLogoResource} is set).
+	 */
 	private String centerText = "airtel\nPOSTPAID\nADVANTAGE\nCLUB";
 	private String centerTextColor = "#FFFFFF";
 	private String centerTextFont = "SansSerif";
+
+	/**
+	 * Optional classpath image (e.g. {@code classpath:qr/advantage-logo.png}) drawn inside the badge
+	 * instead of, or above, the text. Null/blank ⇒ text only.
+	 */
 	private String centerLogoResource;
 
+	// ---- encoding -----------------------------------------------------------
+
+	/**
+	 * Error-correction level: L/M/Q/H. Use H (30%) whenever {@link #centerBadgeEnabled} is true so the
+	 * covered centre still decodes.
+	 */
 	private String errorCorrection = "H";
 
-	/** Fall back to a plain scannable QR if the styled render fails. */
+	/**
+	 * Resilience: when the styled render fails for an otherwise-encodable payload (e.g. a bad centre
+	 * logo, font, or colour), fall back to a plain black-on-white QR of the same data instead of
+	 * failing the request. A payload that cannot be encoded at all still errors.
+	 */
 	private boolean resilientRender = true;
 }
 ```
-
-> The generator (`CircularQrGenerator`), decoder (`QrImageDecoder`) and colour parser (`HexColors`)
-> live in [`reference-impl/eventpass/util/`](./reference-impl/eventpass/util). The generator/decoder
-> are stateless Spring `@Component`s wired through `QrImageService`; `HexColors` is a pure helper. The
-> renderer takes an immutable `Style` and knows nothing about the web DTO or Spring config — the
-> service resolves config + per-request overrides into a `Style` (SRP), so styling stays pure.
 
 ---
 
@@ -3322,4 +4718,5 @@ public class QrStyleProperties {
 | Q5 | Screenshot handling — block (Android) vs detect (iOS) |
 | Q10 | Agent auth = app login + whitelist (no OTP) — confirm sufficient |
 | Q22 | `deviceId` is the customer device; needs a stable id |
-| Q23 | Event ↔ contest mapping — event = `programId` (vs `campaignId` / multi-contest)? Affects winner read (API 4) **and** write (API 5) |
+| Q23 | Event ↔ contest mapping — event = `programId` (vs `campaignId` / multi-contest)? |
+| Q24 | 30-day retention — confirm TTL applies to redemptions + scan audit too; archival export before purge? |

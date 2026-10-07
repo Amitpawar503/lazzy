@@ -3,8 +3,10 @@ package com.airtel.userprofile.eventpass.service.impl;
 import com.airtel.userprofile.eventpass.config.EventPassProperties;
 import com.airtel.userprofile.eventpass.dao.AgentSessionDao;
 import com.airtel.userprofile.eventpass.dao.AgentWhitelistDao;
+import com.airtel.userprofile.eventpass.dao.EventDao;
 import com.airtel.userprofile.eventpass.document.AgentSessionDocument;
 import com.airtel.userprofile.eventpass.document.AgentWhitelistDocument;
+import com.airtel.userprofile.eventpass.document.EventDocument;
 import com.airtel.userprofile.eventpass.dto.request.WhitelistUpsertRequest;
 import com.airtel.userprofile.eventpass.dto.response.AgentEventAccess;
 import com.airtel.userprofile.eventpass.dto.response.AgentValidateResponse;
@@ -26,20 +28,27 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 
 	private final AgentWhitelistDao whitelistDao;
 	private final AgentSessionDao sessionDao;
+	private final EventDao eventDao;
 	private final EventPassProperties props;
 
 	@Override
 	public AgentWhitelistDocument upsertWhitelist(WhitelistUpsertRequest request, String actor) {
+		// Require the event to exist so we can align the relation's cleanup with the event's end.
+		EventDocument event = eventDao.findById(request.getEventId())
+				.orElseThrow(() -> new IllegalArgumentException(
+						"Unknown event " + request.getEventId() + "; create the event first"));
 		AgentWhitelistDocument doc = AgentWhitelistDocument.builder()
 				.eventId(request.getEventId())
 				.msisdn(request.getMsisdn())
 				.checkpoints(request.getCheckpoints())
 				.active(request.getActive() == null || request.getActive())   // defaults active
+				.endTime(event.getEndTime())
+				.cleanupAt(event.getCleanupAt())                              // = endTime + 30d (TTL)
 				.createdBy(actor)
 				.build();
 		AgentWhitelistDocument saved = whitelistDao.upsert(doc);
-		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={}",
-				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints());
+		log.info("Whitelist created/upserted by {}: event={} msisdn={} checkpoints={} cleanupAt={}",
+				actor, request.getEventId(), request.getMsisdn(), request.getCheckpoints(), saved.getCleanupAt());
 		return saved;
 	}
 
@@ -112,7 +121,7 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 	}
 
 	@Override
-	public AgentSessionDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
+	public AgentWhitelistDocument requireAuthorizedSession(String sessionId, String eventId, Checkpoint requestedCheckpoint) {
 		AgentSessionDocument session = sessionDao.findActiveById(sessionId)
 				.orElseThrow(() -> new AgentSessionInvalidException("Session missing, revoked, or expired"));
 
@@ -122,6 +131,6 @@ public class AgentAccessServiceImpl implements AgentAccessService {
 		if (wl.getCheckpoints() == null || !wl.getCheckpoints().contains(requestedCheckpoint)) {
 			throw new AgentSessionInvalidException("Not authorized for checkpoint " + requestedCheckpoint);
 		}
-		return session;
+		return wl;   // carries agent msisdn + endTime + cleanupAt for the entry path
 	}
 }
