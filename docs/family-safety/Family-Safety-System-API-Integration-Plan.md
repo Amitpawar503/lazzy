@@ -1069,4 +1069,46 @@ flowchart TB
 
 ---
 
-*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390` + the delivery team's scope-of-work split (§15–§17, authoritative where it differs). It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10/§16/§17 as OpenAPI per service and resolve §8 before build. Story points are planning-grade; confirm with the delivery pod during sprint-0. Hard dependencies to close: Whalebone contract (parental + device safety) and the Network→Propositions BE data contract.*
+## 18. API optimization — can we reduce the ~114?
+
+**Verdict: yes.** The 114 is a *surface* count (every verb, SDK capability, config toggle and existing-platform API as its own row). With resource-oriented design it collapses to **≈42 endpoints to build** + **≈17 reused platform/BSS APIs** — roughly a **60% reduction in net-new build**, with no loss of functionality.
+
+### Four consolidation moves (where the reduction comes from)
+
+1. **Resource-style CRUD instead of per-action endpoints.** `POST/GET/PATCH/DELETE /circles/{id}/members[/{mid}]` is **one** resource, not 5 rows; role change is a `PATCH` field, not its own endpoint. Same for circle, invites, places, trips.
+2. **One unified Safety Event model** (EA already models it this way). Check-in, SOS, fraud, geofence and inactivity become `POST /safety-events` (typed) + `GET /safety-events` (filter) + `/{id}` + `/responses` + `/actions` + `/location` + `/schedules`. This alone turns **~23 rows into ~8**.
+3. **Composite reads.** `GET /members/{id}/status` returns device + reachability + battery + ringer + sharing in one call (merges 5–6 read rows) — fewer round-trips for the home/member cards.
+4. **Separate "reuse" from "build."** COM order/cancel/update, FX provisioning, EPC offering, POQ qualification, Promotions, UCM inventory, KCI, and push/SMS/IVR/OTP are **existing platform/BSS APIs** that Propositions BE / Channel BE *integrate with* — not Family-Safety endpoints to design. That's ~17 rows that leave the build backlog.
+
+### Before → after (by domain)
+
+| Domain | Listed (§17) | Optimized (build) | How |
+|---|---|---|---|
+| Auth & eligibility | 2 | 2 | keep |
+| Safety Circle & membership | 25 | **8** | resource CRUD + single invite-token action set + contacts/availability merge |
+| Home & aggregates | 4 | **2** | `/home` + composite `/status`; member page = rich view of members resource |
+| Check-in / SOS / alerts + Fraud | 23 | **8** | unified Safety Event model + one circle-config resource |
+| Reachability / location / places / trips | 16 | **5** | places & trips as resources; realtime (SSE) kept separate |
+| Device Safety | 10 | **6** | drop SDK capabilities; merge enable/disable and events |
+| Parental Controls | 11 | **6** | merge rules/urls/apps/content-filter; pair; requests |
+| Audit | 1 | 1 | keep |
+| Commercial / provisioning | 16 | **3** build (+ ~11 reuse) | expose orders + status + toggle; rest = existing BSS |
+| Platform / notifications | 6 | **0** build (+ ~6 reuse) | existing push/SMS/IVR/OTP/CMS |
+| **Total** | **~114** | **≈42 build (+ ~17 reuse)** | ~60% fewer to build |
+
+### Trade-offs — what to merge vs keep separate
+
+| Do merge | Keep separate (do **not** over-optimize) |
+|---|---|
+| CRUD verbs into one resource | **Realtime** (`/location/stream` SSE) — different infra & latency domain |
+| Check-in/SOS/fraud → one Safety Event | **SOS** priority/criticality — typed payload, but critical-path auth & push stay distinct |
+| Read fan-outs → composite `/status` | **Partner (Whalebone)** boundary — device-safety/parental events stay at the partner edge |
+| sos-priority + fraud-settings → `/circles/{id}/config` | **Commercial (COM/TMF622)** — reuse the BSS spine, don't wrap it as new FS APIs |
+
+**Risks of consolidation:** a unified `/safety-events` needs **polymorphic payload validation + versioning** (type-specific fields); composite `/status` must **degrade gracefully** on partial downstream failure; fat resources can over-fetch — mitigate with `fields`/`view` query params. Net: the optimized set is **simpler to secure, document and version**, and the Channel BE aggregation layer already absorbs most multi-system fan-out.
+
+> The optimized endpoint list (with "replaces" mapping and build-vs-reuse) ships as **`Family-Safety-API-Catalogue-Optimized.xlsx`** (sheet "Optimized") alongside the full 114-row catalogue.
+
+---
+
+*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390` + the delivery team's scope-of-work split (§15–§18, authoritative where it differs). It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10/§16/§17 as OpenAPI per service and resolve §8 before build. Story points are planning-grade; confirm with the delivery pod during sprint-0. Hard dependencies to close: Whalebone contract (parental + device safety) and the Network→Propositions BE data contract.*

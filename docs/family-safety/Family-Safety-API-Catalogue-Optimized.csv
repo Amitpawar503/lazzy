@@ -1,0 +1,44 @@
+No.,Group,Optimized Endpoint,Method(s),Owning System,Complexity,Replaces (§17 #),Build / Reuse,Purpose
+1,Auth & profile,/me,GET,CBE (+UCM),L,1,Build,Current user + circle membership
+2,Auth & profile,/eligibility/safety-circle,GET,CBE (POQ/AUD),M,2,Build,Eligibility (active + not claimed + not in circle)
+3,Auth & profile,/circles/{id}/home,GET,CBE,H,28,Build,"Landing aggregate (members, cards, alerts, quick actions)"
+4,Auth & profile,/members/{id}/status,GET,CBE (CTX+NET),M,"30,31,50,51,52,53",Build,Composite: device + reachability + battery + ringer + sharing
+5,Circle & membership,/circles[/{id}],POST/GET/PATCH/DELETE,DP (+UCM),M,"3,4,5,6",Build,Circle resource (create/read/update/delete)
+6,Circle & membership,/circles/{id}/members[/{mid}],GET/POST/PATCH/DELETE,DP (+OTP),M,"7,8,9,10,11,29",Build,Member CRUD + role (PATCH) + rich member page view
+7,Circle & membership,/circles/{id}/members/{mid}/leave ; /leave-requests/{id}/approve,POST,"DP (+PBE,BB)",M,"12,13",Build,Leave + admin approval
+8,Circle & membership,/circles/{id}/members/{mid}/reverify,POST,DP,M,14,Build,MSISDN/SIM re-verify
+9,Circle & membership,/circles/{id}/members/{mid}/device:pair|unpair,POST,"DP (+WB,PBE)",M,15,Build,Device pair / unpair
+10,Circle & membership,/circles/{id}/invites,GET/POST,DP (+BB),M,"18,19",Build,Send + track invites
+11,Circle & membership,/invites/{token} + actions (accept|accept-web|accept-ivr|decline|remind|resend),GET/POST,"DP (+OTP,IVR,BB)",M,"20,21,22,23,24,25,26,27",Build,Invite preview + accept (all channels) + decline/remind/resend + switch
+12,Circle & membership,/contacts/airtel-family ; /members/{msisdn}/availability,GET,DP (+Optimus),M,"16,17",Build,Picker source + already-in/invited dedupe
+13,Safety events (unified),/safety-events,POST,SAF (orch CBE->NET),M,"32,39,56,+fraud",Build,Create typed event (CHECK_IN/SOS/FRAUD/GEOFENCE/INACTIVITY)
+14,Safety events (unified),/safety-events?circle&type&active,GET,SAF,L,"34,42,48,66",Build,List / active / history by type
+15,Safety events (unified),/safety-events/{id},GET,SAF,L,"47,49,67",Build,Event detail
+16,Safety events (unified),/safety-events/{id}/responses,POST,SAF (+IVR),M,"33,46,68",Build,Reply / acknowledge
+17,Safety events (unified),/safety-events/{id}/actions (end|cancel|notify|escalate),POST,SAF (+BB),M,"40,41,45",Build,Lifecycle actions
+18,Safety events (unified),/safety-events/{id}/location,POST,"SAF (+LH,NET)",M,44,Build,Attach location / mark location-off
+19,Safety events (unified),/safety-events/schedules,POST/GET/PATCH/DELETE,SAF (+Scheduler),M,"35,36,37,38",Build,Scheduled check-ins
+20,Safety events (unified),/circles/{id}/config,PUT,SAF/DP,L,"43,69",Build,SOS priority + fraud-settings
+21,Location / trips / places,/tracking-sessions ; /{TS}/locations,POST,LH,M,"57,58",Build,Start tracking session + ingest GPS
+22,Location / trips / places,/tracking-sessions/{TS}/latest,GET,LH (+NET cell),M,59,Build,Latest / last-known location
+23,Location / trips / places,/location/stream?trackingSessionId=,GET (SSE),LH,H,60,Build,Live location stream (realtime)
+24,Location / trips / places,/trips[/{id}] + start|stop,POST/GET/PATCH,TM,M,"61,62,63,64,65",Build,SafeTrip lifecycle
+25,Location / trips / places,/members/{id}/places[/{pid}] + alerts,GET/POST/PATCH/DELETE/PUT,DP/Places (+Maps),M,"54,55,56",Build,Places + arrive/leave geofence prefs
+26,Device Safety,/device-safety:enable|disable,POST,PBE -> WB + NET,H,"71,72",Build (+Partner),Enable/disable (provision)
+27,Device Safety,/members/{id}/device-safety,GET,PBE/WB,M,73,Build,Status + what circle sees
+28,Device Safety,/device-safety/permissions,POST,WB SDK/CTX,M,74,Build,Permission progress (Android/iOS)
+29,Device Safety,/device-safety/scan,POST,WB SDK,M,75,Build,Trigger / report scan
+30,Device Safety,/device-safety/events,POST/GET,WB -> SAF,H,"76,77",Build (+Partner),Threat events sync + history
+31,Device Safety,/device-safety/invite-install,POST,"DP/CBE (+BB,WB)",M,78,Build,SMS install deep-link
+32,Parental Controls,/parental:pair|confirm,POST,"WB (+DP,CTX)",H,"81,82",Build (+Partner),Pairing (code + child consent)
+33,Parental Controls,/parental:enable|disable,POST,WB (+PBE),M,83,Build,Enable/disable parental features
+34,Parental Controls,/members/{id}/parental/rules,GET/PUT,WB,H,"84,87,88,91",Build (+Partner),Screen-time / apps / URLs / content-filter rules
+35,Parental Controls,/members/{id}/parental/schedules,POST/GET/PUT/DELETE,WB,M,86,Build,Bedtime / study-mode schedules
+36,Parental Controls,/members/{id}/parental/usage,GET,WB,M,85,Build,Usage by category / app / day
+37,Parental Controls,/parental/requests + /{id}/decide,GET/POST,SAF/DP (+BB),M,"89,90",Build,Child unlock / exception requests + approve/decline
+38,Audit,/audit/transactions,GET,UCM,M,92,Build,Audit of all user transactions
+39,Commercial (new),/family-safety/orders,POST,CBE -> COM,H,"93,94",Build (orch),Purchase / claim (typed order)
+40,Commercial (new),/family-safety/protection-status,GET,PBE,M,95,Build,Device/Network toggle states
+41,Commercial (new),/family-safety/protection:device|network,POST,PBE -> WB/NET,M,"96,97",Build,"Toggle (config, not a product order)"
+42,Commercial (REUSE),COM order/cancel/update ; FX provisioning ; EPC offering ; POQ qualification ; Promotions ; UCM inventory ; KCI,various,COM/FX/EPC/POQ/PROMO/UCM/PBE,Reuse,98-108,Reuse,"Existing BSS/commercial rails (integrate, not build)"
+43,Platform (REUSE),push / SMS / IVR / OTP / onboarding content / device permissions,various,BB/IVR/OTP/CMS/CTX,Reuse,109-114,Reuse,Existing platforms + CMS content + client OS perms
