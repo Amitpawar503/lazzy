@@ -889,4 +889,184 @@ flowchart TB
 
 ---
 
-*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390` + the delivery team's scope-of-work split (§15–§16, which is authoritative where it differs). It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10/§16 as OpenAPI per service and resolve §8 before build. Story points are planning-grade; confirm with the delivery pod during sprint-0. Hard dependencies to close: Whalebone contract (parental + device safety) and the Network→Propositions BE data contract.*
+## 17. Master API catalogue — Family Safety Architecture (de-duplicated)
+
+**Single consolidated list** of every API across Figma `39:4390` + the EA/BRD architecture + the team scope-of-work — **duplicates collapsed** (e.g. the same `POST /sos` that appeared in §5, §10, §13 and §16 is one row here). Columns: **API · Complexity · Owning system · Purpose**.
+
+**Complexity:** L = thin CRUD · M = state / multi-system · H = realtime / partner / new data-model.
+**Owning keys:** DP=Digital Profile · UCM=UCM · CBE=Channel BE · NET=Network · CTX=Context store · SAF=Safety event-state layer¹ · LH=Location Hub · TM=Trip Mgr · PBE=Propositions BE · COM=COM · EPC=EPC · FX=FX · POQ=POQ · PROMO=Promotions · AUD=Audience Mgr · WB=Whalebone · BB=BumbleBee(Push/SMS) · IVR=IVR · OTP=OTP/Bouncer · CMS=CMS.
+*¹ The team attributes check-in/SOS/fraud **signals** to Network; SAF is the thin state/orchestration layer (held by Channel BE/Network) for the event **state machine, responses and history**.*
+
+### A. Auth & eligibility
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 1 | `GET /me` | L | CBE (+UCM/Siebel) | Current user + circle membership |
+| 2 | `GET /eligibility/safety-circle` | M | POQ/AUD (orch CBE) | Eligible = active + not claimed + not in a circle |
+
+### B. Safety Circle & membership — Digital Profile / UCM
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 3 | `POST /circles` | M | DP (+UCM) | Create safety circle |
+| 4 | `DELETE /circles/{id}` | M | DP (+UCM) | Delete / close circle |
+| 5 | `GET /circles/{id}` | L | DP | Circle summary |
+| 6 | `GET/PATCH /circles/{id}/settings` | L | DP | Name / avatar / settings |
+| 7 | `GET /circles/{id}/members` | L | DP | List members + roles |
+| 8 | `POST /circles/{id}/members` | M | DP | Add member |
+| 9 | `PATCH /members/{id}` | L | DP | Update member details / relationship |
+| 10 | `PATCH /members/{id}/role` | M | DP (+OTP) | Change role (admin ↔ member) |
+| 11 | `DELETE /members/{id}` | M | DP (+PBE, BB) | Remove member + de-provision |
+| 12 | `POST /circles/{id}/leave` | M | DP (+PBE, BB) | Leave circle |
+| 13 | `POST /leaveRequests/{id}/approve` | M | DP | Approve/reject leave (parental lock) |
+| 14 | `POST /members/{id}/reverify` | M | DP | MSISDN/SIM change; 3-month non-Airtel re-verify |
+| 15 | `POST /device/pair` · `POST /device/unpair` | M | DP (+WB, PBE) | Device pair / unpair |
+| 16 | `GET /contacts/airtel-family` | M | DP (+Optimus) | Airtel family first, then contacts |
+| 17 | `GET /members/{msisdn}/availability` | M | DP | Already in circle / already invited |
+| 18 | `POST /circles/{id}/invites` | M | DP (+BB) | Send invites (push + SMS) |
+| 19 | `GET /circles/{id}/invites` | L | DP | Pending invite tracking |
+| 20 | `GET /invites/{token}` | L | DP | Invite preview (app / web / SMS) |
+| 21 | `POST /invites/{id}/remind` | L | DP (+BB) | Remind (no 2-day window reset) |
+| 22 | `POST /invites/{id}/resend` | L | DP (+BB) | Resend expired / old link |
+| 23 | `POST /invites/{token}/accept` | M | DP (+UCM) | Accept in app |
+| 24 | `POST /invites/{token}/accept-web` | M | DP (+OTP) | Accept via web + OTP |
+| 25 | `POST /invites/{token}/accept-ivr` | H | DP (+IVR) | Accept via IVR "press 1" |
+| 26 | `POST /invites/{token}/decline` | L | DP | Decline |
+| 27 | `POST /circles/switch` | M | DP (+UCM) | Leave other circle → join this one |
+
+### C. Home & aggregates — Channel BE
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 28 | `GET /circles/{id}/home` | H | CBE | Landing aggregate (members, cards, alerts, quick actions) |
+| 29 | `GET /circles/{id}/members/{id}` | M | CBE | Member page aggregate |
+| 30 | `GET /members/{id}/device-status` | M | CTX/NET (orch CBE) | Battery, signal, mode, network |
+| 31 | `GET /me/sharing` | L | DP/CTX | What the circle sees about my phone |
+
+### D. Check-in / SOS / alerts — Channel BE orch · Network/Safety state
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 32 | `POST /check-ins` | M | SAF (orch CBE→NET) | Create check-in (member / everyone) |
+| 33 | `POST /check-ins/{id}/reply` | M | SAF (+IVR) | Check-in response (preset / custom) |
+| 34 | `GET /members/{id}/check-ins` | L | SAF | Fetch check-in(s) / last on card |
+| 35 | `POST /check-ins/schedules` | M | SAF (+Scheduler) | Create scheduled check-in |
+| 36 | `GET /check-ins/schedules` | L | SAF | List schedules |
+| 37 | `PATCH /check-ins/schedules/{id}` | L | SAF | Edit / pause / resume |
+| 38 | `DELETE /check-ins/schedules/{id}` | L | SAF | Remove schedule |
+| 39 | `POST /sos` | M | SAF (orch CBE→NET) | Start SOS |
+| 40 | `POST /sos/{id}/end` | L | SAF | End SOS ("I'm safe") |
+| 41 | `POST /sos/{id}/cancel` | L | SAF | Cancel + reason (accidental/resolved) |
+| 42 | `GET /sos/active` | L | SAF | Active SOS state / timer |
+| 43 | `PUT /circles/{id}/sos-priority` | L | SAF | SOS priority recipients |
+| 44 | `POST /sos/{id}/location` | M | SAF (+LH, NET) | Attach location / mark location-off |
+| 45 | `POST /sos/{id}/notify` | H | SAF (+BB) | Fan-out push / SMS / call |
+| 46 | `POST /sos/{id}/response` | L | SAF | Responder acknowledges |
+| 47 | `GET /sos/{id}` · `GET /events/{id}` | L | SAF | Fetch SOS / event detail |
+| 48 | `GET /circles/{id}/history` | M | CBE/SAF | Alerts & history (30-day) |
+| 49 | `GET /alerts/{id}` | L | SAF | Alert detail |
+
+### E. Reachability / location / places — Network · Context store · Location Hub · Trip Mgr
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 50 | `GET /members/{id}/reachability-signals` | M | NET | Fetch reachability signals |
+| 51 | `GET /members/{id}/phone-off` | M | NET | Phone-off / not-reachable details |
+| 52 | `GET /members/{id}/battery` | M | CTX | Battery status (low-battery alert) |
+| 53 | `GET /members/{id}/ringer-permissions` | M | CTX | Ringer / DND / permission state |
+| 54 | `GET/POST /members/{id}/places` | M | DP/Places (+Maps) | Safe places CRUD |
+| 55 | `PATCH/DELETE /places/{id}` | L | DP/Places | Edit / remove place |
+| 56 | `PUT /places/{id}/alerts` | M | DP/Places (→SAF) | Arrive / leave alert prefs (geofence) |
+| 57 | `POST /location/v1/tracking-sessions` | M | LH | Start tracking session (SafeTrip/SOS) |
+| 58 | `POST /location/v1/tracking-sessions/{TS}/locations` | M | LH | Ingest GPS pings |
+| 59 | `GET /location/v1/tracking-sessions/{TS}/latest` | M | LH (+NET cell) | Latest / last-known location |
+| 60 | `GET /location/stream?trackingSessionId={TS}` | H | LH | **SSE** live location to viewers |
+| 61 | `POST /trips` | M | TM | Create SafeTrip |
+| 62 | `POST /trips/{id}/start` | M | TM | Start trip (create tracking session) |
+| 63 | `POST /trips/{id}/stop` | L | TM | Stop / cancel trip |
+| 64 | `GET /trips/{id}` · `GET /trips/active` | L | TM | Trip detail / active trip |
+| 65 | `PATCH /trips/{id}` | L | TM | Extend / pause / change share flags |
+
+### F. Fraud alerts — Network / Safety
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 66 | `GET /fraud/alerts` | M | NET/SAF | List spam / OTP / fraud events |
+| 67 | `GET /fraud/alerts/{id}` | L | SAF | Fraud detail / fetch fraud call |
+| 68 | `PATCH /fraud/alerts/{id}/ack` | L | SAF | Acknowledge / warned |
+| 69 | `PUT /members/{id}/fraud-settings` | L | DP/SAF | Fraud-alert prefs (opt-in) |
+| 70 | `POST /fraud/ingest` (webhook) | H | SAF ← NET/WB | Ingest fraud signal events |
+
+### G. Device Safety — Propositions BE / Whalebone
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 71 | `POST /device-safety/enable` | H | PBE → WB + NET | Enable (provision device safety) |
+| 72 | `POST /device-safety/disable` | M | PBE → WB + NET | Disable / terminate |
+| 73 | `GET /members/{id}/device-safety` | M | PBE/WB | Status + what circle sees |
+| 74 | `POST /device-safety/permissions` | M | WB SDK/CTX | Permission progress (Android/iOS) |
+| 75 | `POST /device-safety/scan` | M | WB SDK | Trigger / report scan |
+| 76 | `POST /device-safety/events` (ingest) | H | WB → SAF/Dashboard | Threat events sync |
+| 77 | `GET /device-safety/events` | M | SAF/Dashboard | Threat history (admins) |
+| 78 | `POST /device-safety/invite-install` | M | DP/CBE (+BB, WB) | SMS install deep-link |
+| 79 | Safe Browsing (capability) | M | WB | Advanced threat-intel browsing protection |
+| 80 | Wi-Fi protection (capability) | M | WB | Protection on public Wi-Fi / supported networks |
+
+### H. Parental Controls — Whalebone *(contracts to close)*
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 81 | `POST /parental/pair` | H | WB (+DP) | Start pairing (code request) |
+| 82 | `POST /parental/pair/confirm` | M | WB (+CTX) | Child enters code + permissions |
+| 83 | `POST /parental/enable` · `/disable` | M | WB (+PBE) | Enable/disable parental features |
+| 84 | `GET/PUT /members/{id}/parental` | H | WB | Rules: screen time / apps / websites |
+| 85 | `GET /members/{id}/parental/usage` | M | WB | Usage by category / app / day |
+| 86 | `POST/GET/PUT/DELETE /parental/schedules` | M | WB | Bedtime / study-mode schedule CRUD |
+| 87 | `PUT /parental/urls` | M | WB | Block / unblock URLs |
+| 88 | `PUT /parental/apps` | M | WB | Block / unblock apps |
+| 89 | `GET /parental/requests` | M | SAF/DP | Child unlock / exception requests |
+| 90 | `POST /parental/requests/{id}/decide` | M | SAF (+BB) | Approve / decline (multi-parent) |
+| 91 | Content filtering / ad blocking (capability) | H | WB | Content + advertisement filtering |
+
+### I. Audit & history — UCM
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 92 | `GET /audit/transactions` | M | UCM | Audit of all user transactions |
+
+### J. Commercial / provisioning — Propositions BE / COM / EPC / FX / POQ / Promotions
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 93 | `POST /family-safety/purchase` | H | CBE → COM | Buy pack (prepaid / postpaid add-to-bill) |
+| 94 | `POST /family-safety/claim` | M | CBE → COM/PROMO | Claim free sample / 3-month trial |
+| 95 | `GET /family-safety/protection-status` | M | PBE | Device/Network toggle states |
+| 96 | `POST /family-safety/device-protection` (toggle) | M | PBE → WB | Enable/disable device safety (config, not order) |
+| 97 | `POST /family-safety/network-protection` (toggle) | M | PBE → NET | Enable/disable network safety (config, not order) |
+| 98 | `POST /productOrder` (TMF622) | H | COM | Order creation |
+| 99 | `POST /productOrder/{id}/cancel` | M | COM | Order cancellation |
+| 100 | `PATCH /productOrder/{id}` (updateOrder) | M | PBE → COM | updateOrder on enable device safety |
+| 101 | `POST /services/terminate` | M | PBE → WB + NET | Terminate services → trigger Whalebone + Network |
+| 102 | `POST /provisioning` · `/deprovisioning` | M | FX | Provisioning / de-provisioning |
+| 103 | `GET /offers` (Reward & OTT) | L | Airtel app/PROMO | Show offer to claim / claimed |
+| 104 | `GET /promotions/offers` | M | PROMO (+AUD) | Offers by audience cohort |
+| 105 | `GET /qualification` (eligibility) | M | POQ | Product-order qualification rules |
+| 106 | `POST /productOffering` (config) | — | EPC | Create PO: prepaid, postpaid (3-mo free→charge), free-sample |
+| 107 | `POST /productInventory` (update) | M | UCM | Product inventory update on activation |
+| 108 | KCI trigger | L | PBE → BB | Keep-customer-informed notification ("someone enabled…") |
+
+### K. Platform / notifications / onboarding
+| # | API | Cx | Owner | Purpose |
+|---|---|---|---|---|
+| 109 | `POST /notifications/push` | — | BB | High-priority / sticky push |
+| 110 | `POST /notifications/sms` | — | BB/SMS | Invite, remind, expiry, activation SMS |
+| 111 | IVR outbound/inbound | — | IVR | Voice accept (press 1) / automated check-in call |
+| 112 | `POST /sendOtp` · `POST /verifyOtp` | — | OTP | Web-invite + role-change auth |
+| 113 | `GET /onboarding/permissions` | L | CMS/CBE | Permission-education content |
+| 114 | `POST /device/permissions` | M | CTX/device | Persist granted OS permissions |
+
+### Catalogue summary
+
+| Metric | Value |
+|---|---|
+| Total distinct APIs (duplicates removed) | **~114** |
+| Complexity split | **L ≈ 34 · M ≈ 58 · H ≈ 14** (+ a few platform/config not rated) |
+| Highest-complexity (H) | `/home` aggregate, `accept-ivr`, `sos/notify`, `location/stream` SSE, fraud ingest, device-safety enable/events, parental rules/pairing/content-filter, COM order, purchase |
+| Figma-only (not in BRD/EA) — ratify as scope | onboarding/permissions, invite list, circles/switch, settings, places CRUD, sos-priority, all scheduling, parental usage/requests (**~16**) |
+| Owning-system spread | DP, UCM, CBE, NET, CTX, SAF, LH, TM, PBE, COM, EPC, FX, POQ, PROMO, AUD, WB, BB, IVR, OTP, CMS |
+
+> **How to use:** this §17 is the single source for the API backlog. §10/§16 give story points; §13/§14 give the call-chains and Channel-BE relations; §15 gives the per-team scope. Capability rows (79, 80, 91) are SDK features, not REST endpoints. Config rows (106) are catalog setup, not runtime APIs.
+
+---
+
+*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390` + the delivery team's scope-of-work split (§15–§17, authoritative where it differs). It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10/§16/§17 as OpenAPI per service and resolve §8 before build. Story points are planning-grade; confirm with the delivery pod during sprint-0. Hard dependencies to close: Whalebone contract (parental + device safety) and the Network→Propositions BE data contract.*
