@@ -413,4 +413,217 @@ Assumptions: one backend engineer ≈ 5 productive days/week; estimates are **ba
 
 ---
 
-*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390`. It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5 as OpenAPI per service and resolve §8 before build.*
+## 10. Figma `39:4390` API surface — traceability, complexity & story points
+
+This section takes the **exact API surface needed to build the Exhaustive-Cases canvas** and cross-checks every endpoint against the BRD and the EA HLD/LLD docs.
+
+**Columns**
+- **Backed by** — `EA` (named in an EA HLD), `BRD` (stated in a BRD), `Figma-gap` (needed by the design but **not** in any BRD/EA doc → raise as a BRD change request).
+- **Owning system** — service that implements the business logic.
+- **BFF integrates with** — if the Channel Backend (BFF) must build new orchestration for this API, the downstream systems it has to call.
+- **Cx** — complexity: **L** (thin CRUD), **M** (state / multi-system), **H** (realtime / partner / new data-model).
+- **SP (≈d)** — story points (Fibonacci) and the approximate **dev-days for 1 backend engineer** (1→½d, 2→1d, 3→2d, 5→3.5d, 8→6d).
+- **Challenge** — the main risk for that endpoint.
+
+> **SP→day guide:** 1=½d · 2=1d · 3=2d · 5=3.5d · 8=6d · 13=12d. SP here cover **backend build + integration + tests** only (not app FE, not partner-side work). Platform builds (realtime/SSE, scheduler, COM/subscription, Whalebone license) are tracked in §6.
+
+### Auth / session
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `GET /me` | BRD (shell) | BFF + UCM/Customer | UCM, Customer/Siebel | L | 2 (1d) | Identity resolution across app-shell + circle |
+| `GET /eligibility/safety-circle` | EA (design assumptions) | Circle Mgr + Subscription | CM, Subscription, Siebel, Audience Mgr | M | 3 (2d) | Eligibility rules not finalised; needs active-pack check |
+
+### 1. Getting started (11 SP ≈ 7d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `POST /circles` | EA (`POST /familyCircle`) | Circle Mgr → UCM | CM | M | 5 (3.5d) | New FamilyCircle entity; one-circle-per-person rule |
+| `GET /circles/{id}` | EA | Circle Mgr | CM | L | 2 (1d) | — |
+| `GET /onboarding/permissions` | **Figma-gap** | BFF / CMS | CMS | L | 1 (½d) | Content mgmt; copy localisation |
+| `POST /device/permissions` | BRD (permissions) | Device Telemetry | TEL | M | 3 (2d) | OS permission capture Android vs iOS |
+
+### 2. Adding and joining (33 SP ≈ 21.5d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `GET /contacts/airtel-family` | EA (design) | Circle Mgr → Optimus | CM, Optimus/Siebel | M | 5 (3.5d) | Optimus family-mode fetch; PII/consent |
+| `POST /circles/{id}/invites` | EA | Circle Mgr + BumbleBee | CM, BB(Push/SMS) | M | 5 (3.5d) | Cap enforcement; dual-channel dispatch |
+| `POST /invites/{id}/remind` | EA | Circle Mgr + BB | CM, BB | L | 2 (1d) | Must **not** restart 2-day window |
+| `POST /invites/{id}/resend` | EA (resend) | Circle Mgr + BB | CM, BB | L | 2 (1d) | New token, invalidate old |
+| `GET /circles/{id}/invites` | Figma-gap | Circle Mgr | CM | L | 2 (1d) | — |
+| `GET /invites/{token}` | EA | Circle Mgr | CM | L | 2 (1d) | App + web + SMS preview parity |
+| `POST /invites/{token}/accept` | EA | Circle Mgr → UCM | CM | M | 3 (2d) | Consent capture; membership write |
+| `POST /invites/{token}/accept-ivr` | EA (LP-14) | IVR/BumbleBee → Circle Mgr | CM, IVR | H | 5 (3.5d) | IVR integration; token↔MSISDN binding |
+| `POST /invites/{token}/decline` | EA (lifecycle) | Circle Mgr | CM | L | 1 (½d) | — |
+| `POST /circles/switch` | Figma-gap (LP-16) | Circle Mgr → UCM | CM | M | 3 (2d) | Atomic leave-old + join-new |
+| `GET /members/{msisdn}/availability` | EA (inferred) | Circle Mgr / UCM | CM | M | 3 (2d) | Already-in / already-invited lookup |
+
+> Note: EA also defines `POST /invites/{token}/accept-web` (OTP) — add to the Figma set for the no-app web-join (LP-13).
+
+### 3. Managing the circle (21 SP ≈ 14d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `GET /circles/{id}/members` | EA | Circle Mgr | CM | L | 2 (1d) | — |
+| `PATCH …/members/{id}/role` | EA (SC5/SC7) | Circle Mgr + OTP | CM, OTP/Bouncer | M | 3 (2d) | OTP/biometric auth for role change |
+| `DELETE …/members/{id}` | EA (REMOVED) | Circle Mgr → UCM + BB | CM, BB, Subscription | M | 3 (2d) | De-provision sharing immediately |
+| `POST /circles/{id}/leave` | EA (SC8) | Circle Mgr + Subscription + BB | CM, Subscription, BB | M | 5 (3.5d) | Parental-lock, admin approval, grace period |
+| `GET/PATCH /circles/{id}/settings` | Figma-gap (LP-18) | Circle Mgr | CM | L | 3 (2d) | — |
+| `POST /circles/{id}/protection/stop` | EA (SC9/MC-04) | Circle Mgr + Subscription + Network | CM, Subscription, Network | H | 5 (3.5d) | Port-out / SIM-swap detection; re-verify |
+
+### 4. Home and member pages (23 SP ≈ 15.5d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `GET /circles/{id}/home` | EA (DB1) | **BFF aggregate** | CM, Telemetry, Network, Safety Mgr | H | 8 (6d) | Multi-system fan-out, partial-failure, latency |
+| `GET /circles/{id}/members/{id}` | EA (DB3) | **BFF aggregate** | CM, Telemetry, Safety Mgr | M | 5 (3.5d) | Compose profile + status + history |
+| `GET /members/{id}/device-status` | BRD (§8 signals) | Telemetry + Network | TEL, Network | M | 3 (2d) | Permission-gated; non-Airtel gaps |
+| `GET /circles/{id}/history` | EA (CI5) | Safety Mgr | SM | M | 3 (2d) | 30-day retention policy |
+| `GET /alerts/{alertId}` | EA | Safety Mgr | SM | L | 2 (1d) | — |
+| `GET /me/sharing` | BRD (DB4 privacy) | Circle Mgr / Telemetry | CM, TEL | L | 2 (1d) | "What the circle sees" transparency |
+
+### 5. Reachability — places & alerts (24 SP ≈ 16.5d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `GET/POST /members/{id}/places` | Figma-gap (BRD has reachability, not places CRUD) | Places (Circle Mgr) + Maps | CM/Places, Maps | M | 5 (3.5d) | Geocoding; **Places ownership undecided (§8)** |
+| `PATCH/DELETE /places/{placeId}` | Figma-gap | Places | CM/Places | L | 2 (1d) | — |
+| `PUT /places/{placeId}/alerts` | Figma-gap | Places → Safety Mgr (GEOFENCE) | CM/Places, SM | M | 3 (2d) | Geofence event routing |
+| `POST /location/ping` | EA (Safety Trip) | Location Hub | LH | M | 3 (2d) | Battery; dynamic interval |
+| `GET /members/{id}/location` | EA + BRD (UR) | Location Hub + Network (cell) | LH, Network | M | 3 (2d) | Consent; location-off state |
+| `WS /realtime/location` | EA (SSE) | Location Hub | LH (Kafka/Redis/SSE) | H | 8 (6d) | Realtime infra + scale + battery |
+
+### 6. SOS (20 SP ≈ 13d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `POST /sos` | EA (SO1) | Safety Mgr | SM | M | 5 (3.5d) | Countdown, active-state machine |
+| `POST /sos/{id}/end` | EA (SO3/SO5) | Safety Mgr | SM | L | 2 (1d) | "I'm safe" + reason |
+| `GET /sos/active` | EA | Safety Mgr | SM | L | 2 (1d) | — |
+| `PUT /circles/{id}/sos-priority` | Figma-gap | Safety Mgr | SM | L | 3 (2d) | Priority-recipient model |
+| `POST /sos/{id}/location` | EA (SO2) | Safety Mgr + Location + Network | SM, LH, Network | M | 3 (2d) | Location-off disclosure |
+| `POST /sos/{id}/notify` | EA (SO2) | Safety Mgr + BumbleBee | SM, BB(Push/SMS/IVR) | H | 5 (3.5d) | Critical push + SMS + call reliability |
+
+### 7. Fraud alerts (15 SP ≈ 9.5d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `GET /fraud/alerts` | BRD (FR) + EA | Safety Mgr (FRAUD) | SM | M | 3 (2d) | — |
+| `GET /fraud/alerts/{id}` | BRD | Safety Mgr | SM | L | 2 (1d) | — |
+| `PATCH /fraud/alerts/{id}/ack` | BRD | Safety Mgr | SM | L | 2 (1d) | — |
+| `PUT /members/{id}/fraud-settings` | BRD (FR2) | Circle Mgr / Safety Mgr | CM/SM | L | 3 (2d) | Opt-in family fraud protection |
+| Ingest webhook (Device Safety / Network) | BRD (FR1 feed) | Network + Whalebone → Safety Mgr | Network, Whalebone, SM | H | 5 (3.5d) | Partner/network signal ingest, dedup |
+
+### 8. Check-ins (25 SP ≈ 16d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `POST /check-ins` | BRD/EA (CI1) | Safety Mgr | SM | M | 3 (2d) | Single-open-check-in rule |
+| `POST /check-ins/{id}/reply` | EA (CI2) | Safety Mgr (+IVR) | SM, IVR | M | 3 (2d) | Preset + custom + IVR-equivalent reply |
+| `GET /members/{id}/check-ins` | EA (CI3) | Safety Mgr | SM | L | 2 (1d) | — |
+| `POST /check-ins/schedules` | **Figma-gap** (BRD is manual-first) | Safety Mgr + Scheduler | SM, Scheduler | M | 5 (3.5d) | Scheduler infra; repeat/time model |
+| `PATCH /check-ins/schedules/{id}` | Figma-gap | Safety Mgr | SM | L | 3 (2d) | Pause / resume |
+| `DELETE /check-ins/schedules/{id}` | Figma-gap | Safety Mgr | SM | L | 2 (1d) | — |
+| `GET /check-ins/schedules` | Figma-gap | Safety Mgr | SM | L | 2 (1d) | — |
+| Scheduler job + push | Figma-gap | Scheduler + CLM + BumbleBee | Scheduler, CLM, BB | H | 5 (3.5d) | Quiet notif + escalation + SMS/IVR fallback |
+
+### 9. Device Safety (25 SP ≈ 17d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `POST /device-safety/enable` | EA + SDK BRD | Subscription + Whalebone | Subscription, Whalebone | H | 5 (3.5d) | License allocate; partner SLA |
+| `GET /members/{id}/device-safety` | EA (LP-78) | Subscription / Whalebone | Subscription, Whalebone | M | 3 (2d) | Status + what circle sees |
+| `POST /device-safety/permissions` | BRD (SDK) | Whalebone SDK / Telemetry | TEL, Whalebone SDK | M | 3 (2d) | Stepwise Android; iOS Safari limits |
+| `POST /device-safety/scan` | SDK BRD (F1) | Whalebone SDK | Whalebone SDK | M | 3 (2d) | First-scan auto-run |
+| `POST /device-safety/events` | SDK BRD (F11) | Whalebone → ingest | Whalebone, SM/Dashboard | H | 5 (3.5d) | Partner event sync; volume |
+| `GET /device-safety/events` | SDK BRD (F6) | Safety Mgr / Dashboard store | SM | M | 3 (2d) | Admin history |
+| `POST /device-safety/invite-install` | EA (LP-81) | BumbleBee SMS + deep link | BB, Whalebone | M | 3 (2d) | Install deep-link path |
+
+### 10. Parental Controls (34 SP ≈ 23.5d)
+| API | Backed by | Owning system | BFF integrates with | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| `POST /parental/pair` | SDK BRD (F4) | Whalebone SDK + Circle Mgr | Whalebone, CM | H | 5 (3.5d) | Pairing-code generation; child consent |
+| `POST /parental/pair/confirm` | SDK BRD (F4) | Whalebone + Telemetry | Whalebone, TEL | M | 3 (2d) | Code entry = child's yes; permissions |
+| `GET/PUT /members/{id}/parental` | SDK BRD (F4) | Whalebone (rules sync) | Whalebone | H | 8 (6d) | Screen-time/app/web rules + offline sync |
+| `GET /members/{id}/parental/usage` | Figma-gap | Whalebone | Whalebone | M | 5 (3.5d) | Usage by app/category/day aggregation |
+| `GET /parental/requests` | Figma-gap | Safety Mgr / Circle Mgr | SM/CM | M | 3 (2d) | — |
+| `POST /parental/requests/{id}/decide` | Figma-gap | Safety Mgr + BumbleBee | SM, BB | M | 5 (3.5d) | Multi-parent approve/decline; expiry |
+| `POST /parental/disable` | SDK BRD + Figma | Whalebone + Circle Mgr | Whalebone, CM | M | 3 (2d) | Uninstall/accessibility block + alert |
+| `PUT /members/{id}/places` (child) | Figma-gap | Places (Circle Mgr) | CM/Places | L | 2 (1d) | Reuse of Places service |
+
+### Roll-up
+
+| Section | Story points | ≈ dev-days (1 BE) | Figma-gaps (new scope vs BRD/EA) |
+|---|---|---|---|
+| Auth / session | 5 | 3 | 0 |
+| 1 Getting started | 11 | 7 | 1 (`/onboarding/permissions`) |
+| 2 Adding & joining | 33 | 21.5 | 2 (`/circles/{id}/invites` GET, `/circles/switch`) |
+| 3 Managing the circle | 21 | 14 | 1 (`/settings`) |
+| 4 Home & member pages | 23 | 15.5 | 0 |
+| 5 Reachability | 24 | 16.5 | 3 (places CRUD + alerts) |
+| 6 SOS | 20 | 13 | 1 (`sos-priority`) |
+| 7 Fraud alerts | 15 | 9.5 | 0 |
+| 8 Check-ins | 25 | 16 | 5 (all scheduling) |
+| 9 Device Safety | 25 | 17 | 0 |
+| 10 Parental Controls | 34 | 23.5 | 3 (usage + requests) |
+| **TOTAL (API layer)** | **≈236 SP** | **≈156 dev-days (~31 person-weeks)** | **16 Figma-gaps** |
+
+> **Reading this:** ~156 dev-days ≈ **31 person-weeks of backend API work** for the whole canvas. This is the **API-build layer only**. The platform builds behind it — realtime/SSE (Location Hub), scheduler, COM + Subscription Manager, Whalebone license management, CLM escalation — are the larger cost and are estimated in §6 (≈95–130 person-weeks full program). **16 of ~60 endpoints are "Figma-gaps"** (designed but not in any BRD/EA doc) — mostly **Places CRUD** and **scheduled check-ins** — and must be ratified by Product as scope before committing a sprint plan.
+
+---
+
+## 11. System integration & dependency map
+
+Which systems a given system **calls** (→ depends on), and how tightly coupled.
+
+| System | Depends on (calls) | Coupling | Note |
+|---|---|---|---|
+| **Channel Backend (BFF)** | Circle Mgr, Safety Mgr, Trip Mgr, Location Hub, Network, Telemetry, COM, Subscription | **Very high** | Single front door; a change in any downstream can ripple to BFF payloads |
+| **Circle Manager** | UCM, TMF632 Individual, Optimus/Siebel, OTP/Bouncer, BumbleBee, Subscription | **High** | Core of circle + membership; most-integrated service |
+| **UCM (FamilyCircle + Party)** | — (system of record) | Low (inbound) | Everyone reads/writes members here; schema stability critical |
+| **Safety Manager** | BumbleBee, CLM, Trip Mgr, Location Hub, Network, Telemetry, Scheduler | **High** | Hub of check-in/SOS/fraud/geofence events |
+| **Trip Manager** | Circle Mgr, Location Hub, BumbleBee | Medium | Validates members, owns trip lifecycle |
+| **Location Hub** | Network (cell fallback), Kafka/Redis/History | Medium | Realtime pipeline; internal infra heavy |
+| **Network API** | — (signal source) | Low (inbound) | Reachability + fraud feed provider |
+| **Device Telemetry** | — (signal source) | Low (inbound) | Battery/signal/permission provider |
+| **CLM** | Clickstream, BumbleBee, IVR, Safety Mgr | Medium | Escalation orchestration |
+| **COM (Service Order Mgr)** | EPC, Promotion, Subscription, Siebel/ATOM/FX | **High** | TMF622 order spine |
+| **Subscription Mgr (ENDMA)** | COM, Whalebone | **High** | Two-service subscription; partner provisioning |
+| **Whalebone (partner)** | — (external) | External | License + threat sync; SLA-bound |
+| **BumbleBee / IVR / OTP** | — (platforms) | Low (inbound) | Notification + auth utilities |
+
+**Tightest coupling to watch:** `BFF ↔ Circle Mgr ↔ UCM` (every journey) and `COM ↔ Subscription ↔ Whalebone` (every paid activation). Contract-first OpenAPI + the BFF indirection layer are the two levers that keep this from becoming brittle.
+
+```mermaid
+flowchart LR
+  BFF["Channel Backend (BFF)"]
+  CM["Circle Manager"]; UCM["UCM (Party/Circle)"]
+  SM["Safety Manager"]; TM["Trip Manager"]; LH["Location Hub"]
+  NET["Network API"]; TEL["Telemetry"]
+  CLM["CLM"]; BB["BumbleBee/IVR/OTP"]; SCH["Scheduler"]
+  COM["COM"]; SUB["Subscription Mgr"]; WB["Whalebone"]; EPC["EPC/Promo"]; OPT["Optimus/Siebel"]
+
+  BFF --> CM & SM & TM & LH & NET & TEL & COM & SUB
+  CM --> UCM & OPT & OTP["OTP"] & BB & SUB
+  SM --> BB & CLM & TM & LH & NET & TEL & SCH
+  TM --> CM & LH & BB
+  LH --> NET
+  CLM --> BB
+  COM --> EPC & SUB & OPT
+  SUB --> WB
+```
+
+---
+
+## 12. Channel Backend (BFF) — new APIs and their required integrations
+
+For every API where the **BFF must build new orchestration** (not a thin pass-through), the systems it has to integrate with to fulfil the requirement, plus the specific risk.
+
+| New BFF API | Must integrate with | Why (orchestration) | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|
+| `GET /me` | UCM, Customer/Siebel | Merge app-shell identity + circle membership | L | 2 (1d) | Stitching identity across shell + circle sources |
+| `GET /eligibility/safety-circle` | Circle Mgr, Subscription, Siebel, Audience Mgr | Check one-circle rule + active pack + trial eligibility | M | 3 (2d) | Eligibility rules unowned; prepaid vs postpaid |
+| `GET /circles/{id}/home` | Circle Mgr, Telemetry, Network, Safety Mgr | Build landing: members + device cards + alerts + quick actions | H | 8 (6d) | Partial failures must degrade gracefully; latency budget; caching |
+| `GET /circles/{id}/members/{id}` | Circle Mgr, Telemetry, Safety Mgr | Compose member page (profile + status + history) | M | 5 (3.5d) | Fan-out + consistency across 3 sources |
+| `GET /members/{id}/device-status` | Telemetry, Network | Merge battery/signal/mode/reachability | M | 3 (2d) | Non-Airtel members → missing signals; "unknown ≠ off" |
+| `GET/POST protection toggles` (`/family-safety/device-protection`, `/network-protection`, `/protection-status`) | Subscription Mgr (→ Whalebone / Network) | Toggle = **config on existing service, not an order** | M | 5 (3.5d) | Must not create a COM product order; verify ACTIVE/TRIAL |
+| `POST /family-safety/purchase` / `/claim` | COM (TMF622), EPC/Promotion, Subscription | Place order / claim free-sample PO | H | 8 (6d) | TMF622 orchestration; hidden trial PO; eligibility |
+| `POST /sos/{id}/notify` (if fanned via BFF) | Safety Mgr, BumbleBee | Critical fan-out push + SMS + call | H | 5 (3.5d) | Delivery guarantees; prefer Safety Mgr to own |
+| Pass-through (circle/safety/trip CRUD) | respective owning service | Auth + payload shaping only | L | 1–2 ea | Keep thin; don't leak business logic into BFF |
+
+**Net-new BFF orchestration effort ≈ 39 SP (~26 dev-days)**, dominated by the two aggregators (`/home`, member page) and the commercial `purchase/claim` + protection toggles. Everything else the BFF exposes for this canvas should be a **thin authenticated proxy** to the owning service.
+
+---
+
+*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390`. It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10 as OpenAPI per service and resolve §8 before build. Story points are planning-grade estimates for backend build+integration+test; confirm with the delivery pod during sprint-0.*
