@@ -626,4 +626,162 @@ For every API where the **BFF must build new orchestration** (not a thin pass-th
 
 ---
 
+## 13. API relation — Thanks App → Channel Backend → owning / other systems
+
+Every Figma-surface API traced through the chain **Thanks App (client) → Channel Backend (BFF) → owning system → further (2nd-hop) systems**.
+
+**BFF role:** `P` = thin **Proxy** (auth + payload shaping) · `O` = **Orchestrate** (business fan-out / multi-write) · `A` = **Aggregate** (read-compose from several services) · `SSE` = streaming edge · `IN` = inbound into the platform (partner/network/scheduler), not a client call.
+
+**System keys:** CM=Circle Mgr · UCM=Party/FamilyCircle store · SM=Safety Mgr · TM=Trip Mgr · LH=Location Hub · NET=Network API · TEL=Device Telemetry · CLM=CLM · BB=BumbleBee (Push/SMS) · IVR=IVR/BumbleBee voice · OTP=OTP/Bouncer · SCH=Scheduler · COM=Service Order Mgr · SUB=Subscription Mgr (ENDMA) · EPC=EPC/Promotion · WB=Whalebone · OPT=Optimus/Siebel · MAPS=Maps · AUD=Audience Mgr.
+
+| # | API (Thanks App calls) | BFF role | Owning system | Further (2nd-hop) systems |
+|---|---|---|---|---|
+| | **Auth / session** | | | |
+| 1 | `GET /me` | A | BFF | UCM, Siebel/Customer |
+| 2 | `GET /eligibility/safety-circle` | O | CM / SUB | Siebel, AUD |
+| | **1 · Getting started** | | | |
+| 3 | `POST /circles` | O | CM | UCM, TMF632 Individual |
+| 4 | `GET /circles/{id}` | P | CM | UCM |
+| 5 | `GET /onboarding/permissions` | P | BFF / CMS | CMS |
+| 6 | `POST /device/permissions` | P | TEL | — |
+| | **2 · Adding and joining** | | | |
+| 7 | `GET /contacts/airtel-family` | O | CM | OPT / Siebel |
+| 8 | `POST /circles/{id}/invites` | O | CM | BB (Push+SMS), IVR (opt) |
+| 9 | `POST /invites/{id}/remind` | P | CM | BB |
+| 10 | `POST /invites/{id}/resend` | P | CM | BB |
+| 11 | `GET /circles/{id}/invites` | P | CM | UCM |
+| 12 | `GET /invites/{token}` | P | CM | — |
+| 13 | `POST /invites/{token}/accept` | O | CM | UCM, SUB (provisioning) |
+| 14 | `POST /invites/{token}/accept-ivr` | IN | IVR → CM | UCM |
+| 15 | `POST /invites/{token}/decline` | P | CM | — |
+| 16 | `POST /circles/switch` | O | CM | UCM |
+| 17 | `GET /members/{msisdn}/availability` | P | CM | UCM |
+| | **3 · Managing the circle** | | | |
+| 18 | `GET /circles/{id}/members` | P | CM | UCM |
+| 19 | `PATCH …/members/{id}/role` | O | CM | OTP |
+| 20 | `DELETE …/members/{id}` | O | CM | UCM, SUB, BB |
+| 21 | `POST /circles/{id}/leave` | O | CM | SUB, BB |
+| 22 | `GET/PATCH /circles/{id}/settings` | P | CM | — |
+| 23 | `POST /circles/{id}/protection/stop` | O | CM | SUB, NET |
+| | **4 · Home and member pages** | | | |
+| 24 | `GET /circles/{id}/home` | A | **BFF** | CM, TEL, NET, SM |
+| 25 | `GET /circles/{id}/members/{id}` | A | **BFF** | CM, TEL, SM |
+| 26 | `GET /members/{id}/device-status` | A | **BFF** | TEL, NET |
+| 27 | `GET /circles/{id}/history` | P | SM | — |
+| 28 | `GET /alerts/{alertId}` | P | SM | — |
+| 29 | `GET /me/sharing` | P | CM / TEL | — |
+| | **5 · Reachability** | | | |
+| 30 | `GET/POST /members/{id}/places` | O | CM / Places | MAPS |
+| 31 | `PATCH/DELETE /places/{id}` | P | CM / Places | — |
+| 32 | `PUT /places/{id}/alerts` | O | CM / Places | SM (GEOFENCE) |
+| 33 | `POST /location/ping` | P | LH | — |
+| 34 | `GET /members/{id}/location` | A | LH | NET (cell fallback) |
+| 35 | `WS /realtime/location` | SSE | LH | Kafka/Redis |
+| | **6 · SOS** | | | |
+| 36 | `POST /sos` | O | SM | BB, LH/TM, NET |
+| 37 | `POST /sos/{id}/end` | P | SM | BB |
+| 38 | `GET /sos/active` | P | SM | — |
+| 39 | `PUT /circles/{id}/sos-priority` | P | SM | — |
+| 40 | `POST /sos/{id}/location` | O | SM | LH, NET |
+| 41 | `POST /sos/{id}/notify` | O | SM | BB (Push+SMS+IVR) |
+| | **7 · Fraud alerts** | | | |
+| 42 | `GET /fraud/alerts` | P | SM | — |
+| 43 | `GET /fraud/alerts/{id}` | P | SM | — |
+| 44 | `PATCH /fraud/alerts/{id}/ack` | P | SM | — |
+| 45 | `PUT /members/{id}/fraud-settings` | P | CM / SM | — |
+| 46 | Ingest webhook (fraud) | IN | SM | NET, WB |
+| | **8 · Check-ins** | | | |
+| 47 | `POST /check-ins` | O | SM | BB |
+| 48 | `POST /check-ins/{id}/reply` | O | SM | IVR (opt) |
+| 49 | `GET /members/{id}/check-ins` | P | SM | — |
+| 50 | `POST /check-ins/schedules` | O | SM | SCH |
+| 51 | `PATCH /check-ins/schedules/{id}` | P | SM | SCH |
+| 52 | `DELETE /check-ins/schedules/{id}` | P | SM | SCH |
+| 53 | `GET /check-ins/schedules` | P | SM | — |
+| 54 | Scheduler job + push | IN | SCH | SM, CLM, BB |
+| | **9 · Device Safety** | | | |
+| 55 | `POST /device-safety/enable` | O | SUB | WB |
+| 56 | `GET /members/{id}/device-safety` | P | SUB / WB | WB |
+| 57 | `POST /device-safety/permissions` | P | WB SDK / TEL | — |
+| 58 | `POST /device-safety/scan` | P | WB SDK | — |
+| 59 | `POST /device-safety/events` | IN | WB → SM | Dashboard store |
+| 60 | `GET /device-safety/events` | P | SM | — |
+| 61 | `POST /device-safety/invite-install` | O | BFF / CM | BB, WB |
+| | **10 · Parental Controls** | | | |
+| 62 | `POST /parental/pair` | O | WB + CM | WB |
+| 63 | `POST /parental/pair/confirm` | O | WB + TEL | — |
+| 64 | `GET/PUT /members/{id}/parental` | O | WB | — |
+| 65 | `GET /members/{id}/parental/usage` | P | WB | — |
+| 66 | `GET /parental/requests` | P | SM / CM | — |
+| 67 | `POST /parental/requests/{id}/decide` | O | SM | BB |
+| 68 | `POST /parental/disable` | O | WB + CM | — |
+| 69 | `PUT /members/{id}/places` (child) | P | CM / Places | — |
+
+> **Read:** of ~60 client endpoints, **3 are true BFF-owned aggregates** (`/home`, member page, `/device-status`), **~22 are BFF orchestrations** (fan-out/multi-write), the rest are **thin proxies**. `IN` rows are **not** Thanks-App calls — they enter the platform from IVR, the scheduler, Whalebone or the Network fraud feed.
+
+---
+
+## 14. All systems that communicate with the Channel Backend (BFF)
+
+Every relationship the BFF has **by any means** — request/response (GET/POST/PUT/PATCH/DELETE), streaming (SSE), event publish/consume, or inbound webhook. "Direct" = talks to the BFF itself; "Indirect" = reached **through** an owning service (BFF never calls it straight).
+
+| System | Direct to BFF? | Direction | Mechanism | Data / event exchanged |
+|---|---|---|---|---|
+| **Thanks App / Safety App / widget** | ✅ Direct | App → BFF | REST (GET/POST/PUT/PATCH/DELETE) + **SSE/WS** | All journeys; subscribes to live location / SOS |
+| **Circle Manager** | ✅ Direct | BFF → CM | REST (GET/POST/PATCH/DELETE) | Create circle, invites, accept, leave, roles, members, settings |
+| **Safety Manager** | ✅ Direct | BFF → SM | REST (GET/POST/PATCH) | Check-in, SOS, fraud, history, schedules |
+| **Trip Manager** | ✅ Direct | BFF → TM | REST (GET/POST/PATCH) | Start/stop SafeTrip, viewers |
+| **Location Hub** | ✅ Direct | BFF ↔ LH | REST (GET/POST) + **SSE subscribe** | Ingest ping, latest location, live `LOCATION_UPDATED` stream |
+| **Network API** | ✅ Direct | BFF → NET (+ SSE opt) | REST / SSE | Reachability / network state for member cards |
+| **Device Telemetry** | ✅ Direct | BFF → TEL | REST (GET/POST) | Battery, signal, mode, permission state |
+| **COM (Service Order Mgr)** | ✅ Direct | BFF → COM | REST (TMF622) | Purchase / claim Family Safety pack order |
+| **Subscription Mgr (ENDMA)** | ✅ Direct | BFF → SUB | REST (GET/PATCH) | Protection status + device/network toggle (config, not order) |
+| **Whalebone (partner)** | ✅ Direct (inbound) | WB → BFF/Dashboard | **Webhook / sync** | Threats-blocked stats, events for dashboard |
+| **CMS / content** | ✅ Direct | BFF → CMS | REST (GET) | Onboarding/permission education copy |
+| **Audience Manager** | ◑ Direct (opt) | BFF → AUD | REST (GET) | Free-trial / "Claim Now" eligibility |
+| **UCM (Party/FamilyCircle)** | ✗ Indirect | via Circle Mgr | REST | Member/circle system of record |
+| **Optimus / Siebel** | ✗ Indirect | via Circle Mgr / COM | REST | Family hierarchy, Family Mode, customer/billing identity |
+| **OTP / Bouncer** | ✗ Indirect | via Circle Mgr | REST | Web-invite OTP, role-change auth |
+| **BumbleBee (Push/SMS)** | ✗ Indirect | via CM / SM / SCH | Async notify | Invites, reminders, SOS, threat, activation |
+| **IVR / BumbleBee voice** | ✗ Indirect | via CM / SM (callback) | Voice + callback | Invite press-1 join; automated check-in call + response |
+| **CLM** | ✗ Indirect | via Safety Mgr | Event publish/consume | Start escalation journey; consumes Clickstream |
+| **Scheduler** | ✗ Indirect | via Safety Mgr | Job fire | Scheduled check-in trigger |
+| **EPC / Promotion** | ✗ Indirect | via COM | REST | Product/service spec, hidden trial PO |
+| **Whalebone SDK (on-device)** | ✗ Indirect | in Thanks App; backend via SUB | In-process / partner | Malware/URL/content/parental enforcement + events |
+| **Clickstream / Analytics** | ◑ Emits | BFF → Clickstream | Event publish | Instrumentation (page visits, actions — BRD §14) |
+| **Maps / geocoding** | ✗ Indirect | client + Places service | REST | Places, reachability, SOS location |
+| **Advisor / CRM view** | ✗ Separate | reads CM / SM | REST (read-only) | Consent/alert visibility — **own portal, not via BFF** |
+
+### BFF interaction map (mechanism-labelled)
+
+```mermaid
+flowchart TB
+  APP["Thanks App / Safety App"]
+  BFF["Channel Backend (BFF)"]
+  APP -->|REST + SSE/WS| BFF
+
+  subgraph DIRECT["Direct to BFF"]
+    CM["Circle Mgr"]; SM["Safety Mgr"]; TM["Trip Mgr"]; LH["Location Hub"]
+    NET["Network API"]; TEL["Telemetry"]; COM["COM (TMF622)"]; SUB["Subscription Mgr"]
+    AUD["Audience Mgr"]; CMS["CMS"]
+  end
+  BFF -->|REST| CM & SM & TM & NET & TEL & COM & SUB & AUD & CMS
+  BFF <-->|REST + SSE| LH
+  WB["Whalebone (partner)"] -->|webhook: threat stats| BFF
+  BFF -->|events| CS["Clickstream"]
+
+  subgraph INDIRECT["Indirect — via owning service"]
+    UCM["UCM Party/Circle"]; OPT["Optimus/Siebel"]; OTP["OTP/Bouncer"]
+    BB["BumbleBee/IVR"]; CLM["CLM"]; SCH["Scheduler"]; EPC["EPC/Promo"]
+  end
+  CM --> UCM & OPT & OTP & BB
+  SM --> BB & CLM & SCH & TM
+  COM --> EPC & SUB
+  SUB --> WB
+```
+
+> **Summary:** **10 systems talk to the BFF directly** (Thanks App inbound; Circle Mgr, Safety Mgr, Trip Mgr, Location Hub, Network, Telemetry, COM, Subscription, CMS outbound; Whalebone inbound webhook; Audience Mgr optional; Clickstream as event sink). **~10 more are reached indirectly** through Circle Mgr / Safety Mgr / COM. The **Advisor/CRM view is the only consumer that bypasses the BFF entirely**, reading straight from Circle Mgr / Safety Mgr.
+
+---
+
 *This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390`. It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10 as OpenAPI per service and resolve §8 before build. Story points are planning-grade estimates for backend build+integration+test; confirm with the delivery pod during sprint-0.*
