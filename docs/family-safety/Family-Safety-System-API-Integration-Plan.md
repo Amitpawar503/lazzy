@@ -784,4 +784,109 @@ flowchart TB
 
 ---
 
-*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390`. It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10 as OpenAPI per service and resolve §8 before build. Story points are planning-grade estimates for backend build+integration+test; confirm with the delivery pod during sprint-0.*
+## 15. Team scope-of-work alignment (authoritative per-system split)
+
+This section reconciles the plan with the **delivery team's own scope-of-work split**. Where it differs from §1–§14, **this section wins** (it reflects the actual owning teams).
+
+### 15.1 Terminology reconciliation (earlier name → team name)
+
+| Name used earlier in this doc | Team's actual system(s) | Note |
+|---|---|---|
+| Circle Manager | **Digital Profile** (circle + member CRUD, device pair/unpair) + **UCM** (rules, audit history, grace period, product inventory) | The "user/party-profile backend" = **Digital Profile**, backed by UCM as system of record |
+| Subscription Manager (ENDMA) | **Propositions BE** | Owns order-on-COM, provisioning to Network/Whalebone/FX, `updateOrder`, terminate, KCI triggers |
+| Device Telemetry | **Context store** (+ Network) | Low-battery / ringer / device-context signals live in Context store |
+| EPC/Promotion (combined) | **EPC** + **Promotions** (separate) + **POQ** (qualification) + **Marketing** (rules) | Split across catalog, promo, eligibility-qualification and rules |
+| — | **FX** | Provisioning / de-provisioning rail |
+| Channel Backend (BFF) | **Channel BE** | Alerts, history, safety-circle-creation orchestrated APIs |
+
+> **KCI** = Keep-Customer-Informed (notification trigger). **POQ** = Product Order Qualification (eligibility gate).
+
+### 15.2 Commercial / provisioning plane — scope per system
+
+| System | Scope of work | Interaction / trigger |
+|---|---|---|
+| **Airtel app – Propositions** | Show offer to be claimed / claimed on Reward & OTT page | UI surface |
+| **UCM** | Product inventory update | Inventory write on activation |
+| **Propositions BE** | Order creation on COM · provisioning to Network · on **enable device safety → `updateOrder`** · **terminate services → trigger Whalebone + Network** · **KCI trigger** | Central commercial orchestrator |
+| **COM** | Order creation, cancellation | TMF622 |
+| **EPC** | Create product offering for prepaid & postpaid (postpaid = 3 months free then charges) · **1 more product offering = free sampling** | Catalog |
+| **Promotions** | Show offers based on audience cohort | Cohort-driven |
+| **Audience Manager** | Cohort = customer **active** + **not claimed** + **not part of safety circle** | Eligibility cohort |
+| **Network** | Enable fraud alerts, SOS, check-in & tracking features · enable device safety **when provisioning received** | ⚠ **Open: data-contract structure Network → Propositions BE (Kaushal) to be defined** |
+| **Whalebone** | Enable safety features **when provisioning received** | Partner provisioning |
+| **POQ** | Eligibility rules required | Qualification gate |
+| **Marketing** | Rules to be created | Promo/eligibility rules |
+| **FX** | Provisioning, de-provisioning | Fulfilment rail |
+
+### 15.3 Safety-circle & runtime plane — scope per system
+
+| System | Scope of work |
+|---|---|
+| **Airtel app** | Create safety circle |
+| **UCM** | Safety-circle creation, **rules**, **audit history**, **grace-period handling** |
+| **Digital Profile** | Safety-circle + member CRUD, device pair/unpair (API layer) |
+| **Propositions BE** | Plan/subscription expiry · trigger notification to the number ("someone has enabled …") |
+| **Network** | SOS, check-in, fraud alerts, reachability/tracking signals |
+| **Context store** | Low-battery alerts (device-context signals) |
+| **Whalebone** | Device safety + parental enforcement (**contracts to be closed**) |
+| **Channel BE** | Alerts, history, safety-circle-creation **orchestrated** APIs |
+
+---
+
+## 16. Canonical L2 → API → owning system mapping (team-aligned)
+
+The delivery team's L2 capability list, each API mapped to its **owning system (team-aligned)**, Channel BE role (`P`/`O`/`A`), complexity and story points.
+
+| L2 capability | API | Owning system | Ch-BE role | Cx | SP (≈d) | Challenge |
+|---|---|---|---|---|---|---|
+| **Safety circle create/update** | Create/delete family safety circle | **Digital Profile** (+ UCM inventory) | O | M | 5 (3.5d) | New entity; one-circle rule; UCM inventory sync |
+| | Add member | Digital Profile | O | M | 3 (2d) | Cap enforcement; consent write |
+| | Remove member | Digital Profile (+ Propositions BE, BB) | O | M | 3 (2d) | De-provision + notify |
+| | Update member details | Digital Profile | P | L | 2 (1d) | — |
+| | Device pair / unpair | Digital Profile (+ Whalebone, Propositions BE) | O | M | 5 (3.5d) | Device-ID mapping; partner pairing; re-pair on device change |
+| **Reachability (checkin/SOS/battery/ringer/perms)** | Create check-in | Safety (orch) + Network | O | M | 3 (2d) | — |
+| | Create SOS | Safety + Network | O | M | 5 (3.5d) | Fan-out; location-off |
+| | Cancel SOS | Safety | P | L | 2 (1d) | Reason capture |
+| | Check-in response | Safety | O | M | 3 (2d) | App + IVR response |
+| | SOS response | Safety | P | L | 2 (1d) | — |
+| | Fetch event detail | Safety | P | L | 2 (1d) | — |
+| | Fetch check-in | Safety | P | L | 2 (1d) | — |
+| | Fetch SOS | Safety | P | L | 2 (1d) | — |
+| | Fetch fraud call | Network / Safety | P | M | 3 (2d) | Network fraud feed |
+| | Fetch phone-off / not-reachable details | **Network** | A | M | 3 (2d) | "unknown ≠ off"; non-Airtel gap |
+| | Fetch reachability signals | **Network** | A | M | 3 (2d) | Signal availability per MSISDN |
+| | Battery status | **Context store** | A | M | 3 (2d) | Permission-gated; low-battery alert |
+| | Ringer / permissions state | Context store / device | P | M | 3 (2d) | OS differences |
+| **Parental control** *(contracts to close with Whalebone)* | Enable/disable parental control | Whalebone + Propositions BE | O | M | 5 (3.5d) | Provisioning dependency |
+| | Content filtering / app block / ad block | **Whalebone** | O | H | 8 (6d) | Rules sync; offline enforcement |
+| | Create/update/get/delete bedtime/study schedules | Whalebone | O | M | 5 (3.5d) | Schedule model; who-made-change audit |
+| | Block/unblock URLs | Whalebone | O | M | 3 (2d) | — |
+| | Block/unblock apps | Whalebone | O | M | 3 (2d) | — |
+| **Device safety** | Enable/disable device safety | Propositions BE → Whalebone + Network | O | H | 5 (3.5d) | `updateOrder`; provisioning handshake |
+| | Safe Browsing (advanced threat intel) | Whalebone | O | M | 3 (2d) | — |
+| | Wi-Fi protection (public Wi-Fi) | Whalebone | O | M | 3 (2d) | — |
+| **Audit history** | Get audit of all user transactions | **UCM** | P | M | 3 (2d) | Cross-feature audit aggregation |
+
+**L2-aligned API-layer total ≈ 87 SP (~58 dev-days).** This is the runtime/app API layer; the commercial plane (COM order, EPC offerings, Propositions BE provisioning, POQ/Promotions/Marketing eligibility, FX fulfilment, Whalebone contract) is tracked in §6 and §15.2.
+
+> **Key ownership shifts vs §10:** check-in/SOS/fraud/reachability **signals are owned by Network** (not a standalone Safety Mgr); **battery/ringer by Context store**; **circle + member CRUD + device pair by Digital Profile**; **rules/audit/grace by UCM**; **all commercial provisioning funnels through Propositions BE**. Parental + Device Safety depend on a **Whalebone contract that is still to be closed** — hard dependency / schedule risk.
+
+```mermaid
+flowchart TB
+  APP["Airtel / Thanks App"] -->|REST + SSE| CBE["Channel BE (orchestration)"]
+  CBE --> DP["Digital Profile\n(circle + member CRUD, device pair)"]
+  CBE --> NET["Network\n(checkin/SOS/fraud/reachability signals)"]
+  CBE --> CTX["Context store\n(battery/ringer)"]
+  CBE --> PBE["Propositions BE\n(order→COM, provisioning, updateOrder, terminate, KCI)"]
+  DP --> UCM["UCM\n(rules, audit history, grace, inventory)"]
+  PBE --> COM["COM (TMF622)"] --> EPC["EPC"] 
+  COM --> FX["FX (provision/deprovision)"]
+  PBE --> WB["Whalebone\n(device safety + parental — contract TBD)"]
+  PBE --> NET
+  COM --> PROMO["Promotions"]; POQ["POQ (eligibility)"] --> PBE; AUD["Audience Mgr"] --> PROMO; MKT["Marketing (rules)"] --> POQ
+  CBE -. parental/device safety .-> WB
+```
+
+---
+
+*This is an integration HLD/LLD planning doc derived from the 5 uploaded PDFs + Figma `39:4390` + the delivery team's scope-of-work split (§15–§16, which is authoritative where it differs). It is not a substitute for the EA LLD packages marked "LLD — Implementation team to share." Finalise §5/§10/§16 as OpenAPI per service and resolve §8 before build. Story points are planning-grade; confirm with the delivery pod during sprint-0. Hard dependencies to close: Whalebone contract (parental + device safety) and the Network→Propositions BE data contract.*
