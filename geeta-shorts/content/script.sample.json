@@ -1,0 +1,37 @@
+{
+  "title": "Bhagavad Gita — Nishkam Karma (कर्मयोग)",
+  "description": "Short on acting without attachment to results. Chapter 2, Verse 47.",
+  "language": "hi",
+  "scenes": [
+    {
+      "id": 1,
+      "verse_ref": "Intro",
+      "sanskrit": "",
+      "transliteration": "",
+      "translation": "",
+      "narration": "श्रीमद्भगवद्गीता का एक अमर संदेश — कर्म का रहस्य।",
+      "image_prompt": "Lord Krishna and Arjuna on a chariot at the battlefield of Kurukshetra at dawn, two white horses, epic sky",
+      "audio": ""
+    },
+    {
+      "id": 2,
+      "verse_ref": "2.47",
+      "sanskrit": "कर्मण्येवाधिकारस्ते मा फलेषु कदाचन। मा कर्मफलहेतुर्भूर्मा ते सङ्गोऽस्त्वकर्मणि॥",
+      "transliteration": "karmaṇy-evādhikāras te mā phaleṣu kadācana; mā karma-phala-hetur bhūr mā te saṅgo 'stv akarmaṇi",
+      "translation": "You have a right to perform your prescribed duty, but you are not entitled to the fruits of your actions.",
+      "narration": "कर्मण्येवाधिकारस्ते मा फलेषु कदाचन। तेरा अधिकार केवल कर्म पर है, फल पर कभी नहीं।",
+      "image_prompt": "a calm farmer sowing seeds in a golden field at sunrise, serene expression, symbolic of selfless action",
+      "audio": ""
+    },
+    {
+      "id": 3,
+      "verse_ref": "2.47 (cont.)",
+      "sanskrit": "",
+      "transliteration": "",
+      "translation": "Never consider yourself the cause of the results, nor be attached to inaction.",
+      "narration": "फल की चिंता छोड़, निष्काम भाव से अपना कर्तव्य निभा। यही है कर्मयोग।",
+      "image_prompt": "a meditating figure glowing with inner peace, lotus, soft divine light, letting go of worldly desires",
+      "audio": ""
+    }
+  ]
+}

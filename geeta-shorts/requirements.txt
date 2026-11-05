@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Geeta Shorts — Python dependencies
+# Everything here is free / open-source. No paid APIs, no credits, no sign-ups.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# --- Core (always needed) ---
+pyyaml>=6.0           # read config.yaml
+pillow>=10.0          # image handling + placeholder image generator
+numpy>=1.24           # math helpers
+
+# --- Caption timing from YOUR audio (MIT licensed) ---
+faster-whisper>=1.0.0 # transcribe audio -> word/segment timings for subtitles
+
+# --- Text-to-speech, OPTIONAL (Apache-2.0, runs on CPU) ---
+# Only needed if you want the script to GENERATE narration instead of using
+# audio you already recorded. Comment out if you always supply your own audio.
+kokoro>=0.9.2
+soundfile>=0.12.1
+
+# --- Image generation (needs PyTorch — install torch SEPARATELY, see README) ---
+# GPU strongly recommended, but CPU works (slow). FLUX.1-schnell is Apache-2.0.
+diffusers>=0.31.0
+transformers>=4.44.0
+accelerate>=0.33.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+
+# --- Optional: talk to a local Ollama LLM over HTTP (for story expansion) ---
+requests>=2.31.0

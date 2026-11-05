@@ -1,0 +1,98 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# Geeta Shorts — central configuration
+# Edit this file instead of editing the Python scripts.
+# ═════════════════════════════════════════════════════════════════════════════
+
+project:
+  name: "geeta-shorts"
+  # Input script describing each scene (verse, narration, image prompt, audio).
+  script: "content/script.json"
+  # Where all generated files go.
+  work_dir: "output"
+
+# ── Output video formats ─────────────────────────────────────────────────────
+video:
+  fps: 30
+  # Produce one or both. "shorts" = 1080x1920 vertical (YouTube Shorts/Reels),
+  # "long" = 1920x1080 horizontal (normal YouTube video).
+  formats: ["shorts", "long"]
+  shorts: { width: 1080, height: 1920 }
+  long:   { width: 1920, height: 1080 }
+  # Ken Burns motion styles cycled across scenes for variety.
+  motion: ["zoom_in", "zoom_out", "pan_left", "pan_right"]
+  # Crossfade (seconds) between scenes. 0 = hard cut.
+  crossfade: 0.4
+
+# ── Captions (burned-in subtitles) ───────────────────────────────────────────
+captions:
+  enabled: true
+  # Font FAMILY name libass resolves via fontconfig. For Hindi/Sanskrit
+  # (Devanagari) use "Noto Sans Devanagari" (install fonts-noto). For pure
+  # English captions "DejaVu Sans" works everywhere. See README → Fonts.
+  font: "Noto Sans Devanagari"
+  shorts_size: 54           # font size for vertical video
+  long_size: 40             # font size for horizontal video
+  primary_color: "&H00FFFFFF"   # white  (ASS format: &HAABBGGRR)
+  outline_color: "&H00000000"   # black outline
+  outline: 3
+  # Vertical distance of captions from the bottom edge (ASS MarginV).
+  margin_v_shorts: 320
+  margin_v_long: 90
+  # Max characters per caption line before wrapping.
+  max_chars: 34
+
+# ── Audio ─────────────────────────────────────────────────────────────────────
+audio:
+  # Background music mixed UNDER the narration (optional).
+  music: "assets/music/bg.mp3"   # leave missing/empty to skip
+  music_volume: 0.12             # 0.0–1.0, kept low so narration is clear
+  narration_volume: 1.0
+
+# ── Text-to-speech (only used for scenes WITHOUT a pre-recorded audio file) ───
+tts:
+  engine: "kokoro"          # "kokoro" or "none"
+  # Kokoro language codes: a=US-English, b=UK-English, h=Hindi, e=Spanish,
+  # f=French, i=Italian, p=Portuguese, j=Japanese, z=Chinese.
+  lang: "h"
+  # Hindi voices: hf_alpha, hf_beta (female) / hm_omega, hm_psi (male).
+  # English voices: af_heart, af_bella, am_michael, bf_emma ...
+  voice: "hf_alpha"
+  speed: 1.0
+
+# ── Transcription (caption timing) ────────────────────────────────────────────
+transcribe:
+  # faster-whisper model: tiny / base / small / medium / large-v3.
+  # "small" is a good speed/quality balance on CPU; "large-v3" best on GPU.
+  model: "small"
+  # "hi" for Hindi, "en" for English, "sa" won't exist — use "hi" for Sanskrit
+  # transliteration read in Hindi. Leave empty "" to auto-detect.
+  language: "hi"
+  device: "auto"            # auto / cpu / cuda
+  compute_type: "auto"      # auto / int8 / float16 / float32
+
+# ── Image generation ──────────────────────────────────────────────────────────
+images:
+  # "flux-schnell" (Apache-2.0, commercial OK)  |  "sdxl"  |  "placeholder"
+  # Use "placeholder" first to test the whole video pipeline WITHOUT downloading
+  # multi-GB models — it draws a captioned gradient card per scene.
+  engine: "placeholder"
+  flux_model: "black-forest-labs/FLUX.1-schnell"
+  sdxl_model: "stabilityai/stable-diffusion-xl-base-1.0"
+  device: "auto"            # auto / cpu / cuda / mps (Apple Silicon)
+  low_vram: true            # enable model CPU offload (for <16GB VRAM)
+  steps: 4                  # FLUX-schnell needs only 1–4; SDXL use ~25–30
+  guidance: 0.0             # FLUX-schnell uses 0.0; SDXL use ~5–7
+  seed: 42
+  # A global style appended to every scene prompt for a consistent look.
+  style_suffix: >-
+    cinematic spiritual digital painting, divine golden light, ancient India,
+    highly detailed, 8k, dramatic lighting, devotional art
+  negative_prompt: >-
+    text, watermark, logo, signature, blurry, low quality, deformed, extra limbs
+
+# ── Local LLM (optional, for story/scene expansion only — NOT the verses) ─────
+llm:
+  enabled: false
+  provider: "ollama"                 # talks to http://localhost:11434
+  model: "qwen2.5:7b"                # or llama3.1:8b, gemma2:9b ...
+  host: "http://localhost:11434"

@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+output/
+assets/music/*.mp3
+assets/music/*.wav
+# keep your own script edits; ignore large generated media
+*.mp4
