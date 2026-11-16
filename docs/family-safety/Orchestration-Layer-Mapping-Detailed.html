@@ -1,0 +1,826 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Orchestration — Detailed</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Orchestration Layer Mapping (DETAILED · NO optimization)</h1>
+<p><strong>What this is:</strong> the <strong>full 1:1 expansion</strong> of the Channel BE / Family Safety BFF orchestration — <strong>every upstream intent as its own endpoint</strong>, each bound to its <strong>exact downstream call(s)</strong> on <strong>Network</strong> and <strong>Whalebone</strong>, with field-level request/response mapping and per-flow sequences. No enum/param collapsing.</p>
+<p><strong>Companion doc:</strong> <code>Orchestration-Upstream-Downstream-Optimized.md</code> = the collapsed/enum version (recommended freeze).</p>
+<p><strong>Date:</strong> 2026-11-16 · <strong>Status:</strong> Draft for Network + Whalebone binding review</p>
+<hr>
+<h2>1. Layer &amp; ownership</h2>
+<pre><code>App / UDA / services  ──►  CHANNEL BE / FS BFF  ──►  Network (FSC + OTA)  +  Whalebone (Mgmt + Public v2)
+                                                 └►  Propositions BE (billing→Whalebone subscription)
+                                                 └►  BumbleBee / IVR (dispatch)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Owning downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Family/circle + member CRUD, roles</td>
+<td><strong>Network FSC</strong> <code>/fsc</code></td>
+</tr>
+<tr>
+<td>Check-in, SOS, alarms/notifications, device-status, safety report, IVR</td>
+<td><strong>Network OTA event engine</strong></td>
+</tr>
+<tr>
+<td>Subscription, threat/content filter, app block, scheduled filter, allow/deny, reports, pairing, suspend/activate</td>
+<td><strong>Whalebone Management <code>/3</code></strong></td>
+</tr>
+<tr>
+<td>Block stats / timeline / recent events</td>
+<td><strong>Whalebone Public API v2</strong></td>
+</tr>
+<tr>
+<td>Billing/eligibility → subscription trigger</td>
+<td><strong>Propositions BE</strong></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><code>deviceID == subscriptionID == MSISDN</code> (Whalebone). Whalebone auto-creates device+user on subscription; Airtel never <code>POST /management/devices</code>, <code>POST /management/users</code>, or <code>DELETE</code>.</p>
+</blockquote>
+<hr>
+<h2>2. Full downstream inventory (every endpoint)</h2>
+<h3>2A. Network FSC (<code>/fsc</code>, Swagger 2.0)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Method</th>
+<th>Path</th>
+<th>Query / body</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>N1</td>
+<td>POST</td>
+<td><code>/api/v1/family/create</code></td>
+<td><code>RequestFamilyPojo</code></td>
+</tr>
+<tr>
+<td>N2</td>
+<td>GET</td>
+<td><code>/api/v1/family/get</code></td>
+<td><code>?familyId=</code></td>
+</tr>
+<tr>
+<td>N3</td>
+<td>POST</td>
+<td><code>/api/v1/family/update</code></td>
+<td><code>?familyId=</code> + <code>RequestFamilyPojo</code></td>
+</tr>
+<tr>
+<td>N4</td>
+<td>POST</td>
+<td><code>/api/v1/member/add</code></td>
+<td><code>RequestFamilyMemberPojo</code></td>
+</tr>
+<tr>
+<td>N5</td>
+<td>POST</td>
+<td><code>/api/v1/member/delete</code></td>
+<td><code>?familyId=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>N6</td>
+<td>GET</td>
+<td><code>/api/v1/member/get</code></td>
+<td><code>?familyId=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>N7</td>
+<td>GET</td>
+<td><code>/api/v1/member/getAll</code></td>
+<td><code>?familyId=</code></td>
+</tr>
+<tr>
+<td>N8</td>
+<td>POST</td>
+<td><code>/api/v1/member/role/update</code></td>
+<td><code>?familyId=&amp;familyMemberRole=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>N9</td>
+<td>POST</td>
+<td><code>/api/v1/member/update</code></td>
+<td><code>?memberId=</code> + <code>RequestFamilyMemberPojo</code></td>
+</tr>
+</tbody></table>
+<h3>2B. Network OTA event engine (JSON sync / Kafka)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API</th>
+<th>Key fields</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>O1</td>
+<td>Sync: Circle Create/End</td>
+<td>family attrs</td>
+</tr>
+<tr>
+<td>O2</td>
+<td>Sync: Member Add/Del/Update/Active/Inactive</td>
+<td>member attrs</td>
+</tr>
+<tr>
+<td>O3</td>
+<td>Sync: Member Role Mod</td>
+<td>role</td>
+</tr>
+<tr>
+<td>O4</td>
+<td>Incoming Alarm/Notification</td>
+<td>AlarmID, InitiatedBy, TargetType(Individual/Responder/Broadcast), TargetMSISDN, TargetFamilyID, AlarmType, AdditionalData</td>
+</tr>
+<tr>
+<td>O5</td>
+<td>Outgoing Alarm/Notification (Kafka)</td>
+<td>AlarmID, TargetMSISDN, FamilyID, AlarmType, AdditionalData</td>
+</tr>
+<tr>
+<td>O6</td>
+<td>SOS Alarm Kill (Kafka)</td>
+<td>SOSAlarmID, Action=Kill</td>
+</tr>
+<tr>
+<td>O7</td>
+<td>Check-in Create</td>
+<td>TriggerID, FamilyID, InitiatorMSISDN, TargetMSISDN, ScheduleType(OneTime/Periodic), ScheduleTime</td>
+</tr>
+<tr>
+<td>O8</td>
+<td>Check-in Status Update</td>
+<td>TriggerID, Action(Dismiss/Pause/Resume)</td>
+</tr>
+<tr>
+<td>O9</td>
+<td>Check-in Response</td>
+<td>TriggerID, CheckInTimestamp, CheckInResponse</td>
+</tr>
+<tr>
+<td>O10</td>
+<td>Check-in Status Check</td>
+<td>TriggerID/FamilyID/InitiatorMSISDN → Check-in Data + Response arrays</td>
+</tr>
+<tr>
+<td>O11</td>
+<td>SOS Creation</td>
+<td>TriggerID, FamilyID, InitiatorMSISDN</td>
+</tr>
+<tr>
+<td>O12</td>
+<td>SOS Cancellation</td>
+<td>TriggerID</td>
+</tr>
+<tr>
+<td>O13</td>
+<td>SOS Update</td>
+<td>TriggerID, AcknowledgedBy/Ts, ResolvedBy/Ts</td>
+</tr>
+<tr>
+<td>O14</td>
+<td>SOS Status Check</td>
+<td>TriggerID/FamilyID/InitiatorMSISDN → SOS Data array</td>
+</tr>
+<tr>
+<td>O15</td>
+<td>Device Status Store</td>
+<td>DataID, MSISDN, FamilyID, StatusArray(Battery/Ringer/NetworkType/NetworkStrength/Location/Lock-Unlock, Value)</td>
+</tr>
+<tr>
+<td>O16</td>
+<td>Device Status Retrieve</td>
+<td>MSISDN/FamilyID → Status array</td>
+</tr>
+<tr>
+<td>O17</td>
+<td>Safety Report Retrieve</td>
+<td>MSISDN/FamilyID → Safety array</td>
+</tr>
+</tbody></table>
+<h3>2C. Whalebone Management (<code>/3</code> → <code>/management</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>W1</td>
+<td>POST</td>
+<td><code>/management/subscriptions</code></td>
+</tr>
+<tr>
+<td>W2</td>
+<td>POST</td>
+<td><code>/management/subscriptions/{id}/suspend</code></td>
+</tr>
+<tr>
+<td>W3</td>
+<td>POST</td>
+<td><code>/management/subscriptions/{id}/activate</code></td>
+</tr>
+<tr>
+<td>W4</td>
+<td>GET</td>
+<td><code>/management/devices/{id}</code></td>
+</tr>
+<tr>
+<td>W5</td>
+<td>GET/PUT</td>
+<td><code>/management/devices/{id}/filter</code></td>
+</tr>
+<tr>
+<td>W6</td>
+<td>GET/PUT</td>
+<td><code>/management/devices/{id}/applications</code></td>
+</tr>
+<tr>
+<td>W7</td>
+<td>GET/PUT</td>
+<td><code>/management/devices/{id}/scheduled-filter</code></td>
+</tr>
+<tr>
+<td>W8</td>
+<td>GET/POST</td>
+<td><code>/management/subscriptions/{id}/{listType}</code> (whitelist|blacklist)</td>
+</tr>
+<tr>
+<td>W9</td>
+<td>POST</td>
+<td><code>/management/subscriptions/{id}/{listType}/delete</code></td>
+</tr>
+<tr>
+<td>W10</td>
+<td>GET/PUT</td>
+<td><code>/management/users/{id}/reports</code></td>
+</tr>
+<tr>
+<td>W11</td>
+<td>POST</td>
+<td><code>/management/devices/{id}/pair-app</code></td>
+</tr>
+</tbody></table>
+<h3>2D. Whalebone Public API v2 (<code>/whalebone/2</code> → <code>/events</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P1</td>
+<td>GET</td>
+<td><code>/events/stats?...&amp;aggregate=threat_type</code></td>
+</tr>
+<tr>
+<td>P2</td>
+<td>GET</td>
+<td><code>/events/stats?...&amp;aggregate=device_id</code></td>
+</tr>
+<tr>
+<td>P3</td>
+<td>GET</td>
+<td><code>/events/stats?...&amp;aggregate=domain</code></td>
+</tr>
+<tr>
+<td>P4</td>
+<td>GET</td>
+<td><code>/events/timeline?...&amp;interval=day</code></td>
+</tr>
+<tr>
+<td>P5</td>
+<td>GET</td>
+<td><code>/events/search?...&amp;sort=desc</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Detailed 1:1 upstream → downstream mapping (un-optimized)</h2>
+<p>Every intent is its <strong>own</strong> upstream endpoint.</p>
+<h3>3.1 Circle &amp; membership</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Upstream endpoint (own)</th>
+<th>Downstream</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>GET /familyCircle/{fcId}</code></td>
+<td>N2 <code>family/get?familyId</code> (+ N7 <code>member/getAll</code>)</td>
+<td>map <code>fcId↔familyId</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>POST /familyCircle</code></td>
+<td>N1 <code>family/create</code> (+ O1 Circle Create sync)</td>
+<td>idempotent create</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>PATCH /familyCircle/{fcId}</code></td>
+<td>N3 <code>family/update?familyId</code></td>
+<td>settings</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>GET /familyCircle/{fcId}/members</code></td>
+<td>N7 <code>member/getAll?familyId</code></td>
+<td>list</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>GET /familyCircle/{fcId}/members/{memberId}</code></td>
+<td>N6 <code>member/get?familyId&amp;memberId</code></td>
+<td>detail</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>POST /familyCircle/{fcId}/invite</code></td>
+<td>N4 <code>member/add</code> + BFF invite-state + O4/BumbleBee notify</td>
+<td><strong>own</strong></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>POST /familyCircle/{fcId}/resend</code></td>
+<td>N9 <code>member/update</code> (new token) + notify</td>
+<td><strong>own</strong></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>POST /familyCircle/{fcId}/remind</code></td>
+<td><strong>no FSC write</strong> + notify only</td>
+<td>no window reset</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>POST /familyCircle/{fcId}/accept</code></td>
+<td>N9 <code>member/update → Active</code> (+ O2 Member Active)</td>
+<td>consent</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>POST /familyCircle/{fcId}/decline</code></td>
+<td>N9 <code>member/update → Inactive</code> or N5 <code>member/delete</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>POST /familyCircle/{fcId}/leave</code></td>
+<td>N5 <code>member/delete</code> (+ admin-approval in BFF)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>DELETE /familyCircle/{fcId}/members/{memberId}</code></td>
+<td>N5 <code>member/delete?familyId&amp;memberId</code> (+ 2nd-hop de-provision)</td>
+<td>force remove</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>POST /familyCircle/{fcId}/members/{memberId}/role</code></td>
+<td>N8 <code>member/role/update</code> (+ O3 Role Mod)</td>
+<td>role change</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>GET /contacts/availability?msisdn</code></td>
+<td><strong>GAP G1</strong> (needs <code>family/getByMsisdn</code>)</td>
+<td>dedupe</td>
+</tr>
+</tbody></table>
+<h3>3.2 Protection toggles (commercial)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Upstream endpoint (own)</th>
+<th>Downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>15</td>
+<td><code>GET /family-safety/protection-status?msisdn</code></td>
+<td>W4 <code>GET devices/{id}</code> + subscription state (+ P1–P5 live)</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>POST /family-safety/device-protection/enable</code></td>
+<td>PBE → W1 <code>POST subscriptions</code> → W5 <code>PUT devices/{id}/filter</code> (7 threats true)</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>POST /family-safety/device-protection/disable</code></td>
+<td>W2 <code>POST subscriptions/{id}/suspend</code></td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>POST /family-safety/network-protection/enable</code></td>
+<td>Network safety config</td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>POST /family-safety/network-protection/disable</code></td>
+<td>Network safety config</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>POST /family-safety/device-protection/reactivate</code></td>
+<td>W3 <code>POST subscriptions/{id}/activate</code> (renewal)</td>
+</tr>
+</tbody></table>
+<h3>3.3 Safety events — each type &amp; action its own endpoint</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Upstream endpoint (own)</th>
+<th>Downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>21</td>
+<td><code>POST /check-ins</code></td>
+<td>O7 Check-in Create</td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>POST /check-ins/{id}/status</code> (dismiss/pause/resume)</td>
+<td>O8 Check-in Status Update</td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>POST /check-ins/{id}/response</code></td>
+<td>O9 Check-in Response</td>
+</tr>
+<tr>
+<td>24</td>
+<td><code>GET /check-ins?id|familyId|msisdn</code></td>
+<td>O10 Check-in Status Check</td>
+</tr>
+<tr>
+<td>25</td>
+<td><code>POST /sos</code></td>
+<td>O11 SOS Creation</td>
+</tr>
+<tr>
+<td>26</td>
+<td><code>POST /sos/{id}/cancel</code></td>
+<td>O12 SOS Cancellation</td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>POST /sos/{id}/acknowledge</code></td>
+<td>O13 SOS Update (ack)</td>
+</tr>
+<tr>
+<td>28</td>
+<td><code>POST /sos/{id}/resolve</code> (end)</td>
+<td>O13 SOS Update (resolve)</td>
+</tr>
+<tr>
+<td>29</td>
+<td><code>POST /sos/{id}/kill</code></td>
+<td>O6 SOS Alarm Kill (Kafka)</td>
+</tr>
+<tr>
+<td>30</td>
+<td><code>GET /sos?id|familyId|msisdn</code></td>
+<td>O14 SOS Status Check</td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>POST /fraud-alerts</code></td>
+<td>O4 Incoming Alarm (fraud/Presidential)</td>
+</tr>
+<tr>
+<td>32</td>
+<td><code>POST /alerts/{id}/notify</code></td>
+<td>O5 Outgoing Alarm (Kafka) / BumbleBee</td>
+</tr>
+<tr>
+<td>33</td>
+<td><code>POST /alerts/{id}/escalate</code></td>
+<td>O5 Outgoing Alarm / IVR</td>
+</tr>
+<tr>
+<td>34</td>
+<td><code>POST /device-status</code> (ingest)</td>
+<td>O15 Device Status Store</td>
+</tr>
+<tr>
+<td>35</td>
+<td><code>GET /device-status?msisdn|familyId</code></td>
+<td>O16 Device Status Retrieve</td>
+</tr>
+<tr>
+<td>36</td>
+<td><code>GET /safety-report?msisdn|familyId</code></td>
+<td>O17 Safety Report Retrieve</td>
+</tr>
+<tr>
+<td>—</td>
+<td><code>GEOFENCE</code>, <code>INACTIVITY</code></td>
+<td><strong>GAP G7</strong> — no Network owner (excluded in PPT)</td>
+</tr>
+</tbody></table>
+<h3>3.4 Device Safety &amp; Parental (all Whalebone) — each its own endpoint</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Upstream endpoint (own)</th>
+<th>Downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>37</td>
+<td><code>GET /parental/{msisdn}/content</code></td>
+<td>W5 <code>GET devices/{id}/filter</code></td>
+</tr>
+<tr>
+<td>38</td>
+<td><code>PUT /parental/{msisdn}/content</code></td>
+<td>W5 <code>PUT devices/{id}/filter</code> (GET-merge-PUT; threats stay true)</td>
+</tr>
+<tr>
+<td>39</td>
+<td><code>GET /parental/{msisdn}/apps</code></td>
+<td>W6 <code>GET devices/{id}/applications</code></td>
+</tr>
+<tr>
+<td>40</td>
+<td><code>PUT /parental/{msisdn}/apps</code></td>
+<td>W6 <code>PUT devices/{id}/applications</code></td>
+</tr>
+<tr>
+<td>41</td>
+<td><code>GET /parental/{msisdn}/schedule</code></td>
+<td>W7 <code>GET devices/{id}/scheduled-filter</code></td>
+</tr>
+<tr>
+<td>42</td>
+<td><code>PUT /parental/{msisdn}/schedule</code></td>
+<td>W7 <code>PUT devices/{id}/scheduled-filter</code></td>
+</tr>
+<tr>
+<td>43</td>
+<td><code>GET /parental/{msisdn}/whitelist</code></td>
+<td>W8 <code>GET subscriptions/{id}/whitelist?page=0&amp;page_size=200</code></td>
+</tr>
+<tr>
+<td>44</td>
+<td><code>POST /parental/{msisdn}/whitelist</code></td>
+<td>W8 <code>POST subscriptions/{id}/whitelist {domains}</code></td>
+</tr>
+<tr>
+<td>45</td>
+<td><code>POST /parental/{msisdn}/whitelist/remove</code></td>
+<td>W9 <code>POST subscriptions/{id}/whitelist/delete</code></td>
+</tr>
+<tr>
+<td>46</td>
+<td><code>GET /parental/{msisdn}/blacklist</code></td>
+<td>W8 <code>GET subscriptions/{id}/blacklist</code></td>
+</tr>
+<tr>
+<td>47</td>
+<td><code>POST /parental/{msisdn}/blacklist</code></td>
+<td>W8 <code>POST subscriptions/{id}/blacklist {domains}</code></td>
+</tr>
+<tr>
+<td>48</td>
+<td><code>POST /parental/{msisdn}/blacklist/remove</code></td>
+<td>W9 <code>POST subscriptions/{id}/blacklist/delete</code></td>
+</tr>
+<tr>
+<td>49</td>
+<td><code>GET /parental/{msisdn}/reports</code></td>
+<td>W10 <code>GET users/{id}/reports</code></td>
+</tr>
+<tr>
+<td>50</td>
+<td><code>PUT /parental/{msisdn}/reports</code></td>
+<td>W10 <code>PUT users/{id}/reports</code></td>
+</tr>
+<tr>
+<td>51</td>
+<td><code>POST /device/{msisdn}/pair</code></td>
+<td>W11 <code>POST devices/{id}/pair-app</code> → <code>{token}</code></td>
+</tr>
+</tbody></table>
+<h3>3.5 Stats (Whalebone Public API v2) — each widget its own endpoint</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Upstream endpoint (own)</th>
+<th>Downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>52</td>
+<td><code>GET /stats/{msisdn}/threats</code></td>
+<td>P1 <code>/events/stats?aggregate=threat_type</code></td>
+</tr>
+<tr>
+<td>53</td>
+<td><code>GET /stats/family/{fcId}/per-member</code></td>
+<td>P2 <code>/events/stats?aggregate=device_id</code> (Airtel maps member MSISDNs)</td>
+</tr>
+<tr>
+<td>54</td>
+<td><code>GET /stats/{msisdn}/top-sites</code></td>
+<td>P3 <code>/events/stats?aggregate=domain</code></td>
+</tr>
+<tr>
+<td>55</td>
+<td><code>GET /stats/{msisdn}/trend</code></td>
+<td>P4 <code>/events/timeline?interval=day</code></td>
+</tr>
+<tr>
+<td>56</td>
+<td><code>GET /stats/{msisdn}/recent</code></td>
+<td>P5 <code>/events/search?sort=desc</code></td>
+</tr>
+</tbody></table>
+<p><strong>Un-optimized surface ≈ 56 upstream endpoints</strong> (vs ~17 optimized).</p>
+<hr>
+<h2>4. Field-level mapping (key transforms)</h2>
+<h3>4.1 Circle create (upstream → N1)</h3>
+<table>
+<thead>
+<tr>
+<th>Upstream</th>
+<th>Network FSC <code>RequestFamilyPojo</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>name</code></td>
+<td><code>familyName</code> (req)</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td><code>familyDescription</code> (req)</td>
+</tr>
+<tr>
+<td>— (default)</td>
+<td><code>familyStatus = "Active"</code></td>
+</tr>
+<tr>
+<td><code>members[]</code></td>
+<td><code>familyMemberPojos[]</code> (<code>RequestFamilyMemberPojo</code>)</td>
+</tr>
+<tr>
+<td>per member <code>msisdn</code></td>
+<td><code>msisdn</code> (req)</td>
+</tr>
+<tr>
+<td>per member <code>airtelCustomer</code></td>
+<td><code>airtelCustomer</code> (0=Airtel, 1=other) (req)</td>
+</tr>
+<tr>
+<td>per member <code>role</code></td>
+<td><code>circleMemberRole</code> (ADMIN/SUB_ADMIN/SPONSER/MEMBER)</td>
+</tr>
+<tr>
+<td>— (new)</td>
+<td><code>membershipId = 0</code>, <code>membershipStatus = "Active"</code></td>
+</tr>
+</tbody></table>
+<h3>4.2 Device-safety enable (upstream → W1 → W5)</h3>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Call</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1 billing</td>
+<td>PBE eligibility/billing</td>
+<td>—</td>
+</tr>
+<tr>
+<td>2 subscribe</td>
+<td>W1 <code>POST /management/subscriptions</code></td>
+<td><code>{"subscription_id":"{MSISDN}"}</code> → 201 (device+user auto-created)</td>
+</tr>
+<tr>
+<td>3 base policy</td>
+<td>W5 <code>PUT /management/devices/{MSISDN}/filter</code></td>
+<td><code>threats[]</code> all 7 <code>blocked:true</code> (+ selected <code>contents[]</code>)</td>
+</tr>
+<tr>
+<td>4 pair</td>
+<td>W11 <code>POST /management/devices/{MSISDN}/pair-app</code></td>
+<td>→ <code>{pairing_response:{token}}</code> (hand token to app)</td>
+</tr>
+</tbody></table>
+<h3>4.3 Content filter change (upstream 38 → W5, GET-merge-PUT)</h3>
+<ol>
+<li><code>GET /management/devices/{id}/filter</code> (current). 2. Merge changed <code>contents[]</code>. 3. <strong>Keep all 7 <code>threats</code> <code>true</code>.</strong> 4. <code>PUT</code> full object. Omitted threat/content types become <strong>unblocked</strong> — always send the complete intended policy.</li>
+</ol>
+<hr>
+<h2>5. Sequences</h2>
+<h3>5.1 Create circle + invite (Airtel vs non-Airtel)</h3>
+<pre class="mermaid" data-processed="true"><div id="dmermaid-1794811549340" style="font-family: &quot;trebuchet ms&quot;, verdana, arial, sans-serif;"><svg id="mermaid-1794811549340" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 2412 512" style="max-width: 512px;" role="graphics-document document" aria-roledescription="error"><style>#mermaid-1794811549340{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1794811549340 .error-icon{fill:#552222;}#mermaid-1794811549340 .error-text{fill:#552222;stroke:#552222;}#mermaid-1794811549340 .edge-thickness-normal{stroke-width:2px;}#mermaid-1794811549340 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1794811549340 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1794811549340 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1794811549340 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1794811549340 .marker{fill:#666;stroke:#666;}#mermaid-1794811549340 .marker.cross{stroke:#666;}#mermaid-1794811549340 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1794811549340 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g></g><g><path class="error-icon" d="m411.313,123.313c6.25-6.25 6.25-16.375 0-22.625s-16.375-6.25-22.625,0l-32,32-9.375,9.375-20.688-20.688c-12.484-12.5-32.766-12.5-45.25,0l-16,16c-1.261,1.261-2.304,2.648-3.31,4.051-21.739-8.561-45.324-13.426-70.065-13.426-105.867,0-192,86.133-192,192s86.133,192 192,192 192-86.133 192-192c0-24.741-4.864-48.327-13.426-70.065 1.402-1.007 2.79-2.049 4.051-3.31l16-16c12.5-12.492 12.5-32.758 0-45.25l-20.688-20.688 9.375-9.375 32.001-31.999zm-219.313,100.687c-52.938,0-96,43.063-96,96 0,8.836-7.164,16-16,16s-16-7.164-16-16c0-70.578 57.422-128 128-128 8.836,0 16,7.164 16,16s-7.164,16-16,16z"></path><path class="error-icon" d="m459.02,148.98c-6.25-6.25-16.375-6.25-22.625,0s-6.25,16.375 0,22.625l16,16c3.125,3.125 7.219,4.688 11.313,4.688 4.094,0 8.188-1.563 11.313-4.688 6.25-6.25 6.25-16.375 0-22.625l-16.001-16z"></path><path class="error-icon" d="m340.395,75.605c3.125,3.125 7.219,4.688 11.313,4.688 4.094,0 8.188-1.563 11.313-4.688 6.25-6.25 6.25-16.375 0-22.625l-16-16c-6.25-6.25-16.375-6.25-22.625,0s-6.25,16.375 0,22.625l15.999,16z"></path><path class="error-icon" d="m400,64c8.844,0 16-7.164 16-16v-32c0-8.836-7.156-16-16-16-8.844,0-16,7.164-16,16v32c0,8.836 7.156,16 16,16z"></path><path class="error-icon" d="m496,96.586h-32c-8.844,0-16,7.164-16,16 0,8.836 7.156,16 16,16h32c8.844,0 16-7.164 16-16 0-8.836-7.156-16-16-16z"></path><path class="error-icon" d="m436.98,75.605c3.125,3.125 7.219,4.688 11.313,4.688 4.094,0 8.188-1.563 11.313-4.688l32-32c6.25-6.25 6.25-16.375 0-22.625s-16.375-6.25-22.625,0l-32,32c-6.251,6.25-6.251,16.375-0.001,22.625z"></path><text class="error-text" x="1440" y="250" font-size="150px" style="text-anchor: middle;">Syntax error in text</text><text class="error-text" x="1250" y="400" font-size="100px" style="text-anchor: middle;">mermaid version 10.9.1</text></g></svg></div></pre>
+<h3>5.2 Accept + enable device safety (child line)</h3>
+<pre class="mermaid" data-processed="true"><svg id="mermaid-1794811549351" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 1937px;" viewBox="-50 -10 1937 671" role="graphics-document document" aria-roledescription="sequence"><g><rect x="1687" y="585" fill="#eaeaea" stroke="#666" width="150" height="65" name="WB" rx="3" ry="3" class="actor actor-bottom"></rect><text x="1762" y="617.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="1762" dy="0">Whalebone</tspan></text></g><g><rect x="1157" y="585" fill="#eaeaea" stroke="#666" width="150" height="65" name="PBE" rx="3" ry="3" class="actor actor-bottom"></rect><text x="1232" y="617.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="1232" dy="0">Propositions BE</tspan></text></g><g><rect x="957" y="585" fill="#eaeaea" stroke="#666" width="150" height="65" name="FSC" rx="3" ry="3" class="actor actor-bottom"></rect><text x="1032" y="617.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="1032" dy="0">Network FSC</tspan></text></g><g><rect x="490" y="585" fill="#eaeaea" stroke="#666" width="150" height="65" name="BFF" rx="3" ry="3" class="actor actor-bottom"></rect><text x="565" y="617.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="565" dy="0">FS BFF</tspan></text></g><g><rect x="0" y="585" fill="#eaeaea" stroke="#666" width="150" height="65" name="M" rx="3" ry="3" class="actor actor-bottom"></rect><text x="75" y="617.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="75" dy="0">Invitee App</tspan></text></g><g><line id="actor4" x1="1762" y1="5" x2="1762" y2="585" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-4"><rect x="1687" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="WB" rx="3" ry="3" class="actor actor-top"></rect><text x="1762" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="1762" dy="0">Whalebone</tspan></text></g></g><g><line id="actor3" x1="1232" y1="5" x2="1232" y2="585" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-3"><rect x="1157" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="PBE" rx="3" ry="3" class="actor actor-top"></rect><text x="1232" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="1232" dy="0">Propositions BE</tspan></text></g></g><g><line id="actor2" x1="1032" y1="5" x2="1032" y2="585" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-2"><rect x="957" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="FSC" rx="3" ry="3" class="actor actor-top"></rect><text x="1032" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="1032" dy="0">Network FSC</tspan></text></g></g><g><line id="actor1" x1="565" y1="5" x2="565" y2="585" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-1"><rect x="490" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="BFF" rx="3" ry="3" class="actor actor-top"></rect><text x="565" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="565" dy="0">FS BFF</tspan></text></g></g><g><line id="actor0" x1="75" y1="5" x2="75" y2="585" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-0"><rect x="0" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="M" rx="3" ry="3" class="actor actor-top"></rect><text x="75" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="75" dy="0">Invitee App</tspan></text></g></g><style>#mermaid-1794811549351{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1794811549351 .error-icon{fill:#552222;}#mermaid-1794811549351 .error-text{fill:#552222;stroke:#552222;}#mermaid-1794811549351 .edge-thickness-normal{stroke-width:2px;}#mermaid-1794811549351 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1794811549351 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1794811549351 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1794811549351 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1794811549351 .marker{fill:#666;stroke:#666;}#mermaid-1794811549351 .marker.cross{stroke:#666;}#mermaid-1794811549351 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1794811549351 .actor{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1794811549351 text.actor&gt;tspan{fill:#333;stroke:none;}#mermaid-1794811549351 .actor-line{stroke:#666;}#mermaid-1794811549351 .messageLine0{stroke-width:1.5;stroke-dasharray:none;stroke:#333;}#mermaid-1794811549351 .messageLine1{stroke-width:1.5;stroke-dasharray:2,2;stroke:#333;}#mermaid-1794811549351 #arrowhead path{fill:#333;stroke:#333;}#mermaid-1794811549351 .sequenceNumber{fill:white;}#mermaid-1794811549351 #sequencenumber{fill:#333;}#mermaid-1794811549351 #crosshead path{fill:#333;stroke:#333;}#mermaid-1794811549351 .messageText{fill:#333;stroke:none;}#mermaid-1794811549351 .labelBox{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1794811549351 .labelText,#mermaid-1794811549351 .labelText&gt;tspan{fill:#333;stroke:none;}#mermaid-1794811549351 .loopText,#mermaid-1794811549351 .loopText&gt;tspan{fill:#333;stroke:none;}#mermaid-1794811549351 .loopLine{stroke-width:2px;stroke-dasharray:2,2;stroke:hsl(0, 0%, 83%);fill:hsl(0, 0%, 83%);}#mermaid-1794811549351 .note{stroke:#999;fill:#666;}#mermaid-1794811549351 .noteText,#mermaid-1794811549351 .noteText&gt;tspan{fill:#fff;stroke:none;}#mermaid-1794811549351 .activation0{fill:#f4f4f4;stroke:#666;}#mermaid-1794811549351 .activation1{fill:#f4f4f4;stroke:#666;}#mermaid-1794811549351 .activation2{fill:#f4f4f4;stroke:#666;}#mermaid-1794811549351 .actorPopupMenu{position:absolute;}#mermaid-1794811549351 .actorPopupMenuPanel{position:absolute;fill:#eee;box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2);filter:drop-shadow(3px 5px 2px rgb(0 0 0 / 0.4));}#mermaid-1794811549351 .actor-man line{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1794811549351 .actor-man circle,#mermaid-1794811549351 line{stroke:hsl(0, 0%, 83%);fill:#eee;stroke-width:2px;}#mermaid-1794811549351 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g></g><defs><symbol id="computer" width="24" height="24"><path transform="scale(.5)" d="M2 2v13h20v-13h-20zm18 11h-16v-9h16v9zm-10.228 6l.466-1h3.524l.467 1h-4.457zm14.228 3h-24l2-6h2.104l-1.33 4h18.45l-1.297-4h2.073l2 6zm-5-10h-14v-7h14v7z"></path></symbol></defs><defs><symbol id="database" fill-rule="evenodd" clip-rule="evenodd"><path transform="scale(.5)" d="M12.258.001l.256.004.255.005.253.008.251.01.249.012.247.015.246.016.242.019.241.02.239.023.236.024.233.027.231.028.229.031.225.032.223.034.22.036.217.038.214.04.211.041.208.043.205.045.201.046.198.048.194.05.191.051.187.053.183.054.18.056.175.057.172.059.168.06.163.061.16.063.155.064.15.066.074.033.073.033.071.034.07.034.069.035.068.035.067.035.066.035.064.036.064.036.062.036.06.036.06.037.058.037.058.037.055.038.055.038.053.038.052.038.051.039.05.039.048.039.047.039.045.04.044.04.043.04.041.04.04.041.039.041.037.041.036.041.034.041.033.042.032.042.03.042.029.042.027.042.026.043.024.043.023.043.021.043.02.043.018.044.017.043.015.044.013.044.012.044.011.045.009.044.007.045.006.045.004.045.002.045.001.045v17l-.001.045-.002.045-.004.045-.006.045-.007.045-.009.044-.011.045-.012.044-.013.044-.015.044-.017.043-.018.044-.02.043-.021.043-.023.043-.024.043-.026.043-.027.042-.029.042-.03.042-.032.042-.033.042-.034.041-.036.041-.037.041-.039.041-.04.041-.041.04-.043.04-.044.04-.045.04-.047.039-.048.039-.05.039-.051.039-.052.038-.053.038-.055.038-.055.038-.058.037-.058.037-.06.037-.06.036-.062.036-.064.036-.064.036-.066.035-.067.035-.068.035-.069.035-.07.034-.071.034-.073.033-.074.033-.15.066-.155.064-.16.063-.163.061-.168.06-.172.059-.175.057-.18.056-.183.054-.187.053-.191.051-.194.05-.198.048-.201.046-.205.045-.208.043-.211.041-.214.04-.217.038-.22.036-.223.034-.225.032-.229.031-.231.028-.233.027-.236.024-.239.023-.241.02-.242.019-.246.016-.247.015-.249.012-.251.01-.253.008-.255.005-.256.004-.258.001-.258-.001-.256-.004-.255-.005-.253-.008-.251-.01-.249-.012-.247-.015-.245-.016-.243-.019-.241-.02-.238-.023-.236-.024-.234-.027-.231-.028-.228-.031-.226-.032-.223-.034-.22-.036-.217-.038-.214-.04-.211-.041-.208-.043-.204-.045-.201-.046-.198-.048-.195-.05-.19-.051-.187-.053-.184-.054-.179-.056-.176-.057-.172-.059-.167-.06-.164-.061-.159-.063-.155-.064-.151-.066-.074-.033-.072-.033-.072-.034-.07-.034-.069-.035-.068-.035-.067-.035-.066-.035-.064-.036-.063-.036-.062-.036-.061-.036-.06-.037-.058-.037-.057-.037-.056-.038-.055-.038-.053-.038-.052-.038-.051-.039-.049-.039-.049-.039-.046-.039-.046-.04-.044-.04-.043-.04-.041-.04-.04-.041-.039-.041-.037-.041-.036-.041-.034-.041-.033-.042-.032-.042-.03-.042-.029-.042-.027-.042-.026-.043-.024-.043-.023-.043-.021-.043-.02-.043-.018-.044-.017-.043-.015-.044-.013-.044-.012-.044-.011-.045-.009-.044-.007-.045-.006-.045-.004-.045-.002-.045-.001-.045v-17l.001-.045.002-.045.004-.045.006-.045.007-.045.009-.044.011-.045.012-.044.013-.044.015-.044.017-.043.018-.044.02-.043.021-.043.023-.043.024-.043.026-.043.027-.042.029-.042.03-.042.032-.042.033-.042.034-.041.036-.041.037-.041.039-.041.04-.041.041-.04.043-.04.044-.04.046-.04.046-.039.049-.039.049-.039.051-.039.052-.038.053-.038.055-.038.056-.038.057-.037.058-.037.06-.037.061-.036.062-.036.063-.036.064-.036.066-.035.067-.035.068-.035.069-.035.07-.034.072-.034.072-.033.074-.033.151-.066.155-.064.159-.063.164-.061.167-.06.172-.059.176-.057.179-.056.184-.054.187-.053.19-.051.195-.05.198-.048.201-.046.204-.045.208-.043.211-.041.214-.04.217-.038.22-.036.223-.034.226-.032.228-.031.231-.028.234-.027.236-.024.238-.023.241-.02.243-.019.245-.016.247-.015.249-.012.251-.01.253-.008.255-.005.256-.004.258-.001.258.001zm-9.258 20.499v.01l.001.021.003.021.004.022.005.021.006.022.007.022.009.023.01.022.011.023.012.023.013.023.015.023.016.024.017.023.018.024.019.024.021.024.022.025.023.024.024.025.052.049.056.05.061.051.066.051.07.051.075.051.079.052.084.052.088.052.092.052.097.052.102.051.105.052.11.052.114.051.119.051.123.051.127.05.131.05.135.05.139.048.144.049.147.047.152.047.155.047.16.045.163.045.167.043.171.043.176.041.178.041.183.039.187.039.19.037.194.035.197.035.202.033.204.031.209.03.212.029.216.027.219.025.222.024.226.021.23.02.233.018.236.016.24.015.243.012.246.01.249.008.253.005.256.004.259.001.26-.001.257-.004.254-.005.25-.008.247-.011.244-.012.241-.014.237-.016.233-.018.231-.021.226-.021.224-.024.22-.026.216-.027.212-.028.21-.031.205-.031.202-.034.198-.034.194-.036.191-.037.187-.039.183-.04.179-.04.175-.042.172-.043.168-.044.163-.045.16-.046.155-.046.152-.047.148-.048.143-.049.139-.049.136-.05.131-.05.126-.05.123-.051.118-.052.114-.051.11-.052.106-.052.101-.052.096-.052.092-.052.088-.053.083-.051.079-.052.074-.052.07-.051.065-.051.06-.051.056-.05.051-.05.023-.024.023-.025.021-.024.02-.024.019-.024.018-.024.017-.024.015-.023.014-.024.013-.023.012-.023.01-.023.01-.022.008-.022.006-.022.006-.022.004-.022.004-.021.001-.021.001-.021v-4.127l-.077.055-.08.053-.083.054-.085.053-.087.052-.09.052-.093.051-.095.05-.097.05-.1.049-.102.049-.105.048-.106.047-.109.047-.111.046-.114.045-.115.045-.118.044-.12.043-.122.042-.124.042-.126.041-.128.04-.13.04-.132.038-.134.038-.135.037-.138.037-.139.035-.142.035-.143.034-.144.033-.147.032-.148.031-.15.03-.151.03-.153.029-.154.027-.156.027-.158.026-.159.025-.161.024-.162.023-.163.022-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.011-.178.01-.179.008-.179.008-.181.006-.182.005-.182.004-.184.003-.184.002h-.37l-.184-.002-.184-.003-.182-.004-.182-.005-.181-.006-.179-.008-.179-.008-.178-.01-.176-.011-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.022-.162-.023-.161-.024-.159-.025-.157-.026-.156-.027-.155-.027-.153-.029-.151-.03-.15-.03-.148-.031-.146-.032-.145-.033-.143-.034-.141-.035-.14-.035-.137-.037-.136-.037-.134-.038-.132-.038-.13-.04-.128-.04-.126-.041-.124-.042-.122-.042-.12-.044-.117-.043-.116-.045-.113-.045-.112-.046-.109-.047-.106-.047-.105-.048-.102-.049-.1-.049-.097-.05-.095-.05-.093-.052-.09-.051-.087-.052-.085-.053-.083-.054-.08-.054-.077-.054v4.127zm0-5.654v.011l.001.021.003.021.004.021.005.022.006.022.007.022.009.022.01.022.011.023.012.023.013.023.015.024.016.023.017.024.018.024.019.024.021.024.022.024.023.025.024.024.052.05.056.05.061.05.066.051.07.051.075.052.079.051.084.052.088.052.092.052.097.052.102.052.105.052.11.051.114.051.119.052.123.05.127.051.131.05.135.049.139.049.144.048.147.048.152.047.155.046.16.045.163.045.167.044.171.042.176.042.178.04.183.04.187.038.19.037.194.036.197.034.202.033.204.032.209.03.212.028.216.027.219.025.222.024.226.022.23.02.233.018.236.016.24.014.243.012.246.01.249.008.253.006.256.003.259.001.26-.001.257-.003.254-.006.25-.008.247-.01.244-.012.241-.015.237-.016.233-.018.231-.02.226-.022.224-.024.22-.025.216-.027.212-.029.21-.03.205-.032.202-.033.198-.035.194-.036.191-.037.187-.039.183-.039.179-.041.175-.042.172-.043.168-.044.163-.045.16-.045.155-.047.152-.047.148-.048.143-.048.139-.05.136-.049.131-.05.126-.051.123-.051.118-.051.114-.052.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.051.07-.052.065-.051.06-.05.056-.051.051-.049.023-.025.023-.024.021-.025.02-.024.019-.024.018-.024.017-.024.015-.023.014-.023.013-.024.012-.022.01-.023.01-.023.008-.022.006-.022.006-.022.004-.021.004-.022.001-.021.001-.021v-4.139l-.077.054-.08.054-.083.054-.085.052-.087.053-.09.051-.093.051-.095.051-.097.05-.1.049-.102.049-.105.048-.106.047-.109.047-.111.046-.114.045-.115.044-.118.044-.12.044-.122.042-.124.042-.126.041-.128.04-.13.039-.132.039-.134.038-.135.037-.138.036-.139.036-.142.035-.143.033-.144.033-.147.033-.148.031-.15.03-.151.03-.153.028-.154.028-.156.027-.158.026-.159.025-.161.024-.162.023-.163.022-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.011-.178.009-.179.009-.179.007-.181.007-.182.005-.182.004-.184.003-.184.002h-.37l-.184-.002-.184-.003-.182-.004-.182-.005-.181-.007-.179-.007-.179-.009-.178-.009-.176-.011-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.022-.162-.023-.161-.024-.159-.025-.157-.026-.156-.027-.155-.028-.153-.028-.151-.03-.15-.03-.148-.031-.146-.033-.145-.033-.143-.033-.141-.035-.14-.036-.137-.036-.136-.037-.134-.038-.132-.039-.13-.039-.128-.04-.126-.041-.124-.042-.122-.043-.12-.043-.117-.044-.116-.044-.113-.046-.112-.046-.109-.046-.106-.047-.105-.048-.102-.049-.1-.049-.097-.05-.095-.051-.093-.051-.09-.051-.087-.053-.085-.052-.083-.054-.08-.054-.077-.054v4.139zm0-5.666v.011l.001.02.003.022.004.021.005.022.006.021.007.022.009.023.01.022.011.023.012.023.013.023.015.023.016.024.017.024.018.023.019.024.021.025.022.024.023.024.024.025.052.05.056.05.061.05.066.051.07.051.075.052.079.051.084.052.088.052.092.052.097.052.102.052.105.051.11.052.114.051.119.051.123.051.127.05.131.05.135.05.139.049.144.048.147.048.152.047.155.046.16.045.163.045.167.043.171.043.176.042.178.04.183.04.187.038.19.037.194.036.197.034.202.033.204.032.209.03.212.028.216.027.219.025.222.024.226.021.23.02.233.018.236.017.24.014.243.012.246.01.249.008.253.006.256.003.259.001.26-.001.257-.003.254-.006.25-.008.247-.01.244-.013.241-.014.237-.016.233-.018.231-.02.226-.022.224-.024.22-.025.216-.027.212-.029.21-.03.205-.032.202-.033.198-.035.194-.036.191-.037.187-.039.183-.039.179-.041.175-.042.172-.043.168-.044.163-.045.16-.045.155-.047.152-.047.148-.048.143-.049.139-.049.136-.049.131-.051.126-.05.123-.051.118-.052.114-.051.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.052.07-.051.065-.051.06-.051.056-.05.051-.049.023-.025.023-.025.021-.024.02-.024.019-.024.018-.024.017-.024.015-.023.014-.024.013-.023.012-.023.01-.022.01-.023.008-.022.006-.022.006-.022.004-.022.004-.021.001-.021.001-.021v-4.153l-.077.054-.08.054-.083.053-.085.053-.087.053-.09.051-.093.051-.095.051-.097.05-.1.049-.102.048-.105.048-.106.048-.109.046-.111.046-.114.046-.115.044-.118.044-.12.043-.122.043-.124.042-.126.041-.128.04-.13.039-.132.039-.134.038-.135.037-.138.036-.139.036-.142.034-.143.034-.144.033-.147.032-.148.032-.15.03-.151.03-.153.028-.154.028-.156.027-.158.026-.159.024-.161.024-.162.023-.163.023-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.01-.178.01-.179.009-.179.007-.181.006-.182.006-.182.004-.184.003-.184.001-.185.001-.185-.001-.184-.001-.184-.003-.182-.004-.182-.006-.181-.006-.179-.007-.179-.009-.178-.01-.176-.01-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.023-.162-.023-.161-.024-.159-.024-.157-.026-.156-.027-.155-.028-.153-.028-.151-.03-.15-.03-.148-.032-.146-.032-.145-.033-.143-.034-.141-.034-.14-.036-.137-.036-.136-.037-.134-.038-.132-.039-.13-.039-.128-.041-.126-.041-.124-.041-.122-.043-.12-.043-.117-.044-.116-.044-.113-.046-.112-.046-.109-.046-.106-.048-.105-.048-.102-.048-.1-.05-.097-.049-.095-.051-.093-.051-.09-.052-.087-.052-.085-.053-.083-.053-.08-.054-.077-.054v4.153zm8.74-8.179l-.257.004-.254.005-.25.008-.247.011-.244.012-.241.014-.237.016-.233.018-.231.021-.226.022-.224.023-.22.026-.216.027-.212.028-.21.031-.205.032-.202.033-.198.034-.194.036-.191.038-.187.038-.183.04-.179.041-.175.042-.172.043-.168.043-.163.045-.16.046-.155.046-.152.048-.148.048-.143.048-.139.049-.136.05-.131.05-.126.051-.123.051-.118.051-.114.052-.11.052-.106.052-.101.052-.096.052-.092.052-.088.052-.083.052-.079.052-.074.051-.07.052-.065.051-.06.05-.056.05-.051.05-.023.025-.023.024-.021.024-.02.025-.019.024-.018.024-.017.023-.015.024-.014.023-.013.023-.012.023-.01.023-.01.022-.008.022-.006.023-.006.021-.004.022-.004.021-.001.021-.001.021.001.021.001.021.004.021.004.022.006.021.006.023.008.022.01.022.01.023.012.023.013.023.014.023.015.024.017.023.018.024.019.024.02.025.021.024.023.024.023.025.051.05.056.05.06.05.065.051.07.052.074.051.079.052.083.052.088.052.092.052.096.052.101.052.106.052.11.052.114.052.118.051.123.051.126.051.131.05.136.05.139.049.143.048.148.048.152.048.155.046.16.046.163.045.168.043.172.043.175.042.179.041.183.04.187.038.191.038.194.036.198.034.202.033.205.032.21.031.212.028.216.027.22.026.224.023.226.022.231.021.233.018.237.016.241.014.244.012.247.011.25.008.254.005.257.004.26.001.26-.001.257-.004.254-.005.25-.008.247-.011.244-.012.241-.014.237-.016.233-.018.231-.021.226-.022.224-.023.22-.026.216-.027.212-.028.21-.031.205-.032.202-.033.198-.034.194-.036.191-.038.187-.038.183-.04.179-.041.175-.042.172-.043.168-.043.163-.045.16-.046.155-.046.152-.048.148-.048.143-.048.139-.049.136-.05.131-.05.126-.051.123-.051.118-.051.114-.052.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.051.07-.052.065-.051.06-.05.056-.05.051-.05.023-.025.023-.024.021-.024.02-.025.019-.024.018-.024.017-.023.015-.024.014-.023.013-.023.012-.023.01-.023.01-.022.008-.022.006-.023.006-.021.004-.022.004-.021.001-.021.001-.021-.001-.021-.001-.021-.004-.021-.004-.022-.006-.021-.006-.023-.008-.022-.01-.022-.01-.023-.012-.023-.013-.023-.014-.023-.015-.024-.017-.023-.018-.024-.019-.024-.02-.025-.021-.024-.023-.024-.023-.025-.051-.05-.056-.05-.06-.05-.065-.051-.07-.052-.074-.051-.079-.052-.083-.052-.088-.052-.092-.052-.096-.052-.101-.052-.106-.052-.11-.052-.114-.052-.118-.051-.123-.051-.126-.051-.131-.05-.136-.05-.139-.049-.143-.048-.148-.048-.152-.048-.155-.046-.16-.046-.163-.045-.168-.043-.172-.043-.175-.042-.179-.041-.183-.04-.187-.038-.191-.038-.194-.036-.198-.034-.202-.033-.205-.032-.21-.031-.212-.028-.216-.027-.22-.026-.224-.023-.226-.022-.231-.021-.233-.018-.237-.016-.241-.014-.244-.012-.247-.011-.25-.008-.254-.005-.257-.004-.26-.001-.26.001z"></path></symbol></defs><defs><symbol id="clock" width="24" height="24"><path transform="scale(.5)" d="M12 2c5.514 0 10 4.486 10 10s-4.486 10-10 10-10-4.486-10-10 4.486-10 10-10zm0-2c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm5.848 12.459c.202.038.202.333.001.372-1.907.361-6.045 1.111-6.547 1.111-.719 0-1.301-.582-1.301-1.301 0-.512.77-5.447 1.125-7.445.034-.192.312-.181.343.014l.985 6.238 5.394 1.011z"></path></symbol></defs><defs><marker id="arrowhead" refX="7.9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs><defs><marker id="crosshead" markerWidth="15" markerHeight="8" orient="auto" refX="4" refY="4.5"><path fill="none" stroke="#000000" stroke-width="1pt" d="M 1,2 L 6,7 M 6,2 L 1,7" style="stroke-dasharray: 0, 0;"></path></marker></defs><defs><marker id="filled-head" refX="15.5" refY="7" markerWidth="20" markerHeight="28" orient="auto"><path d="M 18,7 L9,13 L14,7 L9,1 Z"></path></marker></defs><defs><marker id="sequencenumber" refX="15" refY="15" markerWidth="60" markerHeight="40" orient="auto"><circle cx="15" cy="15" r="6"></circle></marker></defs><text x="319" y="80" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /familyCircle/{fcId}/accept</text><line x1="76" y1="115" x2="561" y2="115" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="797" y="130" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /member/update → membershipStatus=Active</text><line x1="566" y1="165" x2="1028" y2="165" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="319" y="180" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /family-safety/device-protection/enable {msisdn}</text><line x1="76" y1="215" x2="561" y2="215" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="897" y="230" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">eligibility + billing</text><line x1="566" y1="265" x2="1228" y2="265" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="1496" y="280" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /management/subscriptions {subscription_id:MSISDN}</text><line x1="1233" y1="315" x2="1758" y2="315" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="1499" y="330" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">201 (device+user auto-created)</text><line x1="1761" y1="365" x2="1236" y2="365" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="1162" y="380" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">PUT /management/devices/{MSISDN}/filter (7 threats true + contents)</text><line x1="566" y1="415" x2="1758" y2="415" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="1162" y="430" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /management/devices/{MSISDN}/pair-app</text><line x1="566" y1="465" x2="1758" y2="465" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="1165" y="480" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">{token}</text><line x1="1761" y1="515" x2="569" y2="515" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="322" y="530" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">pairing token (app pairs SDK, requests VPN consent)</text><line x1="564" y1="565" x2="79" y2="565" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line></svg></pre>
+<h3>5.3 SOS lifecycle</h3>
+<pre class="mermaid" data-processed="true"><svg id="mermaid-1794811549381" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 981px;" viewBox="-50 -10 981 621" role="graphics-document document" aria-roledescription="sequence"><g><rect x="731" y="535" fill="#eaeaea" stroke="#666" width="150" height="65" name="OTA" rx="3" ry="3" class="actor actor-bottom"></rect><text x="806" y="567.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="806" dy="0">Network OTA</tspan></text></g><g><rect x="347" y="535" fill="#eaeaea" stroke="#666" width="150" height="65" name="BFF" rx="3" ry="3" class="actor actor-bottom"></rect><text x="422" y="567.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="422" dy="0">FS BFF</tspan></text></g><g><rect x="0" y="535" fill="#eaeaea" stroke="#666" width="150" height="65" name="APP" rx="3" ry="3" class="actor actor-bottom"></rect><text x="75" y="567.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="75" dy="0">App</tspan></text></g><g><line id="actor7" x1="806" y1="5" x2="806" y2="535" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-7"><rect x="731" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="OTA" rx="3" ry="3" class="actor actor-top"></rect><text x="806" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="806" dy="0">Network OTA</tspan></text></g></g><g><line id="actor6" x1="422" y1="5" x2="422" y2="535" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-6"><rect x="347" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="BFF" rx="3" ry="3" class="actor actor-top"></rect><text x="422" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="422" dy="0">FS BFF</tspan></text></g></g><g><line id="actor5" x1="75" y1="5" x2="75" y2="535" class="200" stroke-width="0.5px" stroke="#999"></line><g id="root-5"><rect x="0" y="0" fill="#eaeaea" stroke="#666" width="150" height="65" name="APP" rx="3" ry="3" class="actor actor-top"></rect><text x="75" y="32.5" dominant-baseline="central" alignment-baseline="central" class="actor" style="text-anchor: middle; font-size: 16px; font-weight: 400;"><tspan x="75" dy="0">App</tspan></text></g></g><style>#mermaid-1794811549381{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1794811549381 .error-icon{fill:#552222;}#mermaid-1794811549381 .error-text{fill:#552222;stroke:#552222;}#mermaid-1794811549381 .edge-thickness-normal{stroke-width:2px;}#mermaid-1794811549381 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1794811549381 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1794811549381 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1794811549381 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1794811549381 .marker{fill:#666;stroke:#666;}#mermaid-1794811549381 .marker.cross{stroke:#666;}#mermaid-1794811549381 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1794811549381 .actor{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1794811549381 text.actor&gt;tspan{fill:#333;stroke:none;}#mermaid-1794811549381 .actor-line{stroke:#666;}#mermaid-1794811549381 .messageLine0{stroke-width:1.5;stroke-dasharray:none;stroke:#333;}#mermaid-1794811549381 .messageLine1{stroke-width:1.5;stroke-dasharray:2,2;stroke:#333;}#mermaid-1794811549381 #arrowhead path{fill:#333;stroke:#333;}#mermaid-1794811549381 .sequenceNumber{fill:white;}#mermaid-1794811549381 #sequencenumber{fill:#333;}#mermaid-1794811549381 #crosshead path{fill:#333;stroke:#333;}#mermaid-1794811549381 .messageText{fill:#333;stroke:none;}#mermaid-1794811549381 .labelBox{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1794811549381 .labelText,#mermaid-1794811549381 .labelText&gt;tspan{fill:#333;stroke:none;}#mermaid-1794811549381 .loopText,#mermaid-1794811549381 .loopText&gt;tspan{fill:#333;stroke:none;}#mermaid-1794811549381 .loopLine{stroke-width:2px;stroke-dasharray:2,2;stroke:hsl(0, 0%, 83%);fill:hsl(0, 0%, 83%);}#mermaid-1794811549381 .note{stroke:#999;fill:#666;}#mermaid-1794811549381 .noteText,#mermaid-1794811549381 .noteText&gt;tspan{fill:#fff;stroke:none;}#mermaid-1794811549381 .activation0{fill:#f4f4f4;stroke:#666;}#mermaid-1794811549381 .activation1{fill:#f4f4f4;stroke:#666;}#mermaid-1794811549381 .activation2{fill:#f4f4f4;stroke:#666;}#mermaid-1794811549381 .actorPopupMenu{position:absolute;}#mermaid-1794811549381 .actorPopupMenuPanel{position:absolute;fill:#eee;box-shadow:0px 8px 16px 0px rgba(0,0,0,0.2);filter:drop-shadow(3px 5px 2px rgb(0 0 0 / 0.4));}#mermaid-1794811549381 .actor-man line{stroke:hsl(0, 0%, 83%);fill:#eee;}#mermaid-1794811549381 .actor-man circle,#mermaid-1794811549381 line{stroke:hsl(0, 0%, 83%);fill:#eee;stroke-width:2px;}#mermaid-1794811549381 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g></g><defs><symbol id="computer" width="24" height="24"><path transform="scale(.5)" d="M2 2v13h20v-13h-20zm18 11h-16v-9h16v9zm-10.228 6l.466-1h3.524l.467 1h-4.457zm14.228 3h-24l2-6h2.104l-1.33 4h18.45l-1.297-4h2.073l2 6zm-5-10h-14v-7h14v7z"></path></symbol></defs><defs><symbol id="database" fill-rule="evenodd" clip-rule="evenodd"><path transform="scale(.5)" d="M12.258.001l.256.004.255.005.253.008.251.01.249.012.247.015.246.016.242.019.241.02.239.023.236.024.233.027.231.028.229.031.225.032.223.034.22.036.217.038.214.04.211.041.208.043.205.045.201.046.198.048.194.05.191.051.187.053.183.054.18.056.175.057.172.059.168.06.163.061.16.063.155.064.15.066.074.033.073.033.071.034.07.034.069.035.068.035.067.035.066.035.064.036.064.036.062.036.06.036.06.037.058.037.058.037.055.038.055.038.053.038.052.038.051.039.05.039.048.039.047.039.045.04.044.04.043.04.041.04.04.041.039.041.037.041.036.041.034.041.033.042.032.042.03.042.029.042.027.042.026.043.024.043.023.043.021.043.02.043.018.044.017.043.015.044.013.044.012.044.011.045.009.044.007.045.006.045.004.045.002.045.001.045v17l-.001.045-.002.045-.004.045-.006.045-.007.045-.009.044-.011.045-.012.044-.013.044-.015.044-.017.043-.018.044-.02.043-.021.043-.023.043-.024.043-.026.043-.027.042-.029.042-.03.042-.032.042-.033.042-.034.041-.036.041-.037.041-.039.041-.04.041-.041.04-.043.04-.044.04-.045.04-.047.039-.048.039-.05.039-.051.039-.052.038-.053.038-.055.038-.055.038-.058.037-.058.037-.06.037-.06.036-.062.036-.064.036-.064.036-.066.035-.067.035-.068.035-.069.035-.07.034-.071.034-.073.033-.074.033-.15.066-.155.064-.16.063-.163.061-.168.06-.172.059-.175.057-.18.056-.183.054-.187.053-.191.051-.194.05-.198.048-.201.046-.205.045-.208.043-.211.041-.214.04-.217.038-.22.036-.223.034-.225.032-.229.031-.231.028-.233.027-.236.024-.239.023-.241.02-.242.019-.246.016-.247.015-.249.012-.251.01-.253.008-.255.005-.256.004-.258.001-.258-.001-.256-.004-.255-.005-.253-.008-.251-.01-.249-.012-.247-.015-.245-.016-.243-.019-.241-.02-.238-.023-.236-.024-.234-.027-.231-.028-.228-.031-.226-.032-.223-.034-.22-.036-.217-.038-.214-.04-.211-.041-.208-.043-.204-.045-.201-.046-.198-.048-.195-.05-.19-.051-.187-.053-.184-.054-.179-.056-.176-.057-.172-.059-.167-.06-.164-.061-.159-.063-.155-.064-.151-.066-.074-.033-.072-.033-.072-.034-.07-.034-.069-.035-.068-.035-.067-.035-.066-.035-.064-.036-.063-.036-.062-.036-.061-.036-.06-.037-.058-.037-.057-.037-.056-.038-.055-.038-.053-.038-.052-.038-.051-.039-.049-.039-.049-.039-.046-.039-.046-.04-.044-.04-.043-.04-.041-.04-.04-.041-.039-.041-.037-.041-.036-.041-.034-.041-.033-.042-.032-.042-.03-.042-.029-.042-.027-.042-.026-.043-.024-.043-.023-.043-.021-.043-.02-.043-.018-.044-.017-.043-.015-.044-.013-.044-.012-.044-.011-.045-.009-.044-.007-.045-.006-.045-.004-.045-.002-.045-.001-.045v-17l.001-.045.002-.045.004-.045.006-.045.007-.045.009-.044.011-.045.012-.044.013-.044.015-.044.017-.043.018-.044.02-.043.021-.043.023-.043.024-.043.026-.043.027-.042.029-.042.03-.042.032-.042.033-.042.034-.041.036-.041.037-.041.039-.041.04-.041.041-.04.043-.04.044-.04.046-.04.046-.039.049-.039.049-.039.051-.039.052-.038.053-.038.055-.038.056-.038.057-.037.058-.037.06-.037.061-.036.062-.036.063-.036.064-.036.066-.035.067-.035.068-.035.069-.035.07-.034.072-.034.072-.033.074-.033.151-.066.155-.064.159-.063.164-.061.167-.06.172-.059.176-.057.179-.056.184-.054.187-.053.19-.051.195-.05.198-.048.201-.046.204-.045.208-.043.211-.041.214-.04.217-.038.22-.036.223-.034.226-.032.228-.031.231-.028.234-.027.236-.024.238-.023.241-.02.243-.019.245-.016.247-.015.249-.012.251-.01.253-.008.255-.005.256-.004.258-.001.258.001zm-9.258 20.499v.01l.001.021.003.021.004.022.005.021.006.022.007.022.009.023.01.022.011.023.012.023.013.023.015.023.016.024.017.023.018.024.019.024.021.024.022.025.023.024.024.025.052.049.056.05.061.051.066.051.07.051.075.051.079.052.084.052.088.052.092.052.097.052.102.051.105.052.11.052.114.051.119.051.123.051.127.05.131.05.135.05.139.048.144.049.147.047.152.047.155.047.16.045.163.045.167.043.171.043.176.041.178.041.183.039.187.039.19.037.194.035.197.035.202.033.204.031.209.03.212.029.216.027.219.025.222.024.226.021.23.02.233.018.236.016.24.015.243.012.246.01.249.008.253.005.256.004.259.001.26-.001.257-.004.254-.005.25-.008.247-.011.244-.012.241-.014.237-.016.233-.018.231-.021.226-.021.224-.024.22-.026.216-.027.212-.028.21-.031.205-.031.202-.034.198-.034.194-.036.191-.037.187-.039.183-.04.179-.04.175-.042.172-.043.168-.044.163-.045.16-.046.155-.046.152-.047.148-.048.143-.049.139-.049.136-.05.131-.05.126-.05.123-.051.118-.052.114-.051.11-.052.106-.052.101-.052.096-.052.092-.052.088-.053.083-.051.079-.052.074-.052.07-.051.065-.051.06-.051.056-.05.051-.05.023-.024.023-.025.021-.024.02-.024.019-.024.018-.024.017-.024.015-.023.014-.024.013-.023.012-.023.01-.023.01-.022.008-.022.006-.022.006-.022.004-.022.004-.021.001-.021.001-.021v-4.127l-.077.055-.08.053-.083.054-.085.053-.087.052-.09.052-.093.051-.095.05-.097.05-.1.049-.102.049-.105.048-.106.047-.109.047-.111.046-.114.045-.115.045-.118.044-.12.043-.122.042-.124.042-.126.041-.128.04-.13.04-.132.038-.134.038-.135.037-.138.037-.139.035-.142.035-.143.034-.144.033-.147.032-.148.031-.15.03-.151.03-.153.029-.154.027-.156.027-.158.026-.159.025-.161.024-.162.023-.163.022-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.011-.178.01-.179.008-.179.008-.181.006-.182.005-.182.004-.184.003-.184.002h-.37l-.184-.002-.184-.003-.182-.004-.182-.005-.181-.006-.179-.008-.179-.008-.178-.01-.176-.011-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.022-.162-.023-.161-.024-.159-.025-.157-.026-.156-.027-.155-.027-.153-.029-.151-.03-.15-.03-.148-.031-.146-.032-.145-.033-.143-.034-.141-.035-.14-.035-.137-.037-.136-.037-.134-.038-.132-.038-.13-.04-.128-.04-.126-.041-.124-.042-.122-.042-.12-.044-.117-.043-.116-.045-.113-.045-.112-.046-.109-.047-.106-.047-.105-.048-.102-.049-.1-.049-.097-.05-.095-.05-.093-.052-.09-.051-.087-.052-.085-.053-.083-.054-.08-.054-.077-.054v4.127zm0-5.654v.011l.001.021.003.021.004.021.005.022.006.022.007.022.009.022.01.022.011.023.012.023.013.023.015.024.016.023.017.024.018.024.019.024.021.024.022.024.023.025.024.024.052.05.056.05.061.05.066.051.07.051.075.052.079.051.084.052.088.052.092.052.097.052.102.052.105.052.11.051.114.051.119.052.123.05.127.051.131.05.135.049.139.049.144.048.147.048.152.047.155.046.16.045.163.045.167.044.171.042.176.042.178.04.183.04.187.038.19.037.194.036.197.034.202.033.204.032.209.03.212.028.216.027.219.025.222.024.226.022.23.02.233.018.236.016.24.014.243.012.246.01.249.008.253.006.256.003.259.001.26-.001.257-.003.254-.006.25-.008.247-.01.244-.012.241-.015.237-.016.233-.018.231-.02.226-.022.224-.024.22-.025.216-.027.212-.029.21-.03.205-.032.202-.033.198-.035.194-.036.191-.037.187-.039.183-.039.179-.041.175-.042.172-.043.168-.044.163-.045.16-.045.155-.047.152-.047.148-.048.143-.048.139-.05.136-.049.131-.05.126-.051.123-.051.118-.051.114-.052.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.051.07-.052.065-.051.06-.05.056-.051.051-.049.023-.025.023-.024.021-.025.02-.024.019-.024.018-.024.017-.024.015-.023.014-.023.013-.024.012-.022.01-.023.01-.023.008-.022.006-.022.006-.022.004-.021.004-.022.001-.021.001-.021v-4.139l-.077.054-.08.054-.083.054-.085.052-.087.053-.09.051-.093.051-.095.051-.097.05-.1.049-.102.049-.105.048-.106.047-.109.047-.111.046-.114.045-.115.044-.118.044-.12.044-.122.042-.124.042-.126.041-.128.04-.13.039-.132.039-.134.038-.135.037-.138.036-.139.036-.142.035-.143.033-.144.033-.147.033-.148.031-.15.03-.151.03-.153.028-.154.028-.156.027-.158.026-.159.025-.161.024-.162.023-.163.022-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.011-.178.009-.179.009-.179.007-.181.007-.182.005-.182.004-.184.003-.184.002h-.37l-.184-.002-.184-.003-.182-.004-.182-.005-.181-.007-.179-.007-.179-.009-.178-.009-.176-.011-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.022-.162-.023-.161-.024-.159-.025-.157-.026-.156-.027-.155-.028-.153-.028-.151-.03-.15-.03-.148-.031-.146-.033-.145-.033-.143-.033-.141-.035-.14-.036-.137-.036-.136-.037-.134-.038-.132-.039-.13-.039-.128-.04-.126-.041-.124-.042-.122-.043-.12-.043-.117-.044-.116-.044-.113-.046-.112-.046-.109-.046-.106-.047-.105-.048-.102-.049-.1-.049-.097-.05-.095-.051-.093-.051-.09-.051-.087-.053-.085-.052-.083-.054-.08-.054-.077-.054v4.139zm0-5.666v.011l.001.02.003.022.004.021.005.022.006.021.007.022.009.023.01.022.011.023.012.023.013.023.015.023.016.024.017.024.018.023.019.024.021.025.022.024.023.024.024.025.052.05.056.05.061.05.066.051.07.051.075.052.079.051.084.052.088.052.092.052.097.052.102.052.105.051.11.052.114.051.119.051.123.051.127.05.131.05.135.05.139.049.144.048.147.048.152.047.155.046.16.045.163.045.167.043.171.043.176.042.178.04.183.04.187.038.19.037.194.036.197.034.202.033.204.032.209.03.212.028.216.027.219.025.222.024.226.021.23.02.233.018.236.017.24.014.243.012.246.01.249.008.253.006.256.003.259.001.26-.001.257-.003.254-.006.25-.008.247-.01.244-.013.241-.014.237-.016.233-.018.231-.02.226-.022.224-.024.22-.025.216-.027.212-.029.21-.03.205-.032.202-.033.198-.035.194-.036.191-.037.187-.039.183-.039.179-.041.175-.042.172-.043.168-.044.163-.045.16-.045.155-.047.152-.047.148-.048.143-.049.139-.049.136-.049.131-.051.126-.05.123-.051.118-.052.114-.051.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.052.07-.051.065-.051.06-.051.056-.05.051-.049.023-.025.023-.025.021-.024.02-.024.019-.024.018-.024.017-.024.015-.023.014-.024.013-.023.012-.023.01-.022.01-.023.008-.022.006-.022.006-.022.004-.022.004-.021.001-.021.001-.021v-4.153l-.077.054-.08.054-.083.053-.085.053-.087.053-.09.051-.093.051-.095.051-.097.05-.1.049-.102.048-.105.048-.106.048-.109.046-.111.046-.114.046-.115.044-.118.044-.12.043-.122.043-.124.042-.126.041-.128.04-.13.039-.132.039-.134.038-.135.037-.138.036-.139.036-.142.034-.143.034-.144.033-.147.032-.148.032-.15.03-.151.03-.153.028-.154.028-.156.027-.158.026-.159.024-.161.024-.162.023-.163.023-.165.021-.166.02-.167.019-.169.018-.169.017-.171.016-.173.015-.173.014-.175.013-.175.012-.177.01-.178.01-.179.009-.179.007-.181.006-.182.006-.182.004-.184.003-.184.001-.185.001-.185-.001-.184-.001-.184-.003-.182-.004-.182-.006-.181-.006-.179-.007-.179-.009-.178-.01-.176-.01-.176-.012-.175-.013-.173-.014-.172-.015-.171-.016-.17-.017-.169-.018-.167-.019-.166-.02-.165-.021-.163-.023-.162-.023-.161-.024-.159-.024-.157-.026-.156-.027-.155-.028-.153-.028-.151-.03-.15-.03-.148-.032-.146-.032-.145-.033-.143-.034-.141-.034-.14-.036-.137-.036-.136-.037-.134-.038-.132-.039-.13-.039-.128-.041-.126-.041-.124-.041-.122-.043-.12-.043-.117-.044-.116-.044-.113-.046-.112-.046-.109-.046-.106-.048-.105-.048-.102-.048-.1-.05-.097-.049-.095-.051-.093-.051-.09-.052-.087-.052-.085-.053-.083-.053-.08-.054-.077-.054v4.153zm8.74-8.179l-.257.004-.254.005-.25.008-.247.011-.244.012-.241.014-.237.016-.233.018-.231.021-.226.022-.224.023-.22.026-.216.027-.212.028-.21.031-.205.032-.202.033-.198.034-.194.036-.191.038-.187.038-.183.04-.179.041-.175.042-.172.043-.168.043-.163.045-.16.046-.155.046-.152.048-.148.048-.143.048-.139.049-.136.05-.131.05-.126.051-.123.051-.118.051-.114.052-.11.052-.106.052-.101.052-.096.052-.092.052-.088.052-.083.052-.079.052-.074.051-.07.052-.065.051-.06.05-.056.05-.051.05-.023.025-.023.024-.021.024-.02.025-.019.024-.018.024-.017.023-.015.024-.014.023-.013.023-.012.023-.01.023-.01.022-.008.022-.006.023-.006.021-.004.022-.004.021-.001.021-.001.021.001.021.001.021.004.021.004.022.006.021.006.023.008.022.01.022.01.023.012.023.013.023.014.023.015.024.017.023.018.024.019.024.02.025.021.024.023.024.023.025.051.05.056.05.06.05.065.051.07.052.074.051.079.052.083.052.088.052.092.052.096.052.101.052.106.052.11.052.114.052.118.051.123.051.126.051.131.05.136.05.139.049.143.048.148.048.152.048.155.046.16.046.163.045.168.043.172.043.175.042.179.041.183.04.187.038.191.038.194.036.198.034.202.033.205.032.21.031.212.028.216.027.22.026.224.023.226.022.231.021.233.018.237.016.241.014.244.012.247.011.25.008.254.005.257.004.26.001.26-.001.257-.004.254-.005.25-.008.247-.011.244-.012.241-.014.237-.016.233-.018.231-.021.226-.022.224-.023.22-.026.216-.027.212-.028.21-.031.205-.032.202-.033.198-.034.194-.036.191-.038.187-.038.183-.04.179-.041.175-.042.172-.043.168-.043.163-.045.16-.046.155-.046.152-.048.148-.048.143-.048.139-.049.136-.05.131-.05.126-.051.123-.051.118-.051.114-.052.11-.052.106-.052.101-.052.096-.052.092-.052.088-.052.083-.052.079-.052.074-.051.07-.052.065-.051.06-.05.056-.05.051-.05.023-.025.023-.024.021-.024.02-.025.019-.024.018-.024.017-.023.015-.024.014-.023.013-.023.012-.023.01-.023.01-.022.008-.022.006-.023.006-.021.004-.022.004-.021.001-.021.001-.021-.001-.021-.001-.021-.004-.021-.004-.022-.006-.021-.006-.023-.008-.022-.01-.022-.01-.023-.012-.023-.013-.023-.014-.023-.015-.024-.017-.023-.018-.024-.019-.024-.02-.025-.021-.024-.023-.024-.023-.025-.051-.05-.056-.05-.06-.05-.065-.051-.07-.052-.074-.051-.079-.052-.083-.052-.088-.052-.092-.052-.096-.052-.101-.052-.106-.052-.11-.052-.114-.052-.118-.051-.123-.051-.126-.051-.131-.05-.136-.05-.139-.049-.143-.048-.148-.048-.152-.048-.155-.046-.16-.046-.163-.045-.168-.043-.172-.043-.175-.042-.179-.041-.183-.04-.187-.038-.191-.038-.194-.036-.198-.034-.202-.033-.205-.032-.21-.031-.212-.028-.216-.027-.22-.026-.224-.023-.226-.022-.231-.021-.233-.018-.237-.016-.241-.014-.244-.012-.247-.011-.25-.008-.254-.005-.257-.004-.26-.001-.26.001z"></path></symbol></defs><defs><symbol id="clock" width="24" height="24"><path transform="scale(.5)" d="M12 2c5.514 0 10 4.486 10 10s-4.486 10-10 10-10-4.486-10-10 4.486-10 10-10zm0-2c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm5.848 12.459c.202.038.202.333.001.372-1.907.361-6.045 1.111-6.547 1.111-.719 0-1.301-.582-1.301-1.301 0-.512.77-5.447 1.125-7.445.034-.192.312-.181.343.014l.985 6.238 5.394 1.011z"></path></symbol></defs><defs><marker id="arrowhead" refX="7.9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs><defs><marker id="crosshead" markerWidth="15" markerHeight="8" orient="auto" refX="4" refY="4.5"><path fill="none" stroke="#000000" stroke-width="1pt" d="M 1,2 L 6,7 M 6,2 L 1,7" style="stroke-dasharray: 0, 0;"></path></marker></defs><defs><marker id="filled-head" refX="15.5" refY="7" markerWidth="20" markerHeight="28" orient="auto"><path d="M 18,7 L9,13 L14,7 L9,1 Z"></path></marker></defs><defs><marker id="sequencenumber" refX="15" refY="15" markerWidth="60" markerHeight="40" orient="auto"><circle cx="15" cy="15" r="6"></circle></marker></defs><text x="247" y="80" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /sos {familyId, initiatorMsisdn}</text><line x1="76" y1="115" x2="418" y2="115" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="613" y="130" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">SOS Creation (TriggerID)</text><line x1="423" y1="165" x2="802" y2="165" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="616" y="180" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">Outgoing Alarm (Kafka) → responders</text><line x1="805" y1="215" x2="426" y2="215" class="messageLine1" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="stroke-dasharray: 3, 3; fill: none;"></line><text x="247" y="230" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /sos/{id}/acknowledge</text><line x1="76" y1="265" x2="418" y2="265" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="613" y="280" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">SOS Update (AcknowledgedBy, Ts)</text><line x1="423" y1="315" x2="802" y2="315" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="247" y="330" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /sos/{id}/resolve</text><line x1="76" y1="365" x2="418" y2="365" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="613" y="380" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">SOS Update (ResolvedBy, Ts)</text><line x1="423" y1="415" x2="802" y2="415" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="247" y="430" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">POST /sos/{id}/cancel (accidental)</text><line x1="76" y1="465" x2="418" y2="465" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line><text x="613" y="480" text-anchor="middle" dominant-baseline="middle" alignment-baseline="middle" class="messageText" dy="1em" style="font-size: 16px; font-weight: 400;">SOS Cancellation / SOS Alarm Kill (Kafka)</text><line x1="423" y1="515" x2="802" y2="515" class="messageLine0" stroke-width="2" stroke="none" marker-end="url(#arrowhead)" style="fill: none;"></line></svg></pre>
+<hr>
+<h2>6. Gaps / asks (same as Optimized §5)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Gap</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>G1</td>
+<td>No MSISDN → familyId lookup (FSC)</td>
+<td>Network — add <code>family/getByMsisdn</code></td>
+</tr>
+<tr>
+<td>G2</td>
+<td>FSC <code>membershipStatus</code> only Active/Inactive</td>
+<td>Network enum <strong>or</strong> BFF invite store</td>
+</tr>
+<tr>
+<td>G3</td>
+<td>No first-class INVITE/REMIND/RESEND</td>
+<td>BFF + BumbleBee</td>
+</tr>
+<tr>
+<td>G4</td>
+<td>Whalebone live swagger unreachable — confirm schemas/errors</td>
+<td>Whalebone/PBE</td>
+</tr>
+<tr>
+<td>G5</td>
+<td>Safety-event host (OTA vs separate Safety svc)</td>
+<td>Network/Arch</td>
+</tr>
+<tr>
+<td>G6</td>
+<td>Role enum typo <code>SPONSER</code> → <code>SPONSOR</code>?</td>
+<td>Network</td>
+</tr>
+<tr>
+<td>G7</td>
+<td><code>GEOFENCE</code>/<code>INACTIVITY</code> no Network owner</td>
+<td>Product/Arch</td>
+</tr>
+<tr>
+<td>G8</td>
+<td>Public API v2 key custody + 429 limits</td>
+<td>Whalebone/Airtel BE</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>7. BFF orchestration responsibilities (what the layer must own)</h2>
+<ol>
+<li><strong>Invite-state store</strong> — FSC has no invite lifecycle; BFF holds <code>INVITED/DECLINED/LEFT/EXPIRED</code> and writes FSC <code>Active</code> only on ACCEPT.</li>
+<li><strong>ID mapping</strong> — <code>fcId↔familyId</code>, <code>memberId</code>, <code>MSISDN=deviceID=subscriptionID</code>.</li>
+<li><strong>GET-merge-PUT</strong> for every Whalebone filter/app/schedule write (preserve threats + other rules).</li>
+<li><strong>Idempotency</strong> — create-circle and subscription-create must be idempotent (pre-check existence).</li>
+<li><strong>Retry per failed step</strong> (not whole journey): subscription-create success → wait for device; 409 → GET existing; policy PUT fail → re-PUT full policy; pairing fail → retry; 429 → back off.</li>
+<li><strong>Fan-out/notify</strong> via Network OTA Outgoing Alarm (Kafka) / BumbleBee / IVR.</li>
+<li><strong>Non-Airtel degradation</strong> (<code>airtelCustomer=1</code>): app/SMS check-in + SOS only; no network signals.</li>
+</ol>
+<hr>
+<p><em>Reconstructed from Family_Member_API_Documentation (Network FSC), API_Doc.pptx (Network OTA engine) and Airtel_SDK_HLD (Whalebone Aura). Whalebone paths are HLD-derived — validate against the live device-management swagger (<code>apidocs.whalebone.io/devicemanagement</code>) before coding.</em></p>
+</article></div></body></html>

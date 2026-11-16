@@ -1,0 +1,700 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Orchestration — Optimized</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Orchestration Layer: Upstream ↔ Downstream Mapping (OPTIMIZED)</h1>
+<p><strong>What this is:</strong> the <strong>Channel BE / Family Safety BFF</strong> contract — how the <strong>upstream</strong> (Airtel app + other services) binds to the two <strong>downstream</strong> systems, <strong>Network</strong> and <strong>Whalebone</strong>, with API surface <strong>optimized</strong> (duplicates collapsed via <code>action</code>/<code>type</code>/<code>eventType</code> enums + query params).</p>
+<p><strong>Companion doc:</strong> <code>Orchestration-Layer-Mapping-Detailed.md</code> = same mapping <strong>without</strong> optimization (every intent as its own endpoint, field-level, with sequences).</p>
+<p><strong>Date:</strong> 2026-11-16 · <strong>Status:</strong> Draft for Network + Whalebone binding review</p>
+<pre><code>        UPSTREAM (GET/POST/consume)                         DOWNSTREAM
+┌───────────────────────────────┐        ┌───────────────────────────────────────────┐
+│ Airtel App / Thanks App        │        │ NETWORK                                     │
+│ user-data-aggregator (UDA)     │  REST  │  • FSC family/member CRUD   (/fsc)          │
+│ other Airtel services          │◄──────►│  • OTA event engine (check-in/SOS/alarm/    │
+└───────────────┬───────────────┘        │    device-status/safety-report, IVR, Kafka) │
+                │                         ├───────────────────────────────────────────┤
+     ┌──────────▼───────────┐   REST/     │ WHALEBONE  (via Propositions BE for billing)│
+     │  CHANNEL BE / FS BFF  │──provision─►│  • Management /3 (subscription, filter,     │
+     │  orchestration layer  │             │    applications, scheduled-filter, lists,   │
+     └──────────┬───────────┘             │    reports, pair-app, suspend/activate)     │
+                │                          │  • Public API v2 (/events stats &amp; timeline) │
+                │  async                   ├───────────────────────────────────────────┤
+                └─────────────────────────►│ Propositions BE · BumbleBee (notify/IVR)    │
+                                           └───────────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2>1. Downstream systems in play</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Downstream</th>
+<th>Base</th>
+<th>Owns</th>
+<th>Does NOT own</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>D1</td>
+<td><strong>Network — FSC</strong></td>
+<td><code>/fsc</code></td>
+<td>Family + member CRUD, roles</td>
+<td>invite lifecycle states (only Active/Inactive)</td>
+</tr>
+<tr>
+<td>D2</td>
+<td><strong>Network — OTA event engine</strong></td>
+<td>JSON sync + Kafka</td>
+<td>Check-in, SOS, alarms/notifications, device-status store/retrieve, safety report, IVR</td>
+<td><strong>parental, content filter, geofencing, device safety, app install/uninstall, ad blocking</strong> (explicit note)</td>
+</tr>
+<tr>
+<td>D3</td>
+<td><strong>Whalebone — Management</strong></td>
+<td>Retail API <code>/3</code> → <code>/management</code></td>
+<td>Subscription lifecycle, threat/content filter, app blocking, scheduled filter, allow/deny lists, email/SMS reports, SDK pairing</td>
+<td>—</td>
+</tr>
+<tr>
+<td>D4</td>
+<td><strong>Whalebone — Public API v2</strong></td>
+<td><code>/whalebone/2</code> → <code>/events</code></td>
+<td>Block stats, timelines, recent-events</td>
+<td>writes</td>
+</tr>
+<tr>
+<td>D5</td>
+<td><strong>Propositions BE</strong></td>
+<td>—</td>
+<td>Billing/eligibility → triggers Whalebone subscription create/suspend/activate</td>
+<td>—</td>
+</tr>
+<tr>
+<td>D6</td>
+<td><strong>BumbleBee / IVR</strong></td>
+<td>—</td>
+<td>Push/SMS/voice dispatch</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>ID convention (Whalebone):</strong> <code>deviceID == subscriptionID == MSISDN</code>. Whalebone <strong>auto-creates</strong> device + user on subscription create; Airtel <strong>never</strong> calls <code>POST /management/devices</code>, <code>POST /management/users</code>, or any <code>DELETE</code>.</p>
+</blockquote>
+<hr>
+<h2>2. Optimized upstream contract (freeze this for the App)</h2>
+<p>Collapse related operations into <strong>one contract + enum</strong>. 10 app intents → <strong>~9 upstream contracts</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Optimized upstream API</th>
+<th>Enum / params</th>
+<th>Replaces</th>
+<th>Primary downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>U0</strong></td>
+<td><em>(UDA field)</em> profile returns <code>familySafetyFlag</code> + <code>fcId</code></td>
+<td>—</td>
+<td>separate "am I in a circle?" hop</td>
+<td>Network FSC lookup (⚠ by-MSISDN gap)</td>
+</tr>
+<tr>
+<td><strong>U1</strong></td>
+<td><code>GET /familyCircle/{fcId}</code></td>
+<td>—</td>
+<td>—</td>
+<td><code>GET /fsc/.../family/get</code></td>
+</tr>
+<tr>
+<td><strong>U2</strong></td>
+<td><code>POST /familyCircle</code></td>
+<td>—</td>
+<td>create (don't hide in GET)</td>
+<td><code>POST /fsc/.../family/create</code></td>
+</tr>
+<tr>
+<td><strong>U3</strong></td>
+<td><code>POST /familyCircle/{fcId}/members</code></td>
+<td><code>action: INVITE | RESEND | REMIND</code></td>
+<td>3 invite APIs</td>
+<td><code>POST /fsc/.../member/add</code> + BFF invite-state + notify</td>
+</tr>
+<tr>
+<td><strong>U4</strong></td>
+<td><code>POST /familyCircle/statusUpdate</code></td>
+<td><code>action: ACCEPT | DECLINE | LEFT | REMOVE</code> (+<code>ROLE_UPDATE</code>)</td>
+<td>4–5 lifecycle APIs</td>
+<td><code>member/update | delete | role/update</code></td>
+</tr>
+<tr>
+<td><strong>U5</strong></td>
+<td><code>GET /family-safety/protection-status?msisdn=</code></td>
+<td>—</td>
+<td>—</td>
+<td>Whalebone GET device/subscription + Public API</td>
+</tr>
+<tr>
+<td><strong>U6</strong></td>
+<td><code>POST /family-safety/protection</code></td>
+<td><code>type: DEVICE_PROTECTION | NETWORK_PROTECTION</code> + <code>action: ENABLE | DISABLE</code></td>
+<td>2 toggle APIs</td>
+<td>Whalebone subscription + <code>PUT device/{id}/filter</code> / Network cfg</td>
+</tr>
+<tr>
+<td><strong>U7</strong></td>
+<td><code>POST /safety-events</code></td>
+<td><code>eventType: CHECK_IN | SOS | FRAUD | GEOFENCE | INACTIVITY</code> + body</td>
+<td>5 path variants</td>
+<td>Network OTA Check-in/SOS/Alarm create</td>
+</tr>
+<tr>
+<td><strong>U8</strong></td>
+<td><code>POST /safety-events/{id}/responses</code></td>
+<td><code>action: REPLY | ACKNOWLEDGE | END | CANCEL | NOTIFY | ESCALATE</code></td>
+<td>6 APIs</td>
+<td>Network OTA Check-in Response / SOS Update/Cancel/Kill / Outgoing Alarm</td>
+</tr>
+<tr>
+<td><strong>U9</strong></td>
+<td><code>GET /safety-events</code></td>
+<td><code>?id=</code> | <code>?circleId=</code> | <code>?msisdn=</code></td>
+<td>3 GET shapes</td>
+<td>Network OTA Check-in / SOS / Device-status retrieve</td>
+</tr>
+</tbody></table>
+<h3>Parental &amp; Device-Safety group (all → Whalebone) — optimized</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Optimized upstream API</th>
+<th>Enum / params</th>
+<th>Whalebone downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>U10</strong></td>
+<td><code>PUT /family-safety/parental/{msisdn}/content</code></td>
+<td><code>contents[]{type, blocked}</code></td>
+<td><code>PUT /management/devices/{id}/filter</code> (GET-merge-PUT; threats stay true)</td>
+</tr>
+<tr>
+<td><strong>U11</strong></td>
+<td><code>PUT /family-safety/parental/{msisdn}/apps</code></td>
+<td><code>applications[]{app_id, blocked}</code></td>
+<td><code>PUT /management/devices/{id}/applications</code></td>
+</tr>
+<tr>
+<td><strong>U12</strong></td>
+<td><code>PUT /family-safety/parental/{msisdn}/schedule</code></td>
+<td><code>contents[]{type, blocking_schedule}</code></td>
+<td><code>PUT /management/devices/{id}/scheduled-filter</code></td>
+</tr>
+<tr>
+<td><strong>U13</strong></td>
+<td><code>POST /family-safety/parental/{msisdn}/list</code></td>
+<td><code>listType: WHITELIST | BLACKLIST</code> + <code>op: ADD | REMOVE</code> + <code>domains[]</code></td>
+<td><code>POST /management/subscriptions/{id}/{listType}[/delete]</code></td>
+</tr>
+<tr>
+<td><strong>U14</strong></td>
+<td><code>PUT /family-safety/parental/{msisdn}/reports</code></td>
+<td><code>reports{}, alerts{}</code></td>
+<td><code>PUT /management/users/{id}/reports</code></td>
+</tr>
+<tr>
+<td><strong>U15</strong></td>
+<td><code>GET /family-safety/stats?msisdn=</code></td>
+<td><code>view: THREATS | PER_MEMBER | TOP_SITES | TREND | RECENT</code></td>
+<td>Public API v2 <code>/events/stats</code> · <code>/events/timeline</code> · <code>/events/search</code></td>
+</tr>
+<tr>
+<td><strong>U16</strong></td>
+<td><code>POST /family-safety/device/{msisdn}/pair</code></td>
+<td>—</td>
+<td><code>POST /management/devices/{id}/pair-app</code> → <code>{token}</code></td>
+</tr>
+</tbody></table>
+<p><strong>Net optimized surface: ~17 upstream contracts</strong> covering the full App + parental suite across both downstreams (vs ~35+ naive).</p>
+<hr>
+<h2>3. Optimized binding detail (U0–U9)</h2>
+<h3>U0 — UDA enrichment: <code>familySafetyFlag</code> + <code>fcId</code></h3>
+<ul>
+<li><strong>Upstream:</strong> additive fields on the existing user-data-aggregator profile response — <code>familySafetyFlag: boolean</code>, <code>fcId: string|null</code>, optional <code>role</code>, <code>membershipStatus</code>.</li>
+<li><strong>Downstream:</strong> needs <strong>MSISDN → familyId</strong> on Network FSC. <strong>⚠ GAP G1</strong> — FSC Swagger only has <code>GET /family/get?familyId=</code>. Ask Network for <code>GET /api/v1/family/getByMsisdn?msisdn=</code> (or resolve via Digital Profile / UCM party index) before UDA can set the flag.</li>
+</ul>
+<h3>U1 — <code>GET /familyCircle/{fcId}</code></h3>
+<ul>
+<li>→ <code>GET /fsc/api/v1/family/get?familyId={fcId}</code> (response embeds <code>familyMemberPojos</code>); optional compose <code>GET /fsc/api/v1/member/getAll?familyId={fcId}</code>.</li>
+<li><strong>BFF maps:</strong> <code>familyId ↔ fcId</code>; roles <code>ADMIN/SUB_ADMIN/SPONSER/MEMBER</code>; status <code>Active/Inactive</code>.</li>
+</ul>
+<h3>U2 — <code>POST /familyCircle</code></h3>
+<ul>
+<li>→ <code>POST /fsc/api/v1/family/create</code> body <code>RequestFamilyPojo{familyName, familyDescription, familyStatus:"Active", familyMemberPojos?[]}</code>.</li>
+<li><strong>Idempotent-create:</strong> pre-check "already in a circle" (needs G1); if exists, return existing <code>fcId</code>. Do <strong>not</strong> create inside a GET.</li>
+</ul>
+<h3>U3 — <code>POST /familyCircle/{fcId}/members</code> + <code>action</code></h3>
+<table>
+<thead>
+<tr>
+<th>action</th>
+<th>BFF rule</th>
+<th>Network FSC</th>
+<th>Side effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>INVITE</code></td>
+<td>not in circle · size &lt; max · not already INVITED</td>
+<td><code>POST /member/add</code> (membershipStatus pending-equivalent)</td>
+<td>Push+SMS via BumbleBee / Network alarm</td>
+</tr>
+<tr>
+<td><code>RESEND</code></td>
+<td>prior EXPIRED/stale, or declined-then-reinvite</td>
+<td><code>member/update</code> + new token</td>
+<td>new token; invalidate old</td>
+</tr>
+<tr>
+<td><code>REMIND</code></td>
+<td>still INVITED within validity</td>
+<td><strong>no FSC write</strong> (or soft <code>member/update</code> touch)</td>
+<td>notify only; <strong>do not restart</strong> validity window</td>
+</tr>
+</tbody></table>
+<p><strong>⚠ GAP G2/G3:</strong> FSC <code>membershipStatus</code> only allows <code>Active/Inactive</code> — no <code>INVITED/PENDING/DECLINED/LEFT</code>. Either Network extends the enum, or the <strong>BFF owns the invite-state store</strong> and writes FSC only as <code>Active</code> after <code>ACCEPT</code>.</p>
+<h3>U4 — <code>POST /familyCircle/statusUpdate</code> + <code>action</code></h3>
+<table>
+<thead>
+<tr>
+<th>action</th>
+<th>Network FSC</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ACCEPT</code></td>
+<td><code>POST /member/update</code> → <code>membershipStatus=Active</code> (or <code>member/add</code> if invite was BFF-only)</td>
+</tr>
+<tr>
+<td><code>DECLINE</code></td>
+<td><code>member/update → Inactive</code> or <code>member/delete</code> (prefer soft if Network adds DECLINED)</td>
+</tr>
+<tr>
+<td><code>LEFT</code></td>
+<td><code>member/delete</code> or update + leave workflow (admin-approval path may sit in BFF under parental lock)</td>
+</tr>
+<tr>
+<td><code>REMOVE</code></td>
+<td><code>POST /member/delete?familyId&amp;memberId</code> (admin force; de-provision protection via Propositions BE/Whalebone as 2nd hop)</td>
+</tr>
+<tr>
+<td><code>ROLE_UPDATE</code> <em>(optional, same API)</em></td>
+<td><code>POST /member/role/update?familyId&amp;familyMemberRole&amp;memberId</code></td>
+</tr>
+</tbody></table>
+<h3>U5 — <code>GET /family-safety/protection-status?msisdn=</code></h3>
+<ul>
+<li>Compose <code>{ deviceProtection: ON|OFF|SUSPENDED, networkProtection: ON|OFF|SUSPENDED, licenseValid, devicePaired }</code>.</li>
+<li><strong>Downstream:</strong> Whalebone <code>GET /management/devices/{msisdn}</code> (+ subscription state) and, if separate, the Network safety-toggle state. Live protection state also inferable from Public API v2.</li>
+</ul>
+<h3>U6 — <code>POST /family-safety/protection</code> + <code>type</code> + <code>action</code></h3>
+<table>
+<thead>
+<tr>
+<th>type + action</th>
+<th>Downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DEVICE_PROTECTION</code> + <code>ENABLE</code></td>
+<td>Propositions BE → Whalebone <code>POST /management/subscriptions</code> (first enablement; auto-creates device+user) → then <code>PUT /management/devices/{id}/filter</code> with all 7 threats <code>true</code></td>
+</tr>
+<tr>
+<td><code>DEVICE_PROTECTION</code> + <code>DISABLE</code></td>
+<td>Whalebone <code>POST /management/subscriptions/{id}/suspend</code> (no body)</td>
+</tr>
+<tr>
+<td><code>NETWORK_PROTECTION</code> + <code>ENABLE/DISABLE</code></td>
+<td>Network safety config (fraud/reachability signal enablement)</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>Toggle = config, not a product order</strong> (EA decision). Re-enable on renewal = <code>POST /management/subscriptions/{id}/activate</code>.</li>
+</ul>
+<h3>U7 — <code>POST /safety-events</code> + <code>eventType</code></h3>
+<table>
+<thead>
+<tr>
+<th>eventType</th>
+<th>Network OTA downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CHECK_IN</code></td>
+<td><strong>Check-in Create</strong> {TriggerID, FamilyID, InitiatorMSISDN, TargetMSISDN, ScheduleType(OneTime/Periodic), ScheduleTime}</td>
+</tr>
+<tr>
+<td><code>SOS</code></td>
+<td><strong>SOS Creation</strong> {TriggerID, FamilyID, InitiatorMSISDN}</td>
+</tr>
+<tr>
+<td><code>FRAUD</code></td>
+<td><strong>Incoming Alarm</strong> {AlarmID, InitiatedBy, TargetType, Target MSISDN/FamilyID, AlarmType} (Network fraud/Presidential-alert feed)</td>
+</tr>
+<tr>
+<td><code>GEOFENCE</code> / <code>INACTIVITY</code></td>
+<td><strong>⚠ GAP G7</strong> — Network PPT explicitly excludes geofencing &amp; device-status-driven alerts. Owner TBD (BFF-computed from device-status, or out of MVP).</td>
+</tr>
+</tbody></table>
+<ul>
+<li>Prefer <strong>body fields</strong> over <code>POST /safety-event/{msisdn}/{targetId}</code> path params so one route serves all types.</li>
+</ul>
+<h3>U8 — <code>POST /safety-events/{id}/responses</code> + <code>action</code></h3>
+<table>
+<thead>
+<tr>
+<th>action</th>
+<th>Meaning</th>
+<th>Network OTA downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>REPLY</code></td>
+<td>check-in response (IM_OK/NEED_HELP/CALL_ME)</td>
+<td><strong>Check-in Response</strong> {TriggerID, CheckInTimestamp, CheckInResponse}</td>
+</tr>
+<tr>
+<td><code>ACKNOWLEDGE</code></td>
+<td>SOS acknowledged</td>
+<td><strong>SOS Update</strong> {TriggerID, AcknowledgedBy, Timestamp}</td>
+</tr>
+<tr>
+<td><code>END</code></td>
+<td>SOS "I'm safe" / resolved</td>
+<td><strong>SOS Update</strong> {ResolvedBy, Timestamp}</td>
+</tr>
+<tr>
+<td><code>CANCEL</code></td>
+<td>accidental SOS</td>
+<td><strong>SOS Cancellation</strong> {TriggerID}</td>
+</tr>
+<tr>
+<td><code>NOTIFY</code></td>
+<td>fan-out</td>
+<td><strong>Outgoing Alarm (Kafka)</strong> / BumbleBee</td>
+</tr>
+<tr>
+<td><code>ESCALATE</code></td>
+<td>force next step</td>
+<td><strong>Outgoing Alarm</strong> / IVR; <strong>SOS Alarm Kill (Kafka)</strong> to stop</td>
+</tr>
+</tbody></table>
+<ul>
+<li>BFF validates which <code>action</code> is legal for the event's <code>eventType</code> + current state.</li>
+</ul>
+<h3>U9 — <code>GET /safety-events?id|circleId|msisdn</code></h3>
+<table>
+<thead>
+<tr>
+<th>scope</th>
+<th>Network OTA downstream</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>?id=</code></td>
+<td>Check-in Status Check / SOS Status Check by TriggerID</td>
+</tr>
+<tr>
+<td><code>?circleId=</code></td>
+<td>…by FamilyID (history)</td>
+</tr>
+<tr>
+<td><code>?msisdn=</code></td>
+<td>…by Initiator MSISDN, or <strong>Device Status Retrieve</strong> {MSISDN/FamilyID}</td>
+</tr>
+</tbody></table>
+<ul>
+<li>Exactly one scope param; BFF validates mutual exclusivity.</li>
+</ul>
+<hr>
+<h2>4. Optimization summary (what we collapsed)</h2>
+<table>
+<thead>
+<tr>
+<th>Before (naive)</th>
+<th>After</th>
+<th>Saving</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>invite + resend + remind</td>
+<td>1 <code>POST …/members</code> + <code>action</code></td>
+<td>−2</td>
+</tr>
+<tr>
+<td>accept + decline + leave + remove (+role)</td>
+<td>1 <code>statusUpdate</code> + <code>action</code></td>
+<td>−3 (−4)</td>
+</tr>
+<tr>
+<td>device-protection + network-protection</td>
+<td>1 <code>POST /protection</code> + <code>type</code></td>
+<td>−1</td>
+</tr>
+<tr>
+<td>safety create per type (×5 paths)</td>
+<td>1 <code>POST /safety-events</code> + <code>eventType</code></td>
+<td>−4</td>
+</tr>
+<tr>
+<td>reply/ack/end/cancel/notify/escalate</td>
+<td>1 <code>/responses</code> + <code>action</code></td>
+<td>−5</td>
+</tr>
+<tr>
+<td>get by id / circle / msisdn</td>
+<td>1 <code>GET /safety-events</code> + query</td>
+<td>−2</td>
+</tr>
+<tr>
+<td>whitelist add/remove + blacklist add/remove</td>
+<td>1 <code>POST …/list</code> + <code>listType</code>+<code>op</code></td>
+<td>−3</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. Gaps / asks to close with Network &amp; Whalebone</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Gap</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>G1</td>
+<td>No <strong>MSISDN → familyId</strong> lookup in FSC Swagger (blocks UDA flag)</td>
+<td>Network — add <code>GET /family/getByMsisdn</code></td>
+</tr>
+<tr>
+<td>G2</td>
+<td>FSC <code>membershipStatus</code> only <code>Active/Inactive</code> — no invite lifecycle</td>
+<td>Network enum <strong>or</strong> BFF-owned invite store</td>
+</tr>
+<tr>
+<td>G3</td>
+<td>No first-class INVITE/REMIND/RESEND on FSC</td>
+<td>BFF orchestration + BumbleBee; FSC add/update only</td>
+</tr>
+<tr>
+<td>G4</td>
+<td>Whalebone <strong>live swagger</strong> (<code>apidocs.whalebone.io/devicemanagement</code>) not reachable here; contract reconstructed from SDK HLD — confirm exact request/response schemas &amp; error codes</td>
+<td>Whalebone / PBE</td>
+</tr>
+<tr>
+<td>G5</td>
+<td>Safety-event host: Network OTA engine vs separate Safety service — confirm single owner</td>
+<td>Network / Architecture</td>
+</tr>
+<tr>
+<td>G6</td>
+<td>Role enum typo <strong>SPONSER</strong> — confirm intended <code>SPONSOR</code></td>
+<td>Network</td>
+</tr>
+<tr>
+<td>G7</td>
+<td><code>GEOFENCE</code> / <code>INACTIVITY</code> have <strong>no Network owner</strong> (PPT excludes them)</td>
+<td>Product / Architecture</td>
+</tr>
+<tr>
+<td>G8</td>
+<td>Whalebone Public API v2 auth (<code>Wb-Access-Key</code> + <code>Wb-Secret-Key</code>) held by Airtel BE only — confirm key custody &amp; 429 limits</td>
+<td>Whalebone / Airtel BE</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. Appendix — downstream API reference (as consumed)</h2>
+<h3>6A. Network FSC (<code>/fsc</code>) — Swagger 2.0</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Body / query</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>POST</td>
+<td><code>/api/v1/family/create</code></td>
+<td><code>RequestFamilyPojo</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/family/get</code></td>
+<td><code>?familyId=</code> → <code>ResponseFamilyPojo</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/family/update</code></td>
+<td><code>?familyId=</code> + <code>RequestFamilyPojo</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/member/add</code></td>
+<td><code>RequestFamilyMemberPojo</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/member/delete</code></td>
+<td><code>?familyId=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/member/get</code></td>
+<td><code>?familyId=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/member/getAll</code></td>
+<td><code>?familyId=</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/member/role/update</code></td>
+<td><code>?familyId=&amp;familyMemberRole=&amp;memberId=</code> (ADMIN/SUB_ADMIN/SPONSER/MEMBER)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/member/update</code></td>
+<td><code>?memberId=</code> + <code>RequestFamilyMemberPojo</code></td>
+</tr>
+</tbody></table>
+<p><code>RequestFamilyMemberPojo</code>: <code>airtelCustomer(0=Airtel,1=other)</code>, <code>circleMemberRole</code>, <code>familyId?</code>, <code>membershipId(0=new)</code>, <code>membershipStatus(Active/Inactive)</code>, <code>msisdn</code>. Envelope: <code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>.</p>
+<h3>6B. Network OTA event engine (JSON sync + Kafka) — from API PPT</h3>
+<p>Sync: Circle Create/End · Member Add/Del/Update/Active/Inactive · Role Mod. Events: Incoming Alarm (Presidential) · Outgoing Alarm (Kafka) · SOS Alarm Kill (Kafka) · Check-in Create/Status-Update/Response/Status-Check · SOS Creation/Cancellation/Update/Status-Check · Device Status Store/Retrieve · Safety Report Retrieve · IVR. <strong>Excludes:</strong> device-status notifications, parental, content filter, geofencing, device safety, app install/uninstall, ad blocking.</p>
+<h3>6C. Whalebone — Management (Retail API <code>/3</code>) — from SDK HLD</h3>
+<p><code>deviceID == subscriptionID == MSISDN</code>. Auth: Airtel tenant API keys (BE only).</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>POST</td>
+<td><code>/management/subscriptions</code></td>
+<td>First enablement — body <code>{subscription_id: MSISDN}</code> → 201; auto-creates device+user</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/management/subscriptions/{id}/suspend</code></td>
+<td>Disable (no body)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/management/subscriptions/{id}/activate</code></td>
+<td>Re-enable on renewal (no body)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/management/devices/{id}</code></td>
+<td>Device details</td>
+</tr>
+<tr>
+<td>GET/PUT</td>
+<td><code>/management/devices/{id}/filter</code></td>
+<td>Threat+content filter (7 threats; GET-merge-PUT; omitted types → unblocked)</td>
+</tr>
+<tr>
+<td>GET/PUT</td>
+<td><code>/management/devices/{id}/applications</code></td>
+<td>App blocking <code>[{application_id, blocked}]</code></td>
+</tr>
+<tr>
+<td>GET/PUT</td>
+<td><code>/management/devices/{id}/scheduled-filter</code></td>
+<td><code>contents[].blocking_schedule.{day:[{start,end}]}</code></td>
+</tr>
+<tr>
+<td>GET/POST</td>
+<td><code>/management/subscriptions/{id}/{listType}</code></td>
+<td>Allow/deny read/add (<code>whitelist</code>|<code>blacklist</code>), <code>?page=0&amp;page_size=200</code>, body <code>{domains:[]}</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/management/subscriptions/{id}/{listType}/delete</code></td>
+<td>Remove domains <code>{domains:[]}</code></td>
+</tr>
+<tr>
+<td>GET/PUT</td>
+<td><code>/management/users/{id}/reports</code></td>
+<td>Email/SMS <code>{reports{enabled,period,email,phone}, alerts{…}}</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/management/devices/{id}/pair-app</code></td>
+<td>One-time SDK pairing token → <code>{pairing_response:{token}}</code></td>
+</tr>
+</tbody></table>
+<p>Airtel <strong>never</strong> calls <code>POST /management/devices</code>, <code>POST /management/users</code>, or <code>DELETE</code> (Whalebone auto-creates and auto-deletes after retention).</p>
+<h3>6D. Whalebone — Public API v2 (stats) — from SDK HLD</h3>
+<p>Base <code>https://[Airtel-hosted]/whalebone/2</code> · headers <code>Wb-Access-Key</code> + <code>Wb-Secret-Key</code> · <code>{MSISDN}=device_id</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Portal widget</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GET</td>
+<td><code>/events/stats?device_id={M}&amp;action=block&amp;aggregate=threat_type&amp;days=30</code></td>
+<td>Threats blocked by type</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/events/stats?device_id={A}&amp;device_id={B}&amp;action=block&amp;aggregate=device_id&amp;days=30</code></td>
+<td>Per-member number</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/events/stats?device_id={M}&amp;action=block&amp;aggregate=domain&amp;days=30</code></td>
+<td>Top blocked sites (10)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/events/timeline?device_id={M}&amp;action=block&amp;interval=day&amp;days=30</code></td>
+<td>Trend chart</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/events/search?device_id={M}&amp;action=block&amp;days=7&amp;sort=desc</code></td>
+<td>Recent blocked (scroll=true)</td>
+</tr>
+</tbody></table>
+<p>Rules: always pass <code>days</code> (max 220); cache 24 h per MSISDN; back off on 429.
+<strong>Live swagger:</strong> <code>https://apidocs.whalebone.io/devicemanagement/#/</code> (confirm schemas — not reachable from this build).</p>
+<hr>
+<p><em>Reconstructed from Family_Member_API_Documentation (Network FSC), API_Doc.pptx (Network OTA engine) and Airtel_SDK_HLD (Whalebone Aura). Whalebone paths are HLD-derived; validate against the live device-management swagger before coding. Optimized surface is a recommended freeze — see the Detailed companion for the 1:1 un-optimized mapping.</em></p>
+</article></div></body></html>
