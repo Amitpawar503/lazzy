@@ -1,0 +1,263 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ADR — Family Safety Orchestrator</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>ADR‑001 — Family Safety as a separate orchestration microservice</h1>
+<p><strong>Status:</strong> Proposed · <strong>Date:</strong> 2026-11-16 · <strong>Decision owner:</strong> Architecture
+<strong>Decision:</strong> Build Family Safety as a <strong>new, independent CX platform service</strong> (an orchestration layer / BFF) — <strong>not</strong> embedded in, and <strong>not</strong> split across, <code>cx-users</code> and <code>cx-network</code>.</p>
+<hr>
+<h2>1. Context</h2>
+<p>Family Safety is <strong>new functionality</strong> (Safety Circle, invites, check-in, SOS, device-status, fraud alerts, device &amp; network protection, parental controls). It must:</p>
+<ul>
+<li>talk to <strong>two downstream systems</strong> that are new integrations for CX — <strong>Network</strong> (FSC family/member + OTA events) and <strong>Whalebone</strong> (device safety / parental / stats);</li>
+<li>serve <strong>multiple upstreams</strong> — Thanks App, the user-data-aggregator (profile enrich), and other CX services.</li>
+</ul>
+<p>A suggestion on the table is to <strong>reuse the existing CX services</strong> — put some Family Safety APIs in <code>cx-users</code> and some in <code>cx-network</code>. This ADR evaluates that against standing up a <strong>dedicated Family Safety orchestrator</strong>.</p>
+<h3>The three existing CX services (for reference)</h3>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Job</th>
+<th>Talks to</th>
+<th>Does <strong>not</strong> do</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>cx-users</strong></td>
+<td>Customer identity / profile / consent (DND)</td>
+<td>UCM (profile), UCC Consent, Ads</td>
+<td>Router control, carts, Family Safety, Whalebone</td>
+</tr>
+<tr>
+<td><strong>cx-network</strong></td>
+<td>Home <strong>router / Wi-Fi</strong> (AirFiber/DSL) experience</td>
+<td>Device Nucleus, Digital Profile (via CXUMConnector)</td>
+<td>UCM profile product, Family Circle, SOS, Whalebone</td>
+</tr>
+<tr>
+<td><strong>cx-user-data-aggregator (UDA)</strong></td>
+<td>Journey aggregator (fan-out → one screen)</td>
+<td>Digital Profile, UCM, CXUsers, Orders, Plans, Billing, POQ, …</td>
+<td>Owns router APIs; does <strong>not</strong> call cx-network</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>Naming trap:</strong> <code>cx-network</code> (home router) ≠ Family Safety <strong>"Network FSC"</strong> (telecom family/safety-circle). Same word, different system.</p>
+</blockquote>
+<hr>
+<h2>2. Options considered</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Option</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A</td>
+<td><strong>Embed Family Safety into <code>cx-network</code></strong></td>
+<td>❌ Rejected — wrong domain (home router), naming trap, blast radius</td>
+</tr>
+<tr>
+<td>B</td>
+<td><strong>Split Family Safety across <code>cx-users</code> + <code>cx-network</code></strong></td>
+<td>❌ Rejected — fragments one bounded context across two services</td>
+</tr>
+<tr>
+<td>C</td>
+<td><strong>New dedicated Family Safety orchestrator (BFF)</strong></td>
+<td>✅ <strong>Chosen</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Decision</h2>
+<p>Stand up <strong>Family Safety as a fourth, sibling CX platform service</strong> — a <strong>stateless orchestration layer (BFF)</strong> that fans out to <strong>Network (FSC + OTA)</strong> and <strong>Whalebone</strong>, and aggregates for the App. It runs on the <strong>same CX platform</strong> (gateway, auth, Consul config) as <code>cx-users</code> / <code>cx-network</code> / UDA, but owns its <strong>own bounded context, deploy, scale and on-call</strong>.</p>
+<pre class="mermaid" data-processed="true"><svg id="mermaid-1794828794786" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 1394.16796875px;" viewBox="-8 -8 1394.16796875 505.15625" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#mermaid-1794828794786{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1794828794786 .error-icon{fill:#552222;}#mermaid-1794828794786 .error-text{fill:#552222;stroke:#552222;}#mermaid-1794828794786 .edge-thickness-normal{stroke-width:2px;}#mermaid-1794828794786 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1794828794786 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1794828794786 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1794828794786 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1794828794786 .marker{fill:#666;stroke:#666;}#mermaid-1794828794786 .marker.cross{stroke:#666;}#mermaid-1794828794786 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1794828794786 .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#000000;}#mermaid-1794828794786 .cluster-label text{fill:#333;}#mermaid-1794828794786 .cluster-label span,#mermaid-1794828794786 p{color:#333;}#mermaid-1794828794786 .label text,#mermaid-1794828794786 span,#mermaid-1794828794786 p{fill:#000000;color:#000000;}#mermaid-1794828794786 .node rect,#mermaid-1794828794786 .node circle,#mermaid-1794828794786 .node ellipse,#mermaid-1794828794786 .node polygon,#mermaid-1794828794786 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mermaid-1794828794786 .flowchart-label text{text-anchor:middle;}#mermaid-1794828794786 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-1794828794786 .node .label{text-align:center;}#mermaid-1794828794786 .node.clickable{cursor:pointer;}#mermaid-1794828794786 .arrowheadPath{fill:#333333;}#mermaid-1794828794786 .edgePath .path{stroke:#666;stroke-width:2.0px;}#mermaid-1794828794786 .flowchart-link{stroke:#666;fill:none;}#mermaid-1794828794786 .edgeLabel{background-color:white;text-align:center;}#mermaid-1794828794786 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1794828794786 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mermaid-1794828794786 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mermaid-1794828794786 .cluster text{fill:#333;}#mermaid-1794828794786 .cluster span,#mermaid-1794828794786 p{color:#333;}#mermaid-1794828794786 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mermaid-1794828794786 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mermaid-1794828794786 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="mermaid-1794828794786_flowchart-pointEnd" class="marker flowchart" viewBox="0 0 10 10" refX="6" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1794828794786_flowchart-pointStart" class="marker flowchart" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1794828794786_flowchart-circleEnd" class="marker flowchart" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1794828794786_flowchart-circleStart" class="marker flowchart" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1794828794786_flowchart-crossEnd" class="marker cross flowchart" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1794828794786_flowchart-crossStart" class="marker cross flowchart" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"><g class="cluster default flowchart-label" id="DOWN"><rect style="" rx="0" ry="0" x="56.28125" y="398.5625" width="793.0625" height="90.59375"></rect><g class="cluster-label" transform="translate(284.7578125, 398.5625)"><foreignObject width="336.109375" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Family Safety downstreams (NEW integrations)</span></div></foreignObject></g></g><g class="cluster default flowchart-label" id="CX"><rect style="" rx="0" ry="0" x="0" y="90.59375" width="1259.97265625" height="257.96875"></rect><g class="cluster-label" transform="translate(403.220703125, 90.59375)"><foreignObject width="453.53125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">CX platform — sibling services (shared gateway / auth / Consul)</span></div></foreignObject></g></g></g><g class="edgePaths"><path d="M699.484,29.412L772.701,35.442C845.918,41.472,992.352,53.533,1065.568,63.73C1138.785,73.927,1138.785,82.26,1138.785,89.71C1138.785,97.16,1138.785,103.727,1138.785,107.01L1138.785,110.294" id="L-APP-USERS-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-APP LE-USERS" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M478.156,31.745L423.624,37.387C369.091,43.028,260.026,54.311,205.493,64.119C150.961,73.927,150.961,82.26,150.961,89.71C150.961,97.16,150.961,103.727,150.961,107.01L150.961,110.294" id="L-APP-NET-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-APP LE-NET" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M647.852,40.594L659.97,44.76C672.089,48.927,696.326,57.26,708.444,65.594C720.563,73.927,720.563,82.26,720.563,89.71C720.563,97.16,720.563,103.727,720.563,107.01L720.563,110.294" id="L-APP-UDA-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-APP LE-UDA" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M478.156,29.431L405.13,35.458C332.104,41.485,186.052,53.539,113.026,63.733C40,73.927,40,82.26,40,96.109C40,109.958,40,129.323,40,150.82C40,172.318,40,195.948,120.304,216.767C200.608,237.586,361.215,255.594,441.519,264.597L521.823,273.601" id="L-APP-FS-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-APP LE-FS" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M720.563,181.781L720.563,188.081C720.563,194.38,720.563,206.979,716.768,218.848C712.973,230.717,705.384,241.856,701.589,247.426L697.794,252.995" id="L-UDA-FS-0" class=" edge-thickness-normal edge-pattern-dotted flowchart-link LS-UDA LE-FS" style="fill:none;stroke-width:2px;stroke-dasharray:3;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M1138.785,181.781L1138.785,188.081C1138.785,194.38,1138.785,206.979,1086.1,221.284C1033.415,235.59,928.044,251.601,875.359,259.607L822.673,267.613" id="L-USERS-FS-0" class=" edge-thickness-normal edge-pattern-dotted flowchart-link LS-USERS LE-FS" style="fill:none;stroke-width:2px;stroke-dasharray:3;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M226.922,134.92L244.694,131.699C262.467,128.478,298.012,122.036,320.228,118.815C342.444,115.594,351.33,115.594,360.216,121.109C369.102,126.625,377.989,137.656,377.989,148.688C377.989,159.719,369.102,170.75,360.216,176.266C351.33,181.781,342.444,181.781,321.097,178.718C299.75,175.654,265.944,169.527,249.04,166.463L232.137,163.4" id="L-NET-NET-0" class=" edge-thickness-normal edge-pattern-dotted flowchart-link LS-NET LE-NET" style="fill:none;stroke-width:2px;stroke-dasharray:3;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M527.09,311.003L482.835,317.263C438.581,323.523,350.072,336.043,305.817,346.469C261.563,356.896,261.563,365.229,261.563,373.563C261.563,381.896,261.563,390.229,261.563,397.679C261.563,405.129,261.563,411.696,261.563,414.979L261.563,418.263" id="L-FS-FSCN-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-FS LE-FSCN" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M658.494,323.563L656.761,327.729C655.027,331.896,651.561,340.229,649.827,348.563C648.094,356.896,648.094,365.229,648.094,373.563C648.094,381.896,648.094,390.229,648.094,397.679C648.094,405.129,648.094,411.696,648.094,414.979L648.094,418.263" id="L-FS-WB-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-FS LE-WB" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path><path d="M817.434,305.324L887.857,312.531C958.28,319.737,1099.126,334.15,1169.549,345.523C1239.973,356.896,1239.973,365.229,1239.973,373.563C1239.973,381.896,1239.973,390.229,1239.973,397.679C1239.973,405.129,1239.973,411.696,1239.973,414.979L1239.973,418.263" id="L-FS-PBE-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-FS LE-PBE" style="fill:none;" marker-end="url(#mermaid-1794828794786_flowchart-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(720.5625, 219.578125)"><g class="label" transform="translate(-107.3828125, -12.796875)"><foreignObject width="214.765625" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">enrich: familySafetyFlag + fcId</span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(1138.78515625, 219.578125)"><g class="label" transform="translate(-60.0390625, -12.796875)"><foreignObject width="120.078125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">identity / consent</span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(386.875, 148.6875)"><g class="label" transform="translate(-124.953125, -12.796875)"><foreignObject width="249.90625" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">unrelated domain (Device Nucleus)</span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g></g><g class="nodes"><g class="node default default flowchart-label" id="flowchart-FSCN-16" data-node="true" data-id="FSCN" transform="translate(261.5625, 443.859375)"><rect class="basic label-container" style="" rx="0" ry="0" x="-170.28125" y="-20.296875" width="340.5625" height="40.59375"></rect><g class="label" style="" transform="translate(-162.78125, -12.796875)"><rect></rect><foreignObject width="325.5625" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Network — FSC family/member + OTA events</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-WB-17" data-node="true" data-id="WB" transform="translate(648.09375, 443.859375)"><rect class="basic label-container" style="" rx="0" ry="0" x="-166.25" y="-20.296875" width="332.5" height="40.59375"></rect><g class="label" style="" transform="translate(-158.75, -12.796875)"><rect></rect><foreignObject width="317.5" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Whalebone — device safety / parental / stats</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-USERS-1" data-node="true" data-id="USERS" transform="translate(1138.78515625, 148.6875)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.1875" y="-33.09375" width="172.375" height="66.1875"></rect><g class="label" style="" transform="translate(-78.6875, -25.59375)"><rect></rect><foreignObject width="157.375" height="51.1875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">cx-users<br>identity · profile · DND</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-NET-2" data-node="true" data-id="NET" transform="translate(150.9609375, 148.6875)"><rect class="basic label-container" style="" rx="0" ry="0" x="-75.9609375" y="-33.09375" width="151.921875" height="66.1875"></rect><g class="label" style="" transform="translate(-68.4609375, -25.59375)"><rect></rect><foreignObject width="136.921875" height="51.1875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">cx-network<br>home router / Wi-Fi</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-UDA-3" data-node="true" data-id="UDA" transform="translate(720.5625, 148.6875)"><rect class="basic label-container" style="" rx="0" ry="0" x="-93.3203125" y="-33.09375" width="186.640625" height="66.1875"></rect><g class="label" style="" transform="translate(-85.8203125, -25.59375)"><rect></rect><foreignObject width="171.640625" height="51.1875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">cx-user-data-aggregator<br>journey fan-out</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-FS-4" data-node="true" data-id="FS" transform="translate(672.26171875, 290.46875)"><rect class="basic label-container" style="" rx="0" ry="0" x="-145.171875" y="-33.09375" width="290.34375" height="66.1875"></rect><g class="label" style="" transform="translate(-137.671875, -25.59375)"><rect></rect><foreignObject width="275.34375" height="51.1875"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">★ Family Safety Orchestrator (NEW)<br>stateless BFF · no DP persist (for now)</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-APP-0" data-node="true" data-id="APP" transform="translate(588.8203125, 20.296875)"><rect class="basic label-container" style="" rx="0" ry="0" x="-110.6640625" y="-20.296875" width="221.328125" height="40.59375"></rect><g class="label" style="" transform="translate(-103.1640625, -12.796875)"><rect></rect><foreignObject width="206.328125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Thanks App / CX Middleware</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-PBE-22" data-node="true" data-id="PBE" transform="translate(1239.97265625, 443.859375)"><rect class="basic label-container" style="" rx="0" ry="0" x="-138.1953125" y="-20.296875" width="276.390625" height="40.59375"></rect><g class="label" style="" transform="translate(-130.6953125, -12.796875)"><rect></rect><foreignObject width="261.390625" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Propositions BE / COM (commercial)</span></div></foreignObject></g></g></g></g></g></svg></pre>
+<hr>
+<h2>4. Rationale — why a separate service (and not reuse/split)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Reason</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>Different bounded context</strong></td>
+<td><code>cx-users</code> = identity/consent; <code>cx-network</code> = home router (Device Nucleus). Family Safety = circle / safety-events / device-protection. A new domain doesn't belong inside either; it would break single-responsibility and pollute their contracts.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Naming trap is a real hazard</strong></td>
+<td>Putting FS circle/SOS into <code>cx-network</code> conflates two unrelated "network" domains (home router vs telecom FSC) — an operational and cognitive trap for every future engineer.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Brand-new downstream integrations</strong></td>
+<td>FS needs <strong>Network FSC/OTA</strong> and <strong>Whalebone</strong> — neither <code>cx-users</code> nor <code>cx-network</code> talks to these today (<code>cx-network</code> → Device Nucleus, not FSC). Adding them means new blast radius on mature, high-traffic services.</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Independent blast radius / scale / SLA</strong></td>
+<td>SOS is latency- and criticality-sensitive and partly realtime. Coupling FS to <code>cx-users</code> (hit on every app session) or <code>cx-network</code> (home) risks their stability and ties release cadence. A separate service fails, deploys and scales on its own.</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Splitting across two is the worst option</strong></td>
+<td>"Some APIs here, some there" fragments <strong>one</strong> bounded context across two services → distributed logic, no single owner, cross-service calls for one journey, duplicated auth/aggregation. Lowest cohesion, highest cost.</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Clear ownership &amp; roadmap</strong></td>
+<td>FS is a distinct product with its own team, consent model, data-retention policy and <strong>partner (Whalebone) contract</strong>. A dedicated service gives one owner end-to-end.</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Security / partner isolation</strong></td>
+<td>Whalebone tenant keys and consent-gated protection are isolated in one service — smaller credential-exposure and audit surface than spreading them into identity/home services.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. What we <strong>do</strong> reuse (not everything is new)</h2>
+<p>A separate service does <strong>not</strong> mean reinventing identity or profile.</p>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Reuse</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Identity / profile / DND</td>
+<td><strong>cx-users</strong></td>
+<td>FS calls it (directly or via UDA) for "who is this user?" — never reimplemented</td>
+</tr>
+<tr>
+<td><code>familySafetyFlag</code> + <code>fcId</code> on the profile screen</td>
+<td><strong>UDA (enrich only)</strong></td>
+<td>additive fields on the existing profile response; FS or App reads them. UDA does <strong>not</strong> own Family Safety</td>
+</tr>
+<tr>
+<td>Home router / Wi-Fi / pause</td>
+<td><strong>cx-network (untouched)</strong></td>
+<td>different domain; stays separate to avoid the naming trap</td>
+</tr>
+<tr>
+<td>Gateway / auth / Consul config</td>
+<td><strong>CX platform</strong></td>
+<td>FS is a sibling on the same platform — consistent patterns, minimal new plumbing</td>
+</tr>
+<tr>
+<td>Commercial (pack / subscription)</td>
+<td><strong>Propositions BE / COM</strong></td>
+<td>FS orchestrator calls them; billing is not re-implemented</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. Concern map — where each thing lives</h2>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Owning service</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Identity / profile / consent (DND)</td>
+<td><code>cx-users</code></td>
+</tr>
+<tr>
+<td><code>familySafetyFlag</code> + <code>fcId</code> on home/profile</td>
+<td>UDA (enrich) or App after the FS call</td>
+</tr>
+<tr>
+<td>Home router / guest Wi-Fi / device pause</td>
+<td><code>cx-network</code> (unrelated)</td>
+</tr>
+<tr>
+<td>Circle / invite / member / roles</td>
+<td><strong>FS Orchestrator → Network FSC</strong></td>
+</tr>
+<tr>
+<td>Check-in / SOS / alarm / device-status / fraud</td>
+<td><strong>FS Orchestrator → Network OTA</strong></td>
+</tr>
+<tr>
+<td>Device safety / parental / stats</td>
+<td><strong>FS Orchestrator → Whalebone</strong></td>
+</tr>
+<tr>
+<td>Pack purchase / subscription / provisioning</td>
+<td><strong>FS Orchestrator → Propositions BE / COM</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>7. Shape of the new service (FS Orchestrator / BFF)</h2>
+<ul>
+<li><strong>Pure orchestration layer</strong> — fan-out to Network (FSC + OTA) + Whalebone, aggregate for the App (the ~24–29 upstream endpoints already specified).</li>
+<li><strong>Stateless — no Digital-Profile persistence for now.</strong> It computes/aggregates per request; it does not own a durable FS datastore today.</li>
+<li><strong>Owns:</strong> the upstream API contract, enum-driven routing, ID mapping (<code>fcId↔familyId</code>, <code>MSISDN=deviceID=subscriptionID</code>), <strong>GET-merge-PUT</strong> for Whalebone, per-step retries/backoff, consent gating, <code>transactionId</code> propagation.</li>
+<li><strong>Does not own:</strong> identity (<code>cx-users</code>), home router (<code>cx-network</code>), billing (Propositions BE/COM), or any persistence (none now).</li>
+</ul>
+<blockquote>
+<p><strong>The one state watch-item:</strong> Network FSC has only <code>Active/Inactive</code> (no invite lifecycle). While we stay "no persist for now", invite states (<code>INVITED/EXPIRED/DECLINED</code>) are held ephemerally / deferred to Network. If the product needs durable invite state or FS audit history, that's the trigger to revisit persistence — <strong>a conscious later decision, not an accident.</strong></p>
+</blockquote>
+<hr>
+<h2>8. Trade-offs (honest view)</h2>
+<table>
+<thead>
+<tr>
+<th>Cost of a separate service</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>New infra, CI/CD, on-call, auth wiring</td>
+<td>Standard on the CX platform — gateway/auth/Consul already exist; marginal effort</td>
+</tr>
+<tr>
+<td>One extra network hop vs embedding</td>
+<td>BFF aggregation <strong>reduces</strong> app round-trips overall; hop is intra-platform</td>
+</tr>
+<tr>
+<td>Risk of duplicating identity logic</td>
+<td>Explicitly <strong>reuse</strong> <code>cx-users</code> / UDA; do not reimplement profile/consent</td>
+</tr>
+<tr>
+<td>Another service to monitor</td>
+<td>Clear ownership + its own SLA is a feature for a safety product, not a bug</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>9. Consequences</h2>
+<ul>
+<li>✅ Family Safety evolves, deploys, scales and fails <strong>independently</strong> of identity and home-router services.</li>
+<li>✅ The Whalebone partner contract and consent model are <strong>isolated</strong> in one service.</li>
+<li>✅ <code>cx-network</code> stays unambiguously "home router"; the FSC "Network" confusion is avoided.</li>
+<li>✅ <code>cx-users</code> and UDA are <strong>reused</strong> for identity and profile-enrich — no duplication.</li>
+<li>⚠️ We accept one more platform service and one more hop; revisit <strong>persistence</strong> only when invite-state/audit forces it.</li>
+</ul>
+<p><strong>Recommendation: proceed with Option C — Family Safety as a separate, stateless orchestration microservice (a fourth sibling CX service).</strong></p>
+<hr>
+<p><em>Companion specs: <code>Family-Safety-API-Binding-Leadership</code> (upstream↔downstream), <code>Network-API-Documentation</code>, <code>Whalebone-API-Documentation</code>, <code>Orchestration-API-Design-Spec</code>.</em></p>
+</article></div><div class="mermaidTooltip" style="opacity: 0;"></div></body></html>
