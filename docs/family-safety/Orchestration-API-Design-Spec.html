@@ -1,0 +1,811 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Orchestration API Design Spec</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Orchestration API Design Spec (methods · enums · request contracts · principles)</h1>
+<p><strong>What this is:</strong> the design-hardened version of the fan-out mapping — <strong>which HTTP methods to club vs keep separate</strong>, <strong>whether DELETE is ever needed</strong>, the <strong>full enum catalogue per API</strong> (and how each enum value switches the downstream flow), <strong>proper upstream request contracts</strong> (path / query / body with naming) and the <strong>downstream request</strong> each drives, the <strong>single-API + internal-switch</strong> pattern you proposed, and the <strong>design principles that must not be compromised</strong>.</p>
+<p><strong>Date:</strong> 2026-11-16 · Companions: <code>…-Optimized</code>, <code>…-Detailed</code>, <code>…-Enhanced-FanOut</code>
+<strong>Conventions:</strong> upstream base <code>/family-safety/v1</code>; upstream JSON = <strong>camelCase</strong>; path params <code>{resourceId}</code>; <code>MSISDN = deviceID = subscriptionID</code> (Whalebone), <code>circleId = familyId</code> (FSC). BFF is an <strong>anti-corruption layer</strong> — it translates naming/IDs; downstream quirks never leak upstream.</p>
+<hr>
+<h2>1. HTTP method strategy — club where safe, split where required</h2>
+<table>
+<thead>
+<tr>
+<th>Intent class</th>
+<th>Method</th>
+<th>Club?</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Read</strong></td>
+<td><code>GET</code></td>
+<td><strong>Never clubbed with writes</strong></td>
+<td>side-effect-free; all retrieval stays GET. Scope via query param.</td>
+</tr>
+<tr>
+<td><strong>Create / command / action</strong></td>
+<td><code>POST</code></td>
+<td>club many actions via <code>action</code>/<code>eventType</code> enum</td>
+<td>non-idempotent operations, events, invites, lifecycle, pairing, list-edit, subscription activate/suspend</td>
+</tr>
+<tr>
+<td><strong>Set desired state (config)</strong></td>
+<td><code>PUT</code></td>
+<td><strong>club POST+PUT → PUT</strong></td>
+<td>idempotent upsert — protection, parental filter, apps, schedule, lists, reports, circle settings. Body carries full intended state.</td>
+</tr>
+<tr>
+<td><strong>Remove</strong></td>
+<td>—</td>
+<td><strong>folded, no separate DELETE</strong></td>
+<td>see §2</td>
+</tr>
+</tbody></table>
+<p><strong>Why club POST+PUT into PUT for config:</strong> toggles/filters/reports are <em>"make the state be X"</em> — idempotent, safe to retry, naturally a <code>PUT</code>. A separate <code>POST</code> to create + <code>PUT</code> to update is redundant when the resource is a singleton per MSISDN (there is always exactly one filter/report/protection state per line). One <code>PUT</code> upserts it.
+<strong>Why GET stays separate:</strong> folding a read into a write endpoint breaks caching, safety and idempotency — a non-negotiable (see §7).</p>
+<hr>
+<h2>2. Is a separate DELETE needed? → <strong>No, nowhere.</strong></h2>
+<p>Every "removal" folds into an existing POST(action) or PUT(state). Checked case by case:</p>
+<table>
+<thead>
+<tr>
+<th>"Delete" case</th>
+<th>Downstream reality</th>
+<th>Folded into</th>
+<th>Separate DELETE?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Remove member</td>
+<td>FSC <code>POST /member/delete?familyId&amp;memberId</code> (already a POST)</td>
+<td><code>POST /circles/{id}/members/{mid}/status {action:REMOVE}</code></td>
+<td>❌ no</td>
+</tr>
+<tr>
+<td>Member leaves</td>
+<td>same FSC delete</td>
+<td>same status endpoint <code>{action:LEFT}</code></td>
+<td>❌ no</td>
+</tr>
+<tr>
+<td>Decline invite</td>
+<td>FSC <code>member/update→Inactive</code></td>
+<td><code>…/status {action:DECLINE}</code></td>
+<td>❌ no</td>
+</tr>
+<tr>
+<td>Close circle</td>
+<td>FSC has <strong>no delete family</strong>; <code>family/update→Inactive</code></td>
+<td><code>PUT /circles/{id} {status:"Inactive"}</code></td>
+<td>❌ no</td>
+</tr>
+<tr>
+<td>Remove allow/deny domain</td>
+<td>Whalebone <code>POST .../{listType}/delete</code> (a POST)</td>
+<td><code>PUT /parental/{msisdn}/lists {op:REMOVE}</code></td>
+<td>❌ no</td>
+</tr>
+<tr>
+<td>Remove a schedule / app rule</td>
+<td>part of full-state <code>PUT scheduled-filter</code> / <code>PUT applications</code></td>
+<td>the same PUT (omit the entry)</td>
+<td>❌ no</td>
+</tr>
+<tr>
+<td>Delete subscription/device</td>
+<td><strong>Airtel never calls DELETE</strong> — Whalebone auto-deletes after retention</td>
+<td><code>POST /protection {action:DISABLE}</code> → suspend</td>
+<td>❌ no</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>Verdict:</strong> the upstream surface needs <strong>GET + POST + PUT only</strong>. DELETE adds nothing because downstream removals are themselves POST-based or state-sets, and lifecycle removals belong in the member state-machine (one surface, auditable).</p>
+</blockquote>
+<hr>
+<h2>3. Enum catalogue — every enum and the flow it switches</h2>
+<blockquote>
+<p>Pattern: <strong>one endpoint, enum in body/query switches the downstream call</strong> — "path explosion" avoided, but the BFF <strong>must validate enum × current-state legality</strong> (§7).</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>Enum field</th>
+<th>Values</th>
+<th>What each value switches (downstream)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /safety-events</code></td>
+<td><code>eventType</code></td>
+<td><code>CHECK_IN</code> / <code>SOS</code> / <code>FRAUD</code> / <code>GEOFENCE</code> / <code>INACTIVITY</code></td>
+<td>🔵 OTA Check-in Create / SOS Creation / Incoming Alarm / <em>(gap)</em> / <em>(gap)</em></td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>scheduleType</code></td>
+<td><code>ONE_TIME</code> / <code>PERIODIC</code></td>
+<td>shapes OTA Check-in <code>ScheduleType</code></td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>targetType</code></td>
+<td><code>INDIVIDUAL</code> / <code>RESPONDER</code> / <code>BROADCAST</code></td>
+<td>OTA Alarm target (MSISDN vs FamilyID)</td>
+</tr>
+<tr>
+<td><code>POST /safety-events/{id}/actions</code></td>
+<td><code>action</code></td>
+<td><code>REPLY</code> / <code>ACKNOWLEDGE</code> / <code>END</code> / <code>CANCEL</code> / <code>NOTIFY</code> / <code>ESCALATE</code> / <code>DISMISS</code> / <code>PAUSE</code> / <code>RESUME</code></td>
+<td>🔵 Check-in Response / SOS Update(ack) / SOS Update(resolve) / SOS Cancellation / Outgoing Alarm / SOS Kill+IVR / Check-in Status Update(×3)</td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>messageCode</code></td>
+<td><code>IM_OK</code> / <code>NEED_HELP</code> / <code>CALL_ME</code></td>
+<td>check-in reply payload</td>
+</tr>
+<tr>
+<td><code>GET /safety-events</code></td>
+<td><code>scope</code> <em>(by param)</em></td>
+<td><code>id</code> / <code>circleId</code> / <code>msisdn</code></td>
+<td>🔵 Status Check by Trigger / by Family / Device-Status Retrieve</td>
+</tr>
+<tr>
+<td><code>POST /circles/{id}/members</code></td>
+<td><code>action</code></td>
+<td><code>INVITE</code> / <code>RESEND</code> / <code>REMIND</code></td>
+<td>🔵 FSC member/add / member/update(new token) / <strong>no write</strong> + notify</td>
+</tr>
+<tr>
+<td><code>POST /circles/{id}/members/{mid}/status</code></td>
+<td><code>action</code></td>
+<td><code>ACCEPT</code> / <code>DECLINE</code> / <code>LEFT</code> / <code>REMOVE</code> / <code>ROLE_UPDATE</code></td>
+<td>🔵 FSC member/update→Active / update→Inactive|delete / delete / delete(+🟣 suspend) / role/update</td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>role</code></td>
+<td><code>ADMIN</code> / <code>SUB_ADMIN</code> / <code>SPONSER</code>* / <code>MEMBER</code></td>
+<td>FSC <code>familyMemberRole</code> (*confirm <code>SPONSOR</code> typo, G6)</td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>airtelCustomer</code></td>
+<td><code>0</code> (Airtel) / <code>1</code> (other)</td>
+<td>FSC <code>airtelCustomer</code>; <code>1</code> ⇒ app/SMS-only degradation</td>
+</tr>
+<tr>
+<td><code>PUT /family-safety/protection/{msisdn}</code></td>
+<td><code>type</code></td>
+<td><code>DEVICE</code> / <code>NETWORK</code></td>
+<td>🟣 Whalebone resource / 🔵 Network safety config</td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>action</code></td>
+<td><code>ENABLE</code> / <code>DISABLE</code> / <code>REACTIVATE</code></td>
+<td>subscribe+filter+pair / suspend / activate</td>
+</tr>
+<tr>
+<td><code>PUT /parental/{msisdn}/lists</code></td>
+<td><code>listType</code></td>
+<td><code>WHITELIST</code> / <code>BLACKLIST</code></td>
+<td>🟣 <code>/subscriptions/{id}/whitelist</code> vs <code>/blacklist</code></td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>op</code></td>
+<td><code>ADD</code> / <code>REMOVE</code></td>
+<td>🟣 <code>POST …/{listType}</code> vs <code>POST …/{listType}/delete</code></td>
+</tr>
+<tr>
+<td><code>PUT /parental/{msisdn}/filter</code></td>
+<td><code>threats[].threatType</code></td>
+<td><code>MALWARE</code>/<code>PHISHING</code>/<code>C_AND_C</code>/<code>BLACKLIST</code>/<code>COMPROMISED</code>/<code>COINMINER</code>/<code>SPAM</code> (7)</td>
+<td>🟣 filter <code>threats[]</code> (all stay <code>true</code>)</td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>contents[].contentType</code></td>
+<td><code>PORN</code>/<code>GAMBLING</code>/<code>ADVERTISEMENT</code>/<code>SOCIAL_NETWORKS</code>/…</td>
+<td>🟣 filter <code>contents[]</code></td>
+</tr>
+<tr>
+<td>″</td>
+<td><code>blocked</code></td>
+<td><code>true</code> / <code>false</code></td>
+<td>per-type block flag</td>
+</tr>
+<tr>
+<td><code>GET /family-safety/stats</code></td>
+<td><code>view</code></td>
+<td><code>THREATS</code> / <code>PER_MEMBER</code> / <code>TOP_SITES</code> / <code>TREND</code> / <code>RECENT</code></td>
+<td>🟣 <code>/events/stats(threat_type)</code> / <code>(device_id)</code> / <code>(domain)</code> / <code>/events/timeline</code> / <code>/events/search</code></td>
+</tr>
+<tr>
+<td>(downstream)</td>
+<td><code>membershipStatus</code></td>
+<td><code>Active</code> / <code>Inactive</code></td>
+<td>FSC only states (G2)</td>
+</tr>
+<tr>
+<td>(device-status)</td>
+<td><code>propertyName</code></td>
+<td><code>BATTERY</code>/<code>RINGER</code>/<code>NETWORK_TYPE</code>/<code>NETWORK_STRENGTH</code>/<code>LOCATION</code>/<code>LOCK_STATE</code></td>
+<td>OTA Device-Status array</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>4. Upstream request contracts (proper naming: path / query / body)</h2>
+<blockquote>
+<p>Method chosen per §1. All bodies camelCase. <code>transactionId</code> echoed through.</p>
+</blockquote>
+<h3>4.1 Circle &amp; membership (→ Network FSC)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Path params</th>
+<th>Query params</th>
+<th>Body (camelCase)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/circles</code></td>
+<td>—</td>
+<td>—</td>
+<td><code>{ name, description, members:[{ msisdn, role, airtelCustomer }] }</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/circles/{circleId}</code></td>
+<td><code>circleId</code></td>
+<td><code>includeMembers?=true</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/circles/{circleId}</code></td>
+<td><code>circleId</code></td>
+<td>—</td>
+<td><code>{ name?, description?, status? }</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/circles</code></td>
+<td>—</td>
+<td><code>msisdn</code> <em>(availability — G1)</em></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/circles/{circleId}/members</code></td>
+<td><code>circleId</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/circles/{circleId}/members/{memberId}</code></td>
+<td><code>circleId,memberId</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/circles/{circleId}/members</code></td>
+<td><code>circleId</code></td>
+<td>—</td>
+<td><code>{ action, members:[{ msisdn, role, airtelCustomer }] }</code></td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/circles/{circleId}/members/{memberId}/status</code></td>
+<td><code>circleId,memberId</code></td>
+<td>—</td>
+<td><code>{ action, role? }</code></td>
+</tr>
+</tbody></table>
+<h3>4.2 Protection (→ Whalebone + Network) — <strong>single API, internal switch</strong> (see §6.1)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Path params</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>PUT</code></td>
+<td><code>/family-safety/protection/{msisdn}</code></td>
+<td><code>msisdn</code></td>
+<td><code>{ type, action }</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/family-safety/protection/{msisdn}</code></td>
+<td><code>msisdn</code></td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h3>4.3 Parental (→ Whalebone) — PUT upserts, GET reads</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET/PUT</code></td>
+<td><code>/family-safety/parental/{msisdn}/filter</code></td>
+<td><code>{ threats:[{ threatType, blocked }], contents:[{ contentType, blocked }] }</code></td>
+</tr>
+<tr>
+<td><code>GET/PUT</code></td>
+<td><code>/family-safety/parental/{msisdn}/applications</code></td>
+<td><code>{ applications:[{ applicationId, blocked }] }</code></td>
+</tr>
+<tr>
+<td><code>GET/PUT</code></td>
+<td><code>/family-safety/parental/{msisdn}/schedule</code></td>
+<td><code>{ contents:[{ contentType, blockingSchedule:{ mon:[{ start, end }] } }] }</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/family-safety/parental/{msisdn}/lists</code></td>
+<td>query <code>?listType=WHITELIST</code></td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/family-safety/parental/{msisdn}/lists</code></td>
+<td><code>{ listType, op, domains:[] }</code></td>
+</tr>
+<tr>
+<td><code>GET/PUT</code></td>
+<td><code>/family-safety/parental/{msisdn}/reports</code></td>
+<td><code>{ reports:{ enabled, period, email, phone }, alerts:{ enabled, email, phone } }</code></td>
+</tr>
+</tbody></table>
+<h3>4.4 Safety events (→ Network OTA)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Query</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/safety-events</code></td>
+<td>—</td>
+<td><code>{ eventType, initiatorMsisdn, targetMsisdn?, circleId, scheduleType?, scheduleTime?, targetType?, additionalData? }</code></td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/safety-events/{eventId}/actions</code></td>
+<td>—</td>
+<td><code>{ action, messageCode?, reason? }</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/safety-events/{eventId}</code></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/safety-events</code></td>
+<td><code>scope</code> via <code>id</code> | <code>circleId</code> | <code>msisdn</code> (exactly one)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/device-status</code></td>
+<td>—</td>
+<td><code>{ msisdn, circleId, status:[{ propertyName, value }] }</code></td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/device-status</code></td>
+<td><code>msisdn</code> | <code>circleId</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/safety-report</code></td>
+<td><code>msisdn</code> | <code>circleId</code></td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h3>4.5 Stats &amp; pairing (→ Whalebone)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Query</th>
+<th>Body</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/family-safety/stats</code></td>
+<td><code>msisdn, view, days?=30</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/family-safety/devices/{msisdn}/pair</code></td>
+<td>—</td>
+<td>— → <code>{ token }</code></td>
+</tr>
+</tbody></table>
+<p><strong>Final upstream surface:</strong> ~15 <code>GET</code> · ~7 <code>POST</code> · ~7 <code>PUT</code> · <strong>0 <code>DELETE</code></strong>.</p>
+<hr>
+<h2>5. Downstream request contracts (as each system consumes)</h2>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Request (verbatim shape)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/family/create</code></td>
+<td>POST</td>
+<td><code>RequestFamilyPojo{ familyName, familyDescription, familyStatus, familyMemberPojos[] }</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/family/get</code></td>
+<td>GET</td>
+<td><code>?familyId=</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/family/update</code></td>
+<td>POST</td>
+<td><code>?familyId=</code> + <code>RequestFamilyPojo</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/member/add</code></td>
+<td>POST</td>
+<td><code>RequestFamilyMemberPojo{ airtelCustomer, circleMemberRole, familyId, membershipId, membershipStatus, msisdn }</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/member/update</code></td>
+<td>POST</td>
+<td><code>?memberId=</code> + <code>RequestFamilyMemberPojo</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/member/delete</code></td>
+<td>POST</td>
+<td><code>?familyId=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/member/role/update</code></td>
+<td>POST</td>
+<td><code>?familyId=&amp;familyMemberRole=&amp;memberId=</code></td>
+</tr>
+<tr>
+<td>🔵 FSC</td>
+<td><code>/api/v1/member/get</code> · <code>/getAll</code></td>
+<td>GET</td>
+<td><code>?familyId=[&amp;memberId=]</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>Check-in Create</td>
+<td>POST(JSON)</td>
+<td><code>{ TriggerID, FamilyID, InitiatorMSISDN, TargetMSISDN, ScheduleType, ScheduleTime }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>Check-in Status Update</td>
+<td>POST</td>
+<td><code>{ TriggerID, Action(Dismiss/Pause/Resume) }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>Check-in Response</td>
+<td>POST</td>
+<td><code>{ TriggerID, CheckInTimestamp, CheckInResponse }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>SOS Creation / Cancellation</td>
+<td>POST</td>
+<td><code>{ TriggerID, FamilyID?, InitiatorMSISDN? }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>SOS Update</td>
+<td>POST</td>
+<td><code>{ TriggerID, AcknowledgedBy?, AcknowledgementTimestamp?, ResolvedBy?, ResolvedTimestamp? }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>Incoming / Outgoing Alarm</td>
+<td>POST/Kafka</td>
+<td><code>{ AlarmID, (InitiatedBy,TargetType,)TargetMSISDN, FamilyID, AlarmType }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>SOS Alarm Kill</td>
+<td>Kafka</td>
+<td><code>{ SOSAlarmID, Action:"Kill" }</code></td>
+</tr>
+<tr>
+<td>🔵 OTA</td>
+<td>Device Status Store / Retrieve</td>
+<td>POST</td>
+<td><code>{ (DataID,) MSISDN, FamilyID, StatusArray[] }</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/subscriptions</code></td>
+<td>POST</td>
+<td><code>{ "subscription_id":"{MSISDN}" }</code> → 201</td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/subscriptions/{id}/suspend</code> · <code>/activate</code></td>
+<td>POST</td>
+<td><em>(no body)</em> → 200</td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/devices/{id}/filter</code></td>
+<td>GET/PUT</td>
+<td><code>{ "threats":[{ "threat_type","blocked" }×7], "contents":[{ "content_type","blocked" }] }</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/devices/{id}/applications</code></td>
+<td>GET/PUT</td>
+<td><code>{ "applications":[{ "application_id","blocked" }] }</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/devices/{id}/scheduled-filter</code></td>
+<td>GET/PUT</td>
+<td><code>{ "contents":[{ "content_type","blocking_schedule":{ "mon":[{ "start","end" }] } }] }</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/subscriptions/{id}/{listType}</code></td>
+<td>GET/POST</td>
+<td><code>{ "domains":[] }</code> · read <code>?page=0&amp;page_size=200</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/subscriptions/{id}/{listType}/delete</code></td>
+<td>POST</td>
+<td><code>{ "domains":[] }</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/users/{id}/reports</code></td>
+<td>GET/PUT</td>
+<td><code>{ "reports":{…}, "alerts":{…} }</code></td>
+</tr>
+<tr>
+<td>🟣 WB</td>
+<td><code>/management/devices/{id}/pair-app</code></td>
+<td>POST</td>
+<td><em>(no body)</em> → <code>{ "pairing_response":{ "token" } }</code></td>
+</tr>
+<tr>
+<td>🟣 WB v2</td>
+<td><code>/events/stats</code> · <code>/events/timeline</code> · <code>/events/search</code></td>
+<td>GET</td>
+<td>query <code>device_id,action=block,aggregate/interval,days,sort</code> + headers <code>Wb-Access-Key</code>,<code>Wb-Secret-Key</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. Single-API + internal-switch patterns (your proposal, generalized)</h2>
+<h3>6.1 Protection — one <code>PUT /family-safety/protection/{msisdn}</code> → internal resource switch</h3>
+<p>Upstream stays clean (<code>{ type, action }</code>); the BFF <strong>internally</strong> decides subscription-vs-device resource and orders the calls. The <code>subscription</code>/<code>device</code> choice is a <strong>downstream detail — keep it out of the app contract</strong> (ACL principle).</p>
+<table>
+<thead>
+<tr>
+<th><code>type</code> + <code>action</code></th>
+<th>BFF internal routing (ordered)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DEVICE</code> + <code>ENABLE</code></td>
+<td>1) <code>POST /management/subscriptions {subscription_id}</code> → 2) <code>PUT /management/devices/{id}/filter</code> (7 threats true) → 3) <code>POST /management/devices/{id}/pair-app</code></td>
+</tr>
+<tr>
+<td><code>DEVICE</code> + <code>DISABLE</code></td>
+<td><code>POST /management/subscriptions/{id}/suspend</code></td>
+</tr>
+<tr>
+<td><code>DEVICE</code> + <code>REACTIVATE</code></td>
+<td><code>POST /management/subscriptions/{id}/activate</code> → re-PUT filter</td>
+</tr>
+<tr>
+<td><code>NETWORK</code> + <code>ENABLE</code>/<code>DISABLE</code></td>
+<td>Network safety-config enable/disable</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>If you <em>do</em> want the resource exposed, make it a <strong>query hint</strong> <code>?resource=subscription|device</code> that only narrows a diagnostic/admin call — never the primary app flow. Recommended: don't expose it.</p>
+</blockquote>
+<h3>6.2 Other single-API consolidations</h3>
+<table>
+<thead>
+<tr>
+<th>One upstream endpoint</th>
+<th>Internal switch key</th>
+<th>Collapses</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /safety-events</code></td>
+<td><code>eventType</code></td>
+<td>3 OTA create calls (+2 gap)</td>
+</tr>
+<tr>
+<td><code>POST /safety-events/{id}/actions</code></td>
+<td><code>action</code></td>
+<td>7 OTA response/update/cancel/kill/control calls</td>
+</tr>
+<tr>
+<td><code>POST /circles/{id}/members</code></td>
+<td><code>action</code></td>
+<td>invite / resend / remind</td>
+</tr>
+<tr>
+<td><code>POST /circles/{id}/members/{mid}/status</code></td>
+<td><code>action</code></td>
+<td>accept / decline / leave / remove / role</td>
+</tr>
+<tr>
+<td><code>PUT /parental/{msisdn}/lists</code></td>
+<td><code>listType</code> + <code>op</code></td>
+<td>4 Whalebone list calls</td>
+</tr>
+<tr>
+<td><code>GET /family-safety/stats</code></td>
+<td><code>view</code></td>
+<td>3 Public-API endpoints</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>7. Design principles that must NOT be compromised</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Principle</th>
+<th>Applied here</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>GET is safe &amp; idempotent</strong></td>
+<td>all reads are <code>GET</code>; never fold a read into a write; reads cacheable</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Idempotency</strong></td>
+<td>config via <code>PUT</code> (safe retry); <code>POST</code> creates are pre-checked/idempotency-keyed; retries per failed step</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Resource modeling over RPC soup</strong></td>
+<td>enums switch behavior <em>within one resource</em>; unrelated resources never merged</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Bounded, validated enums</strong></td>
+<td>BFF validates <code>enum × current-state</code> legality (e.g. <code>ACKNOWLEDGE</code> illegal on a check-in); reject early</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Anti-corruption layer (ACL)</strong></td>
+<td>BFF maps camelCase ↔ snake_case ↔ query-POJO; <code>circleId↔familyId</code>, <code>msisdn=deviceID=subscriptionID</code>; downstream (subscription vs device) hidden</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>GET-merge-PUT for Whalebone</strong></td>
+<td>every <code>filter/applications/scheduled-filter</code> write sends the <em>full</em> intended state (omitted ⇒ unblocked)</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Versioning &amp; backward-compat</strong></td>
+<td><code>/v1</code> prefix; changes additive; new enum values are non-breaking</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>Least privilege / consent</strong></td>
+<td>Whalebone keys (<code>Wb-*</code>) live in BE only; protection enabled only after consent; non-Airtel ⇒ degraded set</td>
+</tr>
+<tr>
+<td>9</td>
+<td><strong>Resilience</strong></td>
+<td>retry failed step not whole journey; 429 backoff; 409 → GET existing; graceful "unable to check" over wrong state</td>
+</tr>
+<tr>
+<td>10</td>
+<td><strong>Observability</strong></td>
+<td><code>transactionId</code> propagated end-to-end across both downstreams</td>
+</tr>
+<tr>
+<td>11</td>
+<td><strong>Statelessness (+ one explicit store)</strong></td>
+<td>BFF stateless except the <strong>owned invite-state store</strong> (FSC lacks invite states)</td>
+</tr>
+<tr>
+<td>12</td>
+<td><strong>Single writer / serialize per line</strong></td>
+<td>serialize concurrent policy writes per MSISDN to avoid lost updates</td>
+</tr>
+</tbody></table>
+<p><strong>Trade-off we accept (and mitigate):</strong> enum-routing + POST/PUT clubbing shrinks the surface but adds <strong>payload polymorphism + validation load</strong> — mitigated with OpenAPI discriminators, a documented state machine, and strict enum×state checks. We do <strong>not</strong> compromise GET-safety, idempotency, the ACL, or GET-merge-PUT to save endpoints.</p>
+<hr>
+<h2>8. Net effect</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Upstream endpoints</td>
+<td>~56 (1:1)</td>
+<td><strong>~29</strong> (GET+POST+PUT)</td>
+</tr>
+<tr>
+<td>DELETE endpoints</td>
+<td>several</td>
+<td><strong>0</strong></td>
+</tr>
+<tr>
+<td>Methods used</td>
+<td>GET/POST/PUT/DELETE</td>
+<td><strong>GET/POST/PUT</strong></td>
+</tr>
+<tr>
+<td>Downstream calls reachable</td>
+<td>~40</td>
+<td>~40 (unchanged — same coverage)</td>
+</tr>
+</tbody></table>
+<p><em>Request shapes: Network FSC from Family_Member_API Swagger; Network OTA from API_Doc.pptx; Whalebone from Airtel_SDK_HLD — validate against <code>apidocs.whalebone.io/devicemanagement</code> before coding.</em></p>
+</article></div></body></html>
