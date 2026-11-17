@@ -1,0 +1,317 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MoM — Network API Review (17 Nov 2026)</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Minutes of Meeting — Family Safety × Network API Review</h1>
+<p><strong>Date:</strong> 17 Nov 2026 · <strong>Recording/transcript:</strong> enabled (Bhabani) · <strong>Next meeting:</strong> 18 Nov 2026, 2:00 PM</p>
+<p><strong>Purpose:</strong> Walkthrough of the Network (FSC + OTA) APIs shared by Ashiesh — Family/Member, Check-in, SOS, Device-status, Alarm — to align contracts for the Family Safety orchestrator, provisioning, and the app/history screens.</p>
+<h3>Attendees</h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Side / role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Ashiesh Shukla</td>
+<td><strong>Network</strong> — FSC/OTA API owner (presenter)</td>
+</tr>
+<tr>
+<td>Bhabani Pati</td>
+<td>Network (chair)</td>
+</tr>
+<tr>
+<td>Nitin</td>
+<td>Network</td>
+</tr>
+<tr>
+<td>Gopal Dave</td>
+<td>Network (LBS / location)</td>
+</tr>
+<tr>
+<td>Amit Pawar</td>
+<td>Channel / <strong>Family Safety orchestrator</strong> (BFF)</td>
+</tr>
+<tr>
+<td>Chitranshi Pathak</td>
+<td>Channel (reporting / audit)</td>
+</tr>
+<tr>
+<td>Shubham Garge</td>
+<td>Channel</td>
+</tr>
+<tr>
+<td>Aditi Rastogi</td>
+<td>Product</td>
+</tr>
+<tr>
+<td>Lokesh Kumar</td>
+<td>Design (Figma)</td>
+</tr>
+<tr>
+<td>Salil Kumar</td>
+<td>Subscription / Propositions BE (provisioning)</td>
+</tr>
+<tr>
+<td><em>(consulted, not present)</em></td>
+<td>Ajay Saini — telemetry/architecture · Parshant Verma — Bumblebee SPOC</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>1. Key decisions</h2>
+<ol>
+<li><strong>No parent/child concept.</strong> The circle has roles only: <strong>Admin, Sub-admin, Sponsor, Member</strong> (+ Responder). Provisioning must map to these, not parent/child.</li>
+<li><strong>No family deletion.</strong> There is no delete-family API — set <strong>family status = Inactive</strong>; all members then auto-become inactive. Admin churn / "delete family" is handled the same way.</li>
+<li><strong>Member-add will be removed from <code>family/update</code>.</strong> Family update keeps family-level fields only (name, status, description); members are added only via <code>member/add</code>.</li>
+<li><strong>Check-in: one check-in per member per day</strong> (no second check-in if the first is unanswered; no twice-a-day).</li>
+<li><strong>SOS cancel only by the initiator</strong> (Network to add the check). SOS has two stages — <strong>acknowledge</strong> (multiple allowed) and <strong>resolve</strong> (one only).</li>
+<li><strong>SOS location:</strong> app sends location in <code>additionalData</code>; if absent (device off / no internet / no app), <strong>Network falls back to LBS — during SOS only</strong> (confirmed by Bhabani/Gopal).</li>
+<li><strong>SOS over no-internet / no-network:</strong> no internet but network → app sends <strong>SMS to a predefined short code</strong> ("SOS" to 52263) and Network registers the SOS; no network at all → device-native emergency dial <strong>112</strong> (platform-112 integration is future/open).</li>
+<li><strong>SOS-kill API not needed</strong> — since the orchestrator does <strong>not persist</strong> data, drop it.</li>
+<li><strong>Device data: stored but not processed by Network.</strong> Telemetry SDK → Kafka → Network Device-Telemetry hub stores last values; Network serves <strong>last value + last-updated timestamp</strong> only. No processing/intelligence (e.g. "phone off for 4 hrs", offline/online notifications) — out of current plan.</li>
+<li><strong>The orchestrator consumes, does not store</strong> device/telemetry data — fetch only.</li>
+<li><strong>Relationship titles (mom/dad) are mapped by Channel via UCM</strong>, not by Network. Spam/fraud history comes from <strong>Whalebone</strong>, not Network.</li>
+<li><strong>History/audit screen has no API yet</strong> — Ashiesh saw it for the first time; needs a separate design session. Retention: <strong>minimum 7 days, target up to 30 days</strong> (storage-dependent; BRD to confirm).</li>
+</ol>
+<hr>
+<h2>2. Discussion by topic</h2>
+<h3>2.1 Family &amp; Member controller (circle)</h3>
+<ul>
+<li><code>family/create</code> creates the family ID; members optional at create (array, can add later). Fields: circle name, status (Active default), description, per-member {airtelCustomer 0/1, role, familyId, membershipId (optional), membershipStatus, msisdn}.</li>
+<li><code>family/update</code> can change family name/status; <strong>member-add to be removed</strong> from it (decision #3).</li>
+<li><code>family/get</code> returns full family detail by familyId (used by create/update; low direct use for provisioning).</li>
+<li><code>member/add</code> needs familyId + member msisdn + role (no admin msisdn). <code>member/delete</code>, <code>member/get</code>, <code>member/getAll</code>, <code>member/role/update</code> (familyId, memberId, role — Admin/Sub-admin/Sponsor/Member), <code>member/update</code> (msisdn/status/role).</li>
+<li><strong>Provisioning (Salil):</strong> member churn → <code>member/delete</code>; admin churn / close family → <code>family/update</code> status=Inactive (members cascade inactive). Mapping clarified.</li>
+</ul>
+<h3>2.2 Check-in (create / response / status-check / status-update)</h3>
+<ul>
+<li><strong>Enhancements agreed</strong> (see §3): day selection (every day / weekdays / pick from 7 days), <strong>message</strong> field, <strong>duration</strong> field (how long the schedule runs), <code>scheduleTime</code> as <strong>time only</strong>, one-per-day rule.</li>
+<li>Pause/resume already supported; pricing is NOT tied to frequency (handled elsewhere — Network only needs the schedule).</li>
+<li><code>response</code>: yes/no/ok or blank + timestamp + triggerId; multiple responses per scheduled trigger.</li>
+<li><code>status-check</code>: query by familyId / initiatorMSISDN / triggerId → one row per scheduled date (incl. expected date = pending if not yet received). <strong>Add</strong>: filter by specific target member MSISDN, and a date-range param.</li>
+<li><code>status-update</code> (dismiss/pause/resume): <strong>add initiatorMSISDN</strong> so Network can enforce admin-only control (Amit to confirm the control with product).</li>
+</ul>
+<h3>2.3 SOS (create / cancel / update / status-check) + alarm</h3>
+<ul>
+<li><code>create</code>: familyId, initiatorMSISDN, triggerId → SOS + backend flow starts immediately (no scheduling).</li>
+<li><code>cancel</code>: <strong>only initiator</strong> (Network to add check).</li>
+<li><code>update</code>: acknowledge (multiple) / resolve (one). Future: allow responder to resolve via <code>resolvedBy</code>.</li>
+<li><code>status-check</code>: by familyId/initiatorMSISDN/sosId → records incl. alarm status (active/inactive), ack status, resolution.</li>
+<li><strong>Location:</strong> via <code>additionalData</code>; <strong>LBS fallback during SOS</strong> when app location missing; location sent to all responders.</li>
+<li><strong>No-internet/no-network:</strong> SMS short-code path and device-112 as above (decision #7).</li>
+<li><code>alarm/incoming</code>: used to push an alarm to the user via network channel when the user has no internet (e.g. <strong>presidential alert</strong>).</li>
+<li><code>SOS-kill</code>: drop (decision #8).</li>
+</ul>
+<h3>2.4 Device status / telemetry</h3>
+<ul>
+<li>Flow: <strong>Telemetry SDK (in Thanksapp) → Kafka → Network Device-Telemetry hub (store)</strong>; parallel feed to Network DB. Ownership of the SDK/publisher to be confirmed with <strong>Ajay Saini</strong> (Confluence diagram).</li>
+<li>Network provides a <strong>fetch</strong> API: last value + <strong>last-updated timestamp</strong> per parameter (battery, ringer, network type/strength, location, lock/unlock).</li>
+<li>"Still data" when device off/airplane/unreachable → app must <strong>show last-updated time</strong> to the viewer. For SOS, get <strong>actual/updated</strong> location (LBS); for normal viewing, show still data.</li>
+<li>Fetch returns <strong>latest only</strong> (not point-in-time snapshot at a past event). Device-state-at-event history is a separate discussion.</li>
+<li>Network does <strong>not</strong> process device data (no offline/online notifications, no "phone-off" logic) — out of plan.</li>
+</ul>
+<h3>2.5 History / audit (Figma screen)</h3>
+<ul>
+<li>Screen mixes check-in replies, device status ("dad's phone was off"), spam/fraud (<strong>Whalebone</strong>), SOS, etc.</li>
+<li>No unified history API today; Network not prepared — <strong>separate session</strong>. Titles via UCM (Channel). Retention 7–30 days (BRD).</li>
+</ul>
+<h3>2.6 Platform / other</h3>
+<ul>
+<li><strong>Bumblebee / IVR</strong> (notifications): Gopal/Bhabani to reach the Bumblebee SPOC (<strong>Parshant Verma</strong>) — separate call; IVR is a feature there.</li>
+<li>Separate sessions to schedule: <strong>telemetry SDK flow</strong> (Ajay Saini), <strong>Bumblebee/IVR</strong>, <strong>history/audit API</strong>.</li>
+</ul>
+<hr>
+<h2>3. APIs that need ENHANCEMENT (existing Network APIs)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API</th>
+<th>Enhancement required</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>E1</td>
+<td><code>POST /family/update</code></td>
+<td><strong>Remove</strong> member-addition capability (family-level fields only)</td>
+<td>Network</td>
+</tr>
+<tr>
+<td>E2</td>
+<td><code>POST /checkin/create</code></td>
+<td>Add <strong>day selection</strong> (every day / weekdays / pick from 7 days); add <strong>message</strong> field; add <strong>duration</strong> (how long the schedule runs); make <code>scheduleTime</code> <strong>time-only</strong>; enforce <strong>one check-in/day</strong></td>
+<td>Network</td>
+</tr>
+<tr>
+<td>E3</td>
+<td><code>GET /checkin/status-check</code></td>
+<td>Add <strong>filter by target member MSISDN</strong>; add <strong>date-range</strong> param to bound history</td>
+<td>Network</td>
+</tr>
+<tr>
+<td>E4</td>
+<td><code>POST /checkin/status-update</code></td>
+<td>Add <strong>initiatorMSISDN</strong> → Network validates admin before dismiss/pause/resume</td>
+<td>Network (+ Product confirm)</td>
+</tr>
+<tr>
+<td>E5</td>
+<td><code>POST /sos/cancel</code></td>
+<td>Enforce <strong>cancel only by initiator</strong></td>
+<td>Network</td>
+</tr>
+<tr>
+<td>E6</td>
+<td><code>POST /sos/update</code></td>
+<td>Allow <strong>responder to resolve</strong> via <code>resolvedBy</code> (future flexibility)</td>
+<td>Network</td>
+</tr>
+<tr>
+<td>E7</td>
+<td><code>POST /sos/create</code> (+ flow)</td>
+<td>Capture location via <code>additionalData</code>; <strong>LBS fallback during SOS</strong> when app location absent; fan location to responders</td>
+<td>Network (Gopal/Bhabani)</td>
+</tr>
+<tr>
+<td>E8</td>
+<td><code>GET /device-status/fetch</code></td>
+<td>Confirm returns <strong>last value + last-updated timestamp</strong> per parameter incl. <strong>location</strong> (Kafka feed)</td>
+<td>Network</td>
+</tr>
+</tbody></table>
+<p><strong>APIs to DROP:</strong> <code>SOS-kill</code> (not needed — orchestrator does not persist). <em>Family deletion:</em> not applicable (use <code>family/update</code> status=Inactive).</p>
+<hr>
+<h2>4. APIs / capabilities that need to be BUILT (new)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>New capability</th>
+<th>What / why</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>B1</td>
+<td><strong>Consolidated History / Audit API</strong></td>
+<td>One circle-activity history over 7–30 days (check-ins, SOS, fraud/spam, events). Not designed yet — separate session. Compose Network (events) + Whalebone (fraud) + UCM (titles via Channel)</td>
+<td>Network + Channel + Whalebone</td>
+</tr>
+<tr>
+<td>B2</td>
+<td><strong>Telemetry pipeline contract</strong></td>
+<td>Define &amp; confirm Telemetry SDK → Kafka → Device-Telemetry hub (store) + the fetch contract; confirm publisher/owner</td>
+<td>Ajay Saini + Network</td>
+</tr>
+<tr>
+<td>B3</td>
+<td><strong>LBS location lookup (SOS)</strong></td>
+<td>Network capability to ping LBS and return location when app location is missing — SOS only</td>
+<td>Network (Gopal)</td>
+</tr>
+<tr>
+<td>B4</td>
+<td><strong>No-internet SOS via SMS short code</strong></td>
+<td>Predefined short-code SMS ("SOS" to 52263) → Network registers SOS</td>
+<td>Network + App</td>
+</tr>
+<tr>
+<td>B5</td>
+<td><strong>Bumblebee / IVR integration</strong></td>
+<td>Notification + IVR channel for alerts/escalation</td>
+<td>Network + Bumblebee (Parshant Verma)</td>
+</tr>
+<tr>
+<td>B6</td>
+<td><strong>Device-status processing / intelligence</strong> <em>(if in scope)</em></td>
+<td>"Phone off for N hrs", offline/online notifications — currently <strong>out of plan</strong>; new scope if product needs it</td>
+<td>TBD (separate discussion)</td>
+</tr>
+<tr>
+<td>B7</td>
+<td><strong>Platform-112 emergency trigger</strong> <em>(future)</em></td>
+<td>Bring device-native 112 SOS into the platform</td>
+<td>Network (future)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. Action items</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Action</th>
+<th>Owner</th>
+<th>Due</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A1</td>
+<td>Implement E1–E8 API changes; present the diff</td>
+<td>Ashiesh / Network</td>
+<td>18 Nov (2 PM)</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>Design the consolidated <strong>history/audit</strong> API (B1)</td>
+<td>Network + Channel</td>
+<td>separate session</td>
+</tr>
+<tr>
+<td>A3</td>
+<td>Confirm <strong>telemetry SDK flow &amp; owner</strong> (B2) via Confluence diagram</td>
+<td>Ajay Saini (via Amit)</td>
+<td>next</td>
+</tr>
+<tr>
+<td>A4</td>
+<td>Confirm with <strong>product</strong>: check-in dismiss admin-only (E4); check-in day-selection UX + duration</td>
+<td>Amit / Aditi</td>
+<td>18 Nov</td>
+</tr>
+<tr>
+<td>A5</td>
+<td><strong>LBS fallback</strong> for SOS location (B3)</td>
+<td>Gopal / Bhabani</td>
+<td>next</td>
+</tr>
+<tr>
+<td>A6</td>
+<td>Reach <strong>Bumblebee SPOC</strong> (Parshant Verma) for notification/IVR (B5) — separate call</td>
+<td>Gopal / Bhabani</td>
+<td>next</td>
+</tr>
+<tr>
+<td>A7</td>
+<td><strong>Retention</strong> decision (7 vs 30 days) in BRD</td>
+<td>Aditi / Product</td>
+<td>next</td>
+</tr>
+<tr>
+<td>A8</td>
+<td>Confirm orchestrator <strong>does not send</strong> device-store data (consume-only)</td>
+<td>Amit</td>
+<td>18 Nov</td>
+</tr>
+</tbody></table>
+<p><strong>Next meeting:</strong> 18 Nov 2026, 2:00 PM — Ashiesh walks through the updated APIs (today's changes) and the history topic; schedule separate sessions for telemetry SDK, Bumblebee/IVR, and history.</p>
+<hr>
+<p><em>Captured from the meeting auto-transcript; wording normalised to intent. Names/roles as inferred from the discussion.</em></p>
+</article></div></body></html>
