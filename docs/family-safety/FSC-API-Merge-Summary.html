@@ -192,7 +192,11 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <li>Returns <code>ResponseHistoryPojo { historyInfos: [HistoryInfo], …envelope }</code>; <code>HistoryInfo</code> = <code>{ eventId, eventType, eventTimestamp, familyId, initiatorMsisdn, targetMsisdn, status, message, additionalData }</code> (newest first).</li>
 <li>Note: titles (mom/dad) are mapped by Channel via UCM; spam/fraud entries originate from Whalebone — the Network history surfaces the event records it holds.</li>
 </ul>
-<p><em>Spec version: <code>1.4-merged</code> · 16 paths.</em></p>
+<h2>Removed</h2>
+<ul>
+<li><strong><code>POST /api/v1/device/status/store</code></strong> — dropped. The orchestrator is <strong>consume-only</strong>; device/telemetry data is stored via the Telemetry SDK → Kafka → Network Device-Telemetry hub, not through this API. Only <strong><code>GET /device/status/fetch</code></strong> remains.</li>
+</ul>
+<p><em>Spec version: <code>1.5-merged</code> · 15 paths.</em></p>
 <blockquote>
 <p>Note (17 Nov review): on <code>family/save</code>, members should <strong>not</strong> be added via the family path — use <code>member/save</code>. <code>familyMemberPojos</code> on <code>RequestFamilyPojo</code> is for the create case only.</p>
 </blockquote>

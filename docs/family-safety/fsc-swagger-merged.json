@@ -1,8 +1,8 @@
 {
   "swagger": "2.0",
   "info": {
-    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1).",
-    "version": "1.4-merged",
+    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1). REMOVED: POST /api/v1/device/status/store (orchestrator is consume-only; device data stored via the telemetry SDK->Kafka->Network hub, not via this API).",
+    "version": "1.5-merged",
     "title": "FSC API Documentation (merged)",
     "termsOfService": "urn:tos",
     "contact": {},
@@ -172,53 +172,6 @@
             "schema": {
               "$ref": "#/definitions/ResponseDeviceStatusDataPojo"
             }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
-          }
-        },
-        "deprecated": false
-      }
-    },
-    "/api/v1/device/status/store": {
-      "post": {
-        "tags": [
-          "DeviceStatus Controller"
-        ],
-        "summary": "API to Store Device status data",
-        "operationId": "storeDeviceDataUsingPOST",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "*/*"
-        ],
-        "parameters": [
-          {
-            "in": "body",
-            "name": "requestDeviceStatusDataPojo",
-            "description": "Device status data pojo to store",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/RequestDeviceStatusDataPojo"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/ResponseGenericPojo"
-            }
-          },
-          "201": {
-            "description": "Created"
           },
           "401": {
             "description": "Unauthorized"
@@ -927,61 +880,6 @@
     }
   },
   "definitions": {
-    "RequestDeviceStatus": {
-      "type": "object",
-      "required": [
-        "propertyName",
-        "propertyValue"
-      ],
-      "properties": {
-        "propertyName": {
-          "type": "string",
-          "description": "Name of the device property"
-        },
-        "propertyValue": {
-          "type": "string",
-          "description": "Value of the device property"
-        }
-      },
-      "title": "RequestDeviceStatus",
-      "description": "Request Device Status"
-    },
-    "RequestDeviceStatusDataPojo": {
-      "type": "object",
-      "required": [
-        "dataId",
-        "deviceStatusList",
-        "familyId",
-        "msisdn"
-      ],
-      "properties": {
-        "additionalData": {
-          "type": "string",
-          "description": "Additional data related to SOS creation"
-        },
-        "dataId": {
-          "type": "string",
-          "description": "Unique Id of the Data"
-        },
-        "deviceStatusList": {
-          "type": "array",
-          "description": "List of device properties status",
-          "items": {
-            "$ref": "#/definitions/RequestDeviceStatus"
-          }
-        },
-        "familyId": {
-          "type": "string",
-          "description": "Family Id of the user"
-        },
-        "msisdn": {
-          "type": "string",
-          "description": "MSISDN of the user"
-        }
-      },
-      "title": "RequestDeviceStatusDataPojo",
-      "description": "Request Device Status Data Pojo"
-    },
     "RequestFamilyMemberPojo": {
       "type": "object",
       "required": [

@@ -63,6 +63,10 @@ Requested changes: **5 merges** (combine create/update/action into one endpoint 
 - Returns `ResponseHistoryPojo { historyInfos: [HistoryInfo], …envelope }`; `HistoryInfo` = `{ eventId, eventType, eventTimestamp, familyId, initiatorMsisdn, targetMsisdn, status, message, additionalData }` (newest first).
 - Note: titles (mom/dad) are mapped by Channel via UCM; spam/fraud entries originate from Whalebone — the Network history surfaces the event records it holds.
 
-*Spec version: `1.4-merged` · 16 paths.*
+## Removed
+
+- **`POST /api/v1/device/status/store`** — dropped. The orchestrator is **consume-only**; device/telemetry data is stored via the Telemetry SDK → Kafka → Network Device-Telemetry hub, not through this API. Only **`GET /device/status/fetch`** remains.
+
+*Spec version: `1.5-merged` · 15 paths.*
 
 > Note (17 Nov review): on `family/save`, members should **not** be added via the family path — use `member/save`. `familyMemberPojos` on `RequestFamilyPojo` is for the create case only.
