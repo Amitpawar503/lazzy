@@ -1,0 +1,821 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/BEFE-Upstream-API-Change-List</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Upstream (BEFE/Guardian) API Change List</h1>
+<p><strong>To:</strong> Leadership / Channel · <strong>Base path:</strong> <code>/befe/fsc/v1</code> · <strong>Date:</strong> 18 Nov 2026
+<strong>Attached:</strong> <code>befe-upstream-swagger.html</code> (Swagger UI) · <code>befe-upstream-swagger.json</code> (import to Swagger/Postman)</p>
+<h2>Verdict</h2>
+<p>Checked <strong>FSC_BEFE_API_Requirements</strong> (B01–B74) and the <strong>FSC downstream swagger</strong> against <strong>Family-Safety-API-Binding-Leadership.pdf</strong>.</p>
+<ul>
+<li>The binding documented only the <strong>~24 core app flows</strong> (older naming: <code>/circles</code>, <code>/safety-events</code>, <code>/family-safety/*</code>). It is a <em>downstream mapping</em> doc, not an upstream API spec.</li>
+<li>The upstream app surface is <strong>72 endpoints / 86 operations</strong>. <strong>~50 were missing</strong> from the binding — all now specified.</li>
+<li><strong>Result: 0 upstream APIs still missing.</strong> Full coverage, with request + response + mandatory fields per operation.</li>
+</ul>
+<blockquote>
+<p><strong>Summary: 32 core (already mapped) · 54 ADDED · 86 total operations.</strong></p>
+</blockquote>
+<p><strong>Legend:</strong> ✓ = core flow already in the binding (orchestrates existing FSC) · <strong>＋ = ADDED</strong> (was a gap / never enumerated upstream).</p>
+<h2>Eligibility &amp; Onboarding</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/eligibility</code></td>
+<td>msisdn (q)</td>
+<td>Can user create a circle? (Airtel? LOB? corporate? already in circle? pack active?)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/onboarding/content</code></td>
+<td>—</td>
+<td>CMS feature tiles / FAQ / how-it-works</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/how-it-works</code></td>
+<td>—</td>
+<td>Revisit onboarding content</td>
+</tr>
+</tbody></table>
+<h2>Subscription</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/subscription/offers</code></td>
+<td>—</td>
+<td>Plans (prepaid/postpaid/family)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/subscription/purchase</code></td>
+<td>planId, channel</td>
+<td>Start prepaid buy / postpaid trial / rewards claim</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/subscription/status</code></td>
+<td>msisdn (q)</td>
+<td>Active/trial/expiring/paused/closing + banners</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/subscription/resume</code></td>
+<td>familyId, msisdn</td>
+<td>Member takes over pack in grace</td>
+</tr>
+</tbody></table>
+<h2>Circle &amp; Home</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/circle/create</code></td>
+<td>consentVersion</td>
+<td>Create circle after pack success (admin=self)</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/circle/bootstrap</code></td>
+<td>familyId (q)</td>
+<td>Empty-state landing after create</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/home</code></td>
+<td>familyId (q)</td>
+<td>Primary home aggregate (circle status, me, members, alerts, responders)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/home/refresh-signals</code></td>
+<td>familyId (q)</td>
+<td>Trigger signal refresh</td>
+</tr>
+</tbody></table>
+<h2>Settings &amp; Roles</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/settings</code></td>
+<td>familyId (q)</td>
+<td>Settings hub (role-aware)</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/roles</code></td>
+<td>membershipId, role</td>
+<td>Make/demote co-admin</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>PUT</td>
+<td><code>/responders</code></td>
+<td>responders</td>
+<td>Set responder list</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/members/{membershipId}/remove</code></td>
+<td>membershipId (path)</td>
+<td>Remove member</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/circle/leave</code></td>
+<td>familyId, msisdn</td>
+<td>Leave (parental lock)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/circle/close-preview</code></td>
+<td>familyId (q)</td>
+<td>Admin-leave / closing consequences</td>
+</tr>
+</tbody></table>
+<h2>Members &amp; Invites</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/members/candidates</code></td>
+<td>familyId (q)</td>
+<td>Family Mode members + app-installed + Airtel flag</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/members/validate</code></td>
+<td>familyId, msisdn</td>
+<td>Validate MSISDN before invite</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/invites/send</code></td>
+<td>familyId, invites</td>
+<td>Send invite(s) with features + relationship</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/invites/list</code></td>
+<td>familyId (q)</td>
+<td>Pending invites with expiry</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/invites/resend</code></td>
+<td>inviteId</td>
+<td>Resend (max 3/30d)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/features/catalog</code></td>
+<td>—</td>
+<td>Default vs advanced feature catalog</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/invites/{inviteId}</code></td>
+<td>inviteId (path)</td>
+<td>Invite detail for app</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/invites/{inviteId}/respond</code></td>
+<td>inviteId (path), action</td>
+<td>Accept/decline (+switch-circle confirm)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/invites/web/{token}</code></td>
+<td>token (path)</td>
+<td>Non-app invite page</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/invites/web/{token}/respond</code></td>
+<td>token (path), action</td>
+<td>Non-app accept/decline</td>
+</tr>
+</tbody></table>
+<h2>Permissions</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/permissions/status</code></td>
+<td>membershipId (q)</td>
+<td>Feature-permission matrix</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/permissions/ack</code></td>
+<td>items</td>
+<td>Record granted/denied permissions</td>
+</tr>
+</tbody></table>
+<h2>Member Page</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/members/{membershipId}</code></td>
+<td>membershipId (path)</td>
+<td>Member detail aggregate</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/members/{membershipId}/features</code></td>
+<td>membershipId (path)</td>
+<td>Feature enablement + health</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>PUT</td>
+<td><code>/members/{membershipId}/features</code></td>
+<td>membershipId (path), feature, enabled</td>
+<td>Toggle a feature</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/members/{membershipId}/safety-report</code></td>
+<td>membershipId (path)</td>
+<td>Safety report (3 months)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/members/{membershipId}/notify-back-online</code></td>
+<td>membershipId (path)</td>
+<td>Subscribe back-online</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/advanced-features/request</code></td>
+<td>membershipId, feature</td>
+<td>Request Device Safety/Parental activation</td>
+</tr>
+</tbody></table>
+<h2>Check-ins</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/checkins</code></td>
+<td>—</td>
+<td>List open + recent</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/checkins</code></td>
+<td>familyId, targets</td>
+<td>Create ad-hoc check-in (1+ targets)</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/checkins/{id}</code></td>
+<td>id (path)</td>
+<td>Status / escalation stage</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/checkins/{id}/respond</code></td>
+<td>id (path), response</td>
+<td>I'm okay / need help</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/checkins/{id}/dismiss</code></td>
+<td>id (path)</td>
+<td>Sender dismisses</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/checkins/{id}/connected</code></td>
+<td>id (path)</td>
+<td>I've connected with her (after need-help)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/checkins/schedules</code></td>
+<td>—</td>
+<td>List schedules</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/checkins/schedules</code></td>
+<td>targetMsisdn, action</td>
+<td>Create schedule</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>PUT</td>
+<td><code>/checkins/schedules/{scheduleId}</code></td>
+<td>scheduleId (path), targetMsisdn, action</td>
+<td>Update/pause/resume schedule</td>
+</tr>
+</tbody></table>
+<h2>SOS</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/sos</code></td>
+<td>familyId, initiatorMsisdn</td>
+<td>Create SOS + location snapshot</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/sos/active</code></td>
+<td>familyId (q)</td>
+<td>Active SOS for home takeover/widget</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/sos/{sosId}</code></td>
+<td>sosId (path)</td>
+<td>Live SOS state</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/sos/{sosId}/respond</code></td>
+<td>sosId (path), responderMsisdn</td>
+<td>I'm responding</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/sos/{sosId}/dissolve</code></td>
+<td>sosId (path)</td>
+<td>Dissolve / sent-by-mistake (sender only)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/sos/{sosId}/location</code></td>
+<td>sosId (path), location</td>
+<td>Location pings while active</td>
+</tr>
+</tbody></table>
+<h2>Fraud Alerts</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/fraud/alerts/active</code></td>
+<td>familyId (q)</td>
+<td>Active fraud alerts for responders</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/fraud/alerts/{alertId}/warn</code></td>
+<td>alertId (path)</td>
+<td>Send flash/USSD warning</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/fraud/alerts/{alertId}/end-call</code></td>
+<td>alertId (path)</td>
+<td>Remote disconnect (pending Legal)</td>
+</tr>
+</tbody></table>
+<h2>Device Safety</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/device-safety/{membershipId}</code></td>
+<td>membershipId (path)</td>
+<td>Status, findings, missing permissions</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/device-safety/{membershipId}/activate</code></td>
+<td>membershipId (path)</td>
+<td>Admin activate -&gt; request to member</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/device-safety/{membershipId}/deactivate</code></td>
+<td>membershipId (path)</td>
+<td>Admin/co-admin off</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/device-safety/sdk/bootstrap</code></td>
+<td>msisdn</td>
+<td>Pairing token for Whalebone SDK</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/device-safety/scan</code></td>
+<td>membershipId</td>
+<td>Trigger/report Scan Now</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/device-safety/events</code></td>
+<td>membershipId (q)</td>
+<td>Blocked URLs / app findings history</td>
+</tr>
+</tbody></table>
+<h2>Parental Controls</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/parental/{membershipId}</code></td>
+<td>membershipId (path)</td>
+<td>Parental hub aggregate</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/parental/{membershipId}/activate</code></td>
+<td>membershipId (path), membershipId</td>
+<td>Activate + device-code pairing</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/schedules</code></td>
+<td>membershipId (path)</td>
+<td>List schedules</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/parental/{membershipId}/schedules</code></td>
+<td>membershipId (path), type, action</td>
+<td>Create schedule</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>PUT</td>
+<td><code>/parental/{membershipId}/schedules/{scheduleId}</code></td>
+<td>membershipId (path), scheduleId (path), type, action</td>
+<td>Update schedule</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/screen-time</code></td>
+<td>membershipId (path)</td>
+<td>Daily limit + today-only + bonus</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>PUT</td>
+<td><code>/parental/{membershipId}/screen-time</code></td>
+<td>membershipId (path)</td>
+<td>Set screen time</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/apps</code></td>
+<td>membershipId (path)</td>
+<td>App/category rules</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>PUT</td>
+<td><code>/parental/{membershipId}/apps</code></td>
+<td>membershipId (path), rules</td>
+<td>Set app rules</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/parental/{membershipId}/pause</code></td>
+<td>membershipId (path), action</td>
+<td>Pause / resume phone</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/parental/requests</code></td>
+<td>familyId (q)</td>
+<td>More-time / unblock asks</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/parental/requests</code></td>
+<td>membershipId, type</td>
+<td>Create request</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/parental/requests/{requestId}/decide</code></td>
+<td>requestId (path), decision</td>
+<td>Approve/decline</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/content-filter</code></td>
+<td>membershipId (path)</td>
+<td>Level, categories, allow/block, safe search</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>PUT</td>
+<td><code>/parental/{membershipId}/content-filter</code></td>
+<td>membershipId (path)</td>
+<td>Set content filter</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/places</code></td>
+<td>membershipId (path)</td>
+<td>Geofences</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>POST</td>
+<td><code>/parental/{membershipId}/places</code></td>
+<td>membershipId (path), name, lat, lng</td>
+<td>Create place</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>PUT</td>
+<td><code>/parental/{membershipId}/places/{placeId}</code></td>
+<td>membershipId (path), placeId (path), name, lat, lng</td>
+<td>Update place</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/usage</code></td>
+<td>membershipId (path)</td>
+<td>Today usage + trends</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/parental/{membershipId}/location</code></td>
+<td>membershipId (path)</td>
+<td>Live location (no history)</td>
+</tr>
+</tbody></table>
+<h2>Alerts &amp; History</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/alerts</code></td>
+<td>familyId (q), days (q)</td>
+<td>Active + history, role-scoped filters</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/alerts/{alertId}</code></td>
+<td>alertId (path)</td>
+<td>Alert detail</td>
+</tr>
+<tr>
+<td>✓</td>
+<td>GET</td>
+<td><code>/reports/weekly</code></td>
+<td>familyId (q)</td>
+<td>Weekly summary (future)</td>
+</tr>
+</tbody></table>
+<h2>Signals &amp; Lifecycle</h2>
+<table>
+<thead>
+<tr>
+<th>±</th>
+<th>Method</th>
+<th>Path</th>
+<th>Mandatory fields</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/signals/{membershipId}</code></td>
+<td>membershipId (path)</td>
+<td>Reachability + battery + ringer + last-on-network</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/signals/subscribe-back-online</code></td>
+<td>membershipId</td>
+<td>Subscribe back-online (alias B24)</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>GET</td>
+<td><code>/lifecycle/events</code></td>
+<td>familyId (q)</td>
+<td>Port-out / SIM-swap / ownership / uninstall</td>
+</tr>
+<tr>
+<td><strong>＋</strong></td>
+<td>POST</td>
+<td><code>/consent/reconfirm</code></td>
+<td>membershipId, consentVersion</td>
+<td>Non-Airtel periodic re-consent</td>
+</tr>
+</tbody></table>
+<h2>Finer-grained additions beyond the raw list</h2>
+<p>These 5 sub-resources were split out so updates are RESTful (not new scope, just method-correct):</p>
+<ul>
+<li><code>PUT /checkins/schedules/{scheduleId}</code> — update one schedule</li>
+<li><code>POST /invites/web/{token}/respond</code> — non-app accept/decline</li>
+<li><code>POST /parental/requests/{requestId}/decide</code> — approve/decline a child request</li>
+<li><code>PUT /parental/{membershipId}/places/{placeId}</code> — update one geofence</li>
+<li><code>PUT /parental/{membershipId}/schedules/{scheduleId}</code> — update one parental schedule</li>
+</ul>
+<h2>Open items (unchanged)</h2>
+<ul>
+<li>Routes under <code>/befe/fsc/v1</code> are <strong>proposals</strong> pending Guardian registration.</li>
+<li><strong>GEOFENCE / INACTIVITY</strong> (places, signals) still has <strong>no Network owner</strong> downstream (gap G7).</li>
+<li>History (<code>/alerts</code>) + lifecycle compose <strong>Network events + Whalebone fraud + UCM titles</strong>.</li>
+<li>BEFE is <strong>stateless / consume-only</strong> (no DP persist), per the ADR.</li>
+</ul>
+<p><em>Generated from <code>befe-upstream-swagger.json</code>; mandatory fields are the <code>required</code> request params/bodies per operation.</em></p>
+</article></div></body></html>
