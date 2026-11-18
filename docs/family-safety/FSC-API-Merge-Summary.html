@@ -135,6 +135,64 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 </tr>
 </tbody></table>
 <p><strong>Unchanged:</strong> <code>family/get</code>, <code>member/get</code>, <code>member/role/update</code>, <code>trigger/checkin/status/check</code>, <code>trigger/sos/status/check</code>, <code>device/status/*</code>, <code>alarm/*</code>. Response envelope (<code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>) unchanged.</p>
+<h2>Enhancements folded (17 Nov review, E1–E8)</h2>
+<table>
+<thead>
+<tr>
+<th>Ref</th>
+<th>API</th>
+<th>Added</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>E1</td>
+<td><code>family/save</code></td>
+<td>note: members only via <code>member/save</code> (not the family path)</td>
+</tr>
+<tr>
+<td>E2</td>
+<td><code>POST /trigger/checkin</code> (CREATE)</td>
+<td><code>message</code>, <code>scheduleDays</code> (MON–SUN), <code>scheduleTime</code> as <strong>HH:mm</strong> time-only, <code>startDate</code>/<code>endDate</code> (duration), one-per-day rule</td>
+</tr>
+<tr>
+<td>E3</td>
+<td><code>GET /trigger/checkin/status/check</code></td>
+<td><code>targetMsisdn</code> filter + <code>fromDate</code>/<code>toDate</code> range</td>
+</tr>
+<tr>
+<td>E4</td>
+<td><code>POST /trigger/checkin</code> (DISMISS/PAUSE/RESUME)</td>
+<td><code>initiatorMsisdn</code> → Network validates admin</td>
+</tr>
+<tr>
+<td>E5</td>
+<td><code>DELETE /trigger/sos/cancel</code></td>
+<td><code>initiatorMsisdn</code> → cancel only by initiator</td>
+</tr>
+<tr>
+<td>E6</td>
+<td><code>POST /trigger/sos</code> (RESOLVE)</td>
+<td><code>resolvedBy</code> may be initiator or responder</td>
+</tr>
+<tr>
+<td>E7</td>
+<td><code>POST /trigger/sos</code> (CREATE)</td>
+<td>explicit <code>location</code> ('lat,long'); Network LBS fallback during SOS</td>
+</tr>
+<tr>
+<td>E8</td>
+<td><code>GET /device/status/fetch</code></td>
+<td><code>lastUpdatedOn</code> timestamp per property</td>
+</tr>
+</tbody></table>
+<h2>New API — consolidated Alert &amp; History (B1)</h2>
+<p><strong><code>GET /api/v1/history/fetch</code></strong> — one call for the whole circle's activity history.</p>
+<ul>
+<li>Query: <code>familyId</code> (required), <code>msisdn</code>, <code>eventType</code> (<code>CHECK_IN | SOS | FRAUD | ALARM | DEVICE_STATUS</code>), <code>fromDate</code>, <code>toDate</code>.</li>
+<li>Returns <code>ResponseHistoryPojo { historyInfos: [HistoryInfo], …envelope }</code>; <code>HistoryInfo</code> = <code>{ eventId, eventType, eventTimestamp, familyId, initiatorMsisdn, targetMsisdn, status, message, additionalData }</code> (newest first).</li>
+<li>Note: titles (mom/dad) are mapped by Channel via UCM; spam/fraud entries originate from Whalebone — the Network history surfaces the event records it holds.</li>
+</ul>
+<p><em>Spec version: <code>1.4-merged</code> · 16 paths.</em></p>
 <blockquote>
 <p>Note (17 Nov review): on <code>family/save</code>, members should <strong>not</strong> be added via the family path — use <code>member/save</code>. <code>familyMemberPojos</code> on <code>RequestFamilyPojo</code> is for the create case only.</p>
 </blockquote>

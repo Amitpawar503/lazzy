@@ -1,8 +1,8 @@
 {
   "swagger": "2.0",
   "info": {
-    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*.",
-    "version": "1.2-merged",
+    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1).",
+    "version": "1.4-merged",
     "title": "FSC API Documentation (merged)",
     "termsOfService": "urn:tos",
     "contact": {},
@@ -37,6 +37,10 @@
     {
       "name": "Trigger SOS Controller",
       "description": "Trigger SOS Controller"
+    },
+    {
+      "name": "History Controller",
+      "description": "History Controller"
     }
   ],
   "paths": {
@@ -424,6 +428,32 @@
             "required": false,
             "type": "string",
             "allowEmptyValue": false
+          },
+          {
+            "name": "targetMsisdn",
+            "in": "query",
+            "description": "Filter by a specific target member MSISDN (E3).",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "description": "Start of date range (inclusive, yyyy-MM-dd) (E3).",
+            "required": false,
+            "type": "string",
+            "format": "date",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "description": "End of date range (inclusive, yyyy-MM-dd) (E3).",
+            "required": false,
+            "type": "string",
+            "format": "date",
+            "allowEmptyValue": false
           }
         ],
         "responses": {
@@ -784,6 +814,14 @@
             "required": false,
             "type": "string",
             "allowEmptyValue": false
+          },
+          {
+            "name": "initiatorMsisdn",
+            "in": "query",
+            "description": "MSISDN requesting cancel — Network validates it matches the SOS initiator (E5).",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
           }
         ],
         "responses": {
@@ -791,6 +829,87 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/history/fetch": {
+      "get": {
+        "tags": [
+          "History Controller"
+        ],
+        "summary": "Retrieve consolidated alert & activity history for a family circle (check-in, SOS, fraud, alarm, device-status). Filter by member, type and date range.",
+        "operationId": "fetchHistoryUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id of the circle",
+            "required": true,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "Filter to a specific member MSISDN (optional)",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "description": "Filter by event type (optional)",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "CHECK_IN",
+              "SOS",
+              "FRAUD",
+              "ALARM",
+              "DEVICE_STATUS"
+            ],
+            "allowEmptyValue": false
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "description": "Start of date range (inclusive, yyyy-MM-dd)",
+            "required": false,
+            "type": "string",
+            "format": "date",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "description": "End of date range (inclusive, yyyy-MM-dd)",
+            "required": false,
+            "type": "string",
+            "format": "date",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseHistoryPojo"
             }
           },
           "401": {
@@ -926,7 +1045,7 @@
         },
         "familyMemberPojos": {
           "type": "array",
-          "description": "List of family members",
+          "description": "List of family members. CREATE only — on update, manage members via /member/save or /member/delete (E1).",
           "items": {
             "$ref": "#/definitions/RequestFamilyMemberPojo"
           }
@@ -1154,7 +1273,8 @@
       "type": "object",
       "required": [
         "propertyName",
-        "propertyValue"
+        "propertyValue",
+        "lastUpdatedOn"
       ],
       "properties": {
         "propertyName": {
@@ -1164,6 +1284,11 @@
         "propertyValue": {
           "type": "string",
           "description": "Value of the device property"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when this property value was last updated (E8)."
         }
       },
       "title": "ResponseDeviceStatus",
@@ -1486,7 +1611,7 @@
         },
         "initiatorMsisdn": {
           "type": "string",
-          "description": "[CREATE] Initiator MSISDN"
+          "description": "[CREATE] Initiator MSISDN. [DISMISS/PAUSE/RESUME] actor MSISDN — Network validates it is an admin before applying (E4)."
         },
         "targetMsisdn": {
           "type": "string",
@@ -1494,7 +1619,7 @@
         },
         "scheduleType": {
           "type": "string",
-          "description": "[CREATE] Schedule type",
+          "description": "[CREATE] OneTime or Periodic",
           "enum": [
             "OneTime",
             "Periodic"
@@ -1502,8 +1627,8 @@
         },
         "scheduleTime": {
           "type": "string",
-          "format": "date-time",
-          "description": "[CREATE] Schedule time"
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "[CREATE] Time of day (HH:mm, local). One check-in per day (E2)."
         },
         "checkinTime": {
           "type": "string",
@@ -1517,6 +1642,36 @@
         "additionalData": {
           "type": "string",
           "description": "Additional data"
+        },
+        "scheduleDays": {
+          "type": "array",
+          "description": "[CREATE, Periodic] Days to run. All 7 = every day; MON-FRI = weekdays; or a custom subset (E2).",
+          "items": {
+            "type": "string",
+            "enum": [
+              "MON",
+              "TUE",
+              "WED",
+              "THU",
+              "FRI",
+              "SAT",
+              "SUN"
+            ]
+          }
+        },
+        "message": {
+          "type": "string",
+          "description": "[CREATE] Check-in message shown to the target member (E2)."
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date",
+          "description": "[CREATE] Schedule start date (E2)."
+        },
+        "endDate": {
+          "type": "string",
+          "format": "date",
+          "description": "[CREATE] Schedule end date; omit = runs until paused/dismissed, no fixed end (E2)."
         }
       },
       "title": "RequestTriggerCheckinPojo",
@@ -1560,7 +1715,7 @@
         },
         "resolvedBy": {
           "type": "string",
-          "description": "[RESOLVE] MSISDN who resolved"
+          "description": "[RESOLVE] MSISDN who resolved. May be the initiator or a responder (E6)."
         },
         "resolvedTimestamp": {
           "type": "string",
@@ -1570,10 +1725,99 @@
         "additionalData": {
           "type": "string",
           "description": "Additional data"
+        },
+        "location": {
+          "type": "string",
+          "description": "[CREATE] Location as 'lat,long' if available. If absent, Network falls back to LBS during SOS (E7)."
         }
       },
       "title": "RequestTriggerSosPojo",
       "description": "Unified SOS request (create / acknowledge / resolve)"
+    },
+    "HistoryInfo": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "eventType",
+        "eventTimestamp",
+        "familyId"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Unique id of the event"
+        },
+        "eventType": {
+          "type": "string",
+          "description": "Type of event",
+          "enum": [
+            "CHECK_IN",
+            "SOS",
+            "FRAUD",
+            "ALARM",
+            "DEVICE_STATUS"
+          ]
+        },
+        "eventTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the event occurred"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id"
+        },
+        "initiatorMsisdn": {
+          "type": "string",
+          "description": "MSISDN that initiated the event (or SYSTEM)"
+        },
+        "targetMsisdn": {
+          "type": "string",
+          "description": "MSISDN the event is about (if applicable)"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current status of the event (e.g. Active, Resolved, Received, Pending, Dismissed)"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable summary of the event"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional event data"
+        }
+      },
+      "title": "HistoryInfo",
+      "description": "One alert / activity history entry"
+    },
+    "ResponseHistoryPojo": {
+      "type": "object",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "historyInfos": {
+          "type": "array",
+          "description": "List of history / alert entries, newest first",
+          "items": {
+            "$ref": "#/definitions/HistoryInfo"
+          }
+        },
+        "responseCode": {
+          "type": "string"
+        },
+        "responseMessage": {
+          "type": "string"
+        },
+        "transactionId": {
+          "type": "string"
+        }
+      },
+      "title": "ResponseHistoryPojo",
+      "description": "Response consolidated alert & history"
     }
   }
 }

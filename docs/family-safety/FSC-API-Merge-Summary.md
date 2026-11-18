@@ -43,4 +43,26 @@ Requested changes: **5 merges** (combine create/update/action into one endpoint 
 
 **Unchanged:** `family/get`, `member/get`, `member/role/update`, `trigger/checkin/status/check`, `trigger/sos/status/check`, `device/status/*`, `alarm/*`. Response envelope (`responseCode`, `responseMessage`, `transactionId`) unchanged.
 
+## Enhancements folded (17 Nov review, E1–E8)
+
+| Ref | API | Added |
+|---|---|---|
+| E1 | `family/save` | note: members only via `member/save` (not the family path) |
+| E2 | `POST /trigger/checkin` (CREATE) | `message`, `scheduleDays` (MON–SUN), `scheduleTime` as **HH:mm** time-only, `startDate`/`endDate` (duration), one-per-day rule |
+| E3 | `GET /trigger/checkin/status/check` | `targetMsisdn` filter + `fromDate`/`toDate` range |
+| E4 | `POST /trigger/checkin` (DISMISS/PAUSE/RESUME) | `initiatorMsisdn` → Network validates admin |
+| E5 | `DELETE /trigger/sos/cancel` | `initiatorMsisdn` → cancel only by initiator |
+| E6 | `POST /trigger/sos` (RESOLVE) | `resolvedBy` may be initiator or responder |
+| E7 | `POST /trigger/sos` (CREATE) | explicit `location` ('lat,long'); Network LBS fallback during SOS |
+| E8 | `GET /device/status/fetch` | `lastUpdatedOn` timestamp per property |
+
+## New API — consolidated Alert & History (B1)
+
+**`GET /api/v1/history/fetch`** — one call for the whole circle's activity history.
+- Query: `familyId` (required), `msisdn`, `eventType` (`CHECK_IN | SOS | FRAUD | ALARM | DEVICE_STATUS`), `fromDate`, `toDate`.
+- Returns `ResponseHistoryPojo { historyInfos: [HistoryInfo], …envelope }`; `HistoryInfo` = `{ eventId, eventType, eventTimestamp, familyId, initiatorMsisdn, targetMsisdn, status, message, additionalData }` (newest first).
+- Note: titles (mom/dad) are mapped by Channel via UCM; spam/fraud entries originate from Whalebone — the Network history surfaces the event records it holds.
+
+*Spec version: `1.4-merged` · 16 paths.*
+
 > Note (17 Nov review): on `family/save`, members should **not** be added via the family path — use `member/save`. `familyMemberPojos` on `RequestFamilyPojo` is for the create case only.
