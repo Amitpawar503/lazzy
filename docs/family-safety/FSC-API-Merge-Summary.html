@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FSC API — Merge Summary</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>FSC API — Merge Summary (for Network team)</h1>
+<p><strong>Base:</strong> <code>/fsc</code> · <strong>Swagger version:</strong> <code>1.1-merged</code> (from <code>1.0</code>) · <strong>Date:</strong> 18 Nov 2026
+<strong>Artifacts:</strong> <code>fsc-swagger-merged.html</code> (open in a browser — Swagger UI) · <code>fsc-swagger-merged.json</code> (import into Swagger/Postman/codegen)</p>
+<p>We request <strong>3 merges</strong> — combine create+update into one upsert, and get+getAll into one read. No other endpoints change.</p>
+<h2>Merges requested</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Old endpoints (to remove)</th>
+<th>New merged endpoint</th>
+<th>How it switches</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>POST /api/v1/family/create</code> + <code>POST /api/v1/family/update</code></td>
+<td><strong><code>POST /api/v1/family/save</code></strong></td>
+<td><code>familyId</code> query is <strong>optional</strong> — <strong>omit = create</strong>, <strong>provide = update</strong> (upsert). Body <code>RequestFamilyPojo</code> unchanged.</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>POST /api/v1/member/add</code> + <code>POST /api/v1/member/update</code></td>
+<td><strong><code>POST /api/v1/member/save</code></strong></td>
+<td><code>memberId</code> query is <strong>optional</strong> — <strong>omit = add</strong>, <strong>provide = update</strong> (upsert). Body <code>RequestFamilyMemberPojo</code> unchanged.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>GET /api/v1/member/get</code> + <code>GET /api/v1/member/getAll</code></td>
+<td><strong><code>GET /api/v1/member/get</code></strong></td>
+<td><code>familyId</code> <strong>required</strong>, <code>memberId</code> <strong>optional</strong> — <strong>provide memberId = one member</strong>, <strong>omit = all members</strong> of the family.</td>
+</tr>
+</tbody></table>
+<h2>Model change (only one)</h2>
+<p>To let the single merged read return <strong>one or many</strong> members, <code>ResponseFamilyMemberPojo</code> becomes <strong>list-capable</strong>:</p>
+<ul>
+<li>New <code>ResponseFamilyMemberInfo</code> = the member fields (airtelCustomer, circleMemberRole, familyId, memberId, membershipId, membershipStatus, msisdn).</li>
+<li><code>ResponseFamilyMemberPojo</code> = <code>{ familyMemberInfos: [ResponseFamilyMemberInfo], responseCode, responseMessage, transactionId }</code>.</li>
+<li>A single-member query returns <code>familyMemberInfos</code> with exactly one element.</li>
+</ul>
+<h2>Net effect</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Family write APIs</td>
+<td>2 (create, update)</td>
+<td><strong>1</strong> (save)</td>
+</tr>
+<tr>
+<td>Member write APIs</td>
+<td>2 (add, update)</td>
+<td><strong>1</strong> (save)</td>
+</tr>
+<tr>
+<td>Member read APIs</td>
+<td>2 (get, getAll)</td>
+<td><strong>1</strong> (get)</td>
+</tr>
+<tr>
+<td>Total FSC paths</td>
+<td>21</td>
+<td><strong>18</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Unchanged:</strong> <code>family/get</code>, <code>member/delete</code>, <code>member/role/update</code>, all <code>trigger/checkin/*</code>, <code>trigger/sos/*</code>, <code>alarm/*</code>, <code>device/status/*</code>. Response envelope (<code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>) unchanged.</p>
+<blockquote>
+<p>Note (from 17 Nov review): on the <strong>family save</strong> path, per the agreed decision, member <strong>addition should not</strong> happen via family update — add members only via <code>member/save</code>. The <code>familyMemberPojos</code> array in <code>RequestFamilyPojo</code> is intended for the <strong>create</strong> case; on update it should carry family-level fields only.</p>
+</blockquote>
+</article></div></body></html>
