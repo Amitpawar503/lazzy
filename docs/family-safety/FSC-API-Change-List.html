@@ -1,0 +1,246 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FSC API — Change List</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>FSC API — Change List for Review</h1>
+<p><strong>To:</strong> Network team · <strong>Spec:</strong> <code>1.5-merged</code> (from <code>1.0</code>) · <strong>Base path:</strong> <code>/fsc</code> · <strong>Date:</strong> 18 Nov 2026
+<strong>Attached:</strong> <code>fsc-swagger-merged.html</code> (open in browser — Swagger UI) · <code>fsc-swagger-merged.json</code> (import into Swagger/Postman)</p>
+<p>Summary of requested changes: <strong>5 merges</strong>, <strong>2 method fixes</strong>, <strong>1 new API</strong>, <strong>1 removal</strong>, plus <strong>field-level enhancements</strong> from the 17 Nov review. Net: <strong>21 → 15 paths</strong>.</p>
+<h2>A. API changes</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Type</th>
+<th>Old API(s)</th>
+<th>New / Updated API</th>
+<th>Method</th>
+<th>What changes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Merge</td>
+<td><code>POST /family/create</code> + <code>POST /family/update</code></td>
+<td><code>POST /family/save</code></td>
+<td>POST</td>
+<td>Upsert — omit <code>familyId</code> = create, provide = update</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Merge</td>
+<td><code>POST /member/add</code> + <code>POST /member/update</code></td>
+<td><code>POST /member/save</code></td>
+<td>POST</td>
+<td>Upsert — omit <code>memberId</code> = add, provide = update</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Merge</td>
+<td><code>GET /member/get</code> + <code>GET /member/getAll</code></td>
+<td><code>GET /member/get</code></td>
+<td>GET</td>
+<td><code>familyId</code> required, <code>memberId</code> optional (omit = all members)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Merge</td>
+<td><code>POST /trigger/checkin/create</code> + <code>/response</code> + <code>/status/update</code></td>
+<td><code>POST /trigger/checkin</code></td>
+<td>POST</td>
+<td>Body <code>action</code> = CREATE / RESPONSE / DISMISS / PAUSE / RESUME</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Merge</td>
+<td><code>POST /trigger/sos/create</code> + <code>/update</code></td>
+<td><code>POST /trigger/sos</code></td>
+<td>POST</td>
+<td>Body <code>action</code> = CREATE / ACKNOWLEDGE / RESOLVE</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Method fix</td>
+<td><code>POST /member/delete</code></td>
+<td><code>DELETE /member/delete</code></td>
+<td><strong>DELETE</strong></td>
+<td><code>familyId</code>, <code>memberId</code> query</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Method fix</td>
+<td><code>POST /trigger/sos/cancel</code></td>
+<td><code>DELETE /trigger/sos/cancel</code></td>
+<td><strong>DELETE</strong></td>
+<td><code>triggerId</code> query; initiator-only</td>
+</tr>
+<tr>
+<td>8</td>
+<td>New API</td>
+<td>—</td>
+<td><code>GET /history/fetch</code></td>
+<td>GET</td>
+<td>Consolidated alert &amp; activity history; filters <code>familyId</code> (req), <code>msisdn</code>, <code>eventType</code>, <code>fromDate</code>, <code>toDate</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Removed</td>
+<td><code>POST /device/status/store</code></td>
+<td>—</td>
+<td>—</td>
+<td>Orchestrator is consume-only; telemetry stored via SDK → Kafka → Network hub</td>
+</tr>
+</tbody></table>
+<h2>B. Field-level enhancements (17 Nov review)</h2>
+<table>
+<thead>
+<tr>
+<th>Ref</th>
+<th>API</th>
+<th>Added / changed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>E1</td>
+<td><code>POST /family/save</code></td>
+<td>Members added only via <code>member/save</code> (not the family path)</td>
+</tr>
+<tr>
+<td>E2</td>
+<td><code>POST /trigger/checkin</code> (CREATE)</td>
+<td><code>message</code>; <code>scheduleDays</code> (MON–SUN); <code>scheduleTime</code> as <strong>HH:mm</strong> (time-only); <code>startDate</code> / <code>endDate</code> (duration); one check-in per day</td>
+</tr>
+<tr>
+<td>E3</td>
+<td><code>GET /trigger/checkin/status/check</code></td>
+<td><code>targetMsisdn</code> filter; <code>fromDate</code> / <code>toDate</code> range</td>
+</tr>
+<tr>
+<td>E4</td>
+<td><code>POST /trigger/checkin</code> (DISMISS/PAUSE/RESUME)</td>
+<td><code>initiatorMsisdn</code> → Network validates admin</td>
+</tr>
+<tr>
+<td>E5</td>
+<td><code>DELETE /trigger/sos/cancel</code></td>
+<td><code>initiatorMsisdn</code> → cancel only by initiator</td>
+</tr>
+<tr>
+<td>E6</td>
+<td><code>POST /trigger/sos</code> (RESOLVE)</td>
+<td><code>resolvedBy</code> may be initiator <strong>or</strong> responder</td>
+</tr>
+<tr>
+<td>E7</td>
+<td><code>POST /trigger/sos</code> (CREATE)</td>
+<td><code>location</code> ('lat,long'); Network LBS fallback during SOS</td>
+</tr>
+<tr>
+<td>E8</td>
+<td><code>GET /device/status/fetch</code></td>
+<td><code>lastUpdatedOn</code> timestamp per property</td>
+</tr>
+</tbody></table>
+<h2>C. Resulting API list (15 paths)</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>POST</td>
+<td><code>/api/v1/family/save</code></td>
+<td>Create / update family (upsert)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/family/get</code></td>
+<td>Get family by <code>familyId</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/member/save</code></td>
+<td>Add / update member (upsert)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/member/get</code></td>
+<td>Get one member or all (merged)</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/member/delete</code></td>
+<td>Delete member</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/member/role/update</code></td>
+<td>Update member role</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/trigger/checkin</code></td>
+<td>Check-in — create / response / dismiss / pause / resume</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/trigger/checkin/status/check</code></td>
+<td>Check-in status / history</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/trigger/sos</code></td>
+<td>SOS — create / acknowledge / resolve</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/trigger/sos/cancel</code></td>
+<td>Cancel SOS</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/trigger/sos/status/check</code></td>
+<td>SOS status</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/device/status/fetch</code></td>
+<td>Fetch device status (last value + <code>lastUpdatedOn</code>)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/history/fetch</code></td>
+<td>Consolidated alert &amp; activity history (new)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/alarm/incoming</code></td>
+<td>Incoming alarm / notification</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/alarm/sos/kill</code></td>
+<td>Kill an active SOS alarm</td>
+</tr>
+</tbody></table>
+<p><strong>Unchanged envelope:</strong> every response carries <code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>.
+<strong>Model note:</strong> <code>ResponseFamilyMemberPojo</code> is now list-capable (<code>familyMemberInfos[]</code>) so the merged <code>member/get</code> returns one or many.</p>
+</article></div></body></html>
