@@ -1,35 +1,46 @@
 # FSC API — Merge Summary (for Network team)
 
-**Base:** `/fsc` · **Swagger version:** `1.1-merged` (from `1.0`) · **Date:** 18 Nov 2026
+**Base:** `/fsc` · **Swagger:** `1.2-merged` (from `1.0`) · **Date:** 18 Nov 2026
 **Artifacts:** `fsc-swagger-merged.html` (open in a browser — Swagger UI) · `fsc-swagger-merged.json` (import into Swagger/Postman/codegen)
 
-We request **3 merges** — combine create+update into one upsert, and get+getAll into one read. No other endpoints change.
+Requested changes: **5 merges** (combine create/update/action into one endpoint each) + **2 HTTP-method fixes** (delete/cancel → `DELETE`). All read/status endpoints stay as-is.
 
 ## Merges requested
 
-| # | Old endpoints (to remove) | New merged endpoint | How it switches |
+| # | Old endpoints (removed) | New merged endpoint | How it switches |
 |---|---|---|---|
-| 1 | `POST /api/v1/family/create` + `POST /api/v1/family/update` | **`POST /api/v1/family/save`** | `familyId` query is **optional** — **omit = create**, **provide = update** (upsert). Body `RequestFamilyPojo` unchanged. |
-| 2 | `POST /api/v1/member/add` + `POST /api/v1/member/update` | **`POST /api/v1/member/save`** | `memberId` query is **optional** — **omit = add**, **provide = update** (upsert). Body `RequestFamilyMemberPojo` unchanged. |
-| 3 | `GET /api/v1/member/get` + `GET /api/v1/member/getAll` | **`GET /api/v1/member/get`** | `familyId` **required**, `memberId` **optional** — **provide memberId = one member**, **omit = all members** of the family. |
+| 1 | `POST /family/create` + `POST /family/update` | **`POST /family/save`** | `familyId` query optional — **omit = create, provide = update** (upsert) |
+| 2 | `POST /member/add` + `POST /member/update` | **`POST /member/save`** | `memberId` query optional — **omit = add, provide = update** (upsert) |
+| 3 | `GET /member/get` + `GET /member/getAll` | **`GET /member/get`** | `familyId` required, `memberId` optional — **provide = one member, omit = all** |
+| 4 | `POST /trigger/checkin/create` + `/response` + `/status/update` | **`POST /trigger/checkin`** | body `action` enum = **CREATE / RESPONSE / DISMISS / PAUSE / RESUME** |
+| 5 | `POST /trigger/sos/create` + `/update` | **`POST /trigger/sos`** | body `action` enum = **CREATE / ACKNOWLEDGE / RESOLVE** |
 
-## Model change (only one)
+## HTTP method fixes (delete/cancel must be DELETE, not POST)
 
-To let the single merged read return **one or many** members, `ResponseFamilyMemberPojo` becomes **list-capable**:
+| # | Old | New |
+|---|---|---|
+| 6 | `POST /member/delete` | **`DELETE /member/delete`** (`familyId`, `memberId` query) |
+| 7 | `POST /trigger/sos/cancel` | **`DELETE /trigger/sos/cancel`** (`triggerId` query) |
 
-- New `ResponseFamilyMemberInfo` = the member fields (airtelCustomer, circleMemberRole, familyId, memberId, membershipId, membershipStatus, msisdn).
-- `ResponseFamilyMemberPojo` = `{ familyMemberInfos: [ResponseFamilyMemberInfo], responseCode, responseMessage, transactionId }`.
-- A single-member query returns `familyMemberInfos` with exactly one element.
+## Model changes
+
+- **`ResponseFamilyMemberPojo`** is now **list-capable** (so the merged read returns one or many): `{ familyMemberInfos: [ResponseFamilyMemberInfo], responseCode, responseMessage, transactionId }`. New `ResponseFamilyMemberInfo` holds the member fields. Single-member query returns a one-element list.
+- **`RequestTriggerCheckinPojo`** (new) — unified check-in body with `action` + the union of fields; each field tagged `[CREATE]` / `[RESPONSE]` in its description.
+- **`RequestTriggerSosPojo`** (new) — unified SOS body with `action` + union of fields tagged `[CREATE]` / `[ACKNOWLEDGE]` / `[RESOLVE]`.
+- Removed now-unused request POJOs: `RequestTriggerCheckin{Create,Response,Update}Pojo`, `RequestTriggerSos{Create,Update,Cancel}Pojo`.
 
 ## Net effect
 
 | | Before | After |
 |---|---|---|
-| Family write APIs | 2 (create, update) | **1** (save) |
-| Member write APIs | 2 (add, update) | **1** (save) |
-| Member read APIs | 2 (get, getAll) | **1** (get) |
-| Total FSC paths | 21 | **18** |
+| Family write | create + update | **save** |
+| Member write | add + update | **save** |
+| Member read | get + getAll | **get** |
+| Check-in write | create + response + status/update | **trigger/checkin (action)** |
+| SOS write | create + update | **trigger/sos (action)** |
+| Delete/cancel method | POST | **DELETE** (member/delete, sos/cancel) |
+| Total FSC paths | 21 | **15** |
 
-**Unchanged:** `family/get`, `member/delete`, `member/role/update`, all `trigger/checkin/*`, `trigger/sos/*`, `alarm/*`, `device/status/*`. Response envelope (`responseCode`, `responseMessage`, `transactionId`) unchanged.
+**Unchanged:** `family/get`, `member/get`, `member/role/update`, `trigger/checkin/status/check`, `trigger/sos/status/check`, `device/status/*`, `alarm/*`. Response envelope (`responseCode`, `responseMessage`, `transactionId`) unchanged.
 
-> Note (from 17 Nov review): on the **family save** path, per the agreed decision, member **addition should not** happen via family update — add members only via `member/save`. The `familyMemberPojos` array in `RequestFamilyPojo` is intended for the **create** case; on update it should carry family-level fields only.
+> Note (17 Nov review): on `family/save`, members should **not** be added via the family path — use `member/save`. `familyMemberPojos` on `RequestFamilyPojo` is for the create case only.

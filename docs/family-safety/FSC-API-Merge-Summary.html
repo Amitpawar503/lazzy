@@ -18,44 +18,76 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 .mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
 .mermaid svg{max-width:100%;height:auto}
 @media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>FSC API — Merge Summary (for Network team)</h1>
-<p><strong>Base:</strong> <code>/fsc</code> · <strong>Swagger version:</strong> <code>1.1-merged</code> (from <code>1.0</code>) · <strong>Date:</strong> 18 Nov 2026
+<p><strong>Base:</strong> <code>/fsc</code> · <strong>Swagger:</strong> <code>1.2-merged</code> (from <code>1.0</code>) · <strong>Date:</strong> 18 Nov 2026
 <strong>Artifacts:</strong> <code>fsc-swagger-merged.html</code> (open in a browser — Swagger UI) · <code>fsc-swagger-merged.json</code> (import into Swagger/Postman/codegen)</p>
-<p>We request <strong>3 merges</strong> — combine create+update into one upsert, and get+getAll into one read. No other endpoints change.</p>
+<p>Requested changes: <strong>5 merges</strong> (combine create/update/action into one endpoint each) + <strong>2 HTTP-method fixes</strong> (delete/cancel → <code>DELETE</code>). All read/status endpoints stay as-is.</p>
 <h2>Merges requested</h2>
 <table>
 <thead>
 <tr>
 <th>#</th>
-<th>Old endpoints (to remove)</th>
+<th>Old endpoints (removed)</th>
 <th>New merged endpoint</th>
 <th>How it switches</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>1</td>
-<td><code>POST /api/v1/family/create</code> + <code>POST /api/v1/family/update</code></td>
-<td><strong><code>POST /api/v1/family/save</code></strong></td>
-<td><code>familyId</code> query is <strong>optional</strong> — <strong>omit = create</strong>, <strong>provide = update</strong> (upsert). Body <code>RequestFamilyPojo</code> unchanged.</td>
+<td><code>POST /family/create</code> + <code>POST /family/update</code></td>
+<td><strong><code>POST /family/save</code></strong></td>
+<td><code>familyId</code> query optional — <strong>omit = create, provide = update</strong> (upsert)</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>POST /api/v1/member/add</code> + <code>POST /api/v1/member/update</code></td>
-<td><strong><code>POST /api/v1/member/save</code></strong></td>
-<td><code>memberId</code> query is <strong>optional</strong> — <strong>omit = add</strong>, <strong>provide = update</strong> (upsert). Body <code>RequestFamilyMemberPojo</code> unchanged.</td>
+<td><code>POST /member/add</code> + <code>POST /member/update</code></td>
+<td><strong><code>POST /member/save</code></strong></td>
+<td><code>memberId</code> query optional — <strong>omit = add, provide = update</strong> (upsert)</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>GET /api/v1/member/get</code> + <code>GET /api/v1/member/getAll</code></td>
-<td><strong><code>GET /api/v1/member/get</code></strong></td>
-<td><code>familyId</code> <strong>required</strong>, <code>memberId</code> <strong>optional</strong> — <strong>provide memberId = one member</strong>, <strong>omit = all members</strong> of the family.</td>
+<td><code>GET /member/get</code> + <code>GET /member/getAll</code></td>
+<td><strong><code>GET /member/get</code></strong></td>
+<td><code>familyId</code> required, <code>memberId</code> optional — <strong>provide = one member, omit = all</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>POST /trigger/checkin/create</code> + <code>/response</code> + <code>/status/update</code></td>
+<td><strong><code>POST /trigger/checkin</code></strong></td>
+<td>body <code>action</code> enum = <strong>CREATE / RESPONSE / DISMISS / PAUSE / RESUME</strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>POST /trigger/sos/create</code> + <code>/update</code></td>
+<td><strong><code>POST /trigger/sos</code></strong></td>
+<td>body <code>action</code> enum = <strong>CREATE / ACKNOWLEDGE / RESOLVE</strong></td>
 </tr>
 </tbody></table>
-<h2>Model change (only one)</h2>
-<p>To let the single merged read return <strong>one or many</strong> members, <code>ResponseFamilyMemberPojo</code> becomes <strong>list-capable</strong>:</p>
+<h2>HTTP method fixes (delete/cancel must be DELETE, not POST)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>6</td>
+<td><code>POST /member/delete</code></td>
+<td><strong><code>DELETE /member/delete</code></strong> (<code>familyId</code>, <code>memberId</code> query)</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>POST /trigger/sos/cancel</code></td>
+<td><strong><code>DELETE /trigger/sos/cancel</code></strong> (<code>triggerId</code> query)</td>
+</tr>
+</tbody></table>
+<h2>Model changes</h2>
 <ul>
-<li>New <code>ResponseFamilyMemberInfo</code> = the member fields (airtelCustomer, circleMemberRole, familyId, memberId, membershipId, membershipStatus, msisdn).</li>
-<li><code>ResponseFamilyMemberPojo</code> = <code>{ familyMemberInfos: [ResponseFamilyMemberInfo], responseCode, responseMessage, transactionId }</code>.</li>
-<li>A single-member query returns <code>familyMemberInfos</code> with exactly one element.</li>
+<li><strong><code>ResponseFamilyMemberPojo</code></strong> is now <strong>list-capable</strong> (so the merged read returns one or many): <code>{ familyMemberInfos: [ResponseFamilyMemberInfo], responseCode, responseMessage, transactionId }</code>. New <code>ResponseFamilyMemberInfo</code> holds the member fields. Single-member query returns a one-element list.</li>
+<li><strong><code>RequestTriggerCheckinPojo</code></strong> (new) — unified check-in body with <code>action</code> + the union of fields; each field tagged <code>[CREATE]</code> / <code>[RESPONSE]</code> in its description.</li>
+<li><strong><code>RequestTriggerSosPojo</code></strong> (new) — unified SOS body with <code>action</code> + union of fields tagged <code>[CREATE]</code> / <code>[ACKNOWLEDGE]</code> / <code>[RESOLVE]</code>.</li>
+<li>Removed now-unused request POJOs: <code>RequestTriggerCheckin{Create,Response,Update}Pojo</code>, <code>RequestTriggerSos{Create,Update,Cancel}Pojo</code>.</li>
 </ul>
 <h2>Net effect</h2>
 <table>
@@ -67,28 +99,43 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 </tr>
 </thead>
 <tbody><tr>
-<td>Family write APIs</td>
-<td>2 (create, update)</td>
-<td><strong>1</strong> (save)</td>
+<td>Family write</td>
+<td>create + update</td>
+<td><strong>save</strong></td>
 </tr>
 <tr>
-<td>Member write APIs</td>
-<td>2 (add, update)</td>
-<td><strong>1</strong> (save)</td>
+<td>Member write</td>
+<td>add + update</td>
+<td><strong>save</strong></td>
 </tr>
 <tr>
-<td>Member read APIs</td>
-<td>2 (get, getAll)</td>
-<td><strong>1</strong> (get)</td>
+<td>Member read</td>
+<td>get + getAll</td>
+<td><strong>get</strong></td>
+</tr>
+<tr>
+<td>Check-in write</td>
+<td>create + response + status/update</td>
+<td><strong>trigger/checkin (action)</strong></td>
+</tr>
+<tr>
+<td>SOS write</td>
+<td>create + update</td>
+<td><strong>trigger/sos (action)</strong></td>
+</tr>
+<tr>
+<td>Delete/cancel method</td>
+<td>POST</td>
+<td><strong>DELETE</strong> (member/delete, sos/cancel)</td>
 </tr>
 <tr>
 <td>Total FSC paths</td>
 <td>21</td>
-<td><strong>18</strong></td>
+<td><strong>15</strong></td>
 </tr>
 </tbody></table>
-<p><strong>Unchanged:</strong> <code>family/get</code>, <code>member/delete</code>, <code>member/role/update</code>, all <code>trigger/checkin/*</code>, <code>trigger/sos/*</code>, <code>alarm/*</code>, <code>device/status/*</code>. Response envelope (<code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>) unchanged.</p>
+<p><strong>Unchanged:</strong> <code>family/get</code>, <code>member/get</code>, <code>member/role/update</code>, <code>trigger/checkin/status/check</code>, <code>trigger/sos/status/check</code>, <code>device/status/*</code>, <code>alarm/*</code>. Response envelope (<code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>) unchanged.</p>
 <blockquote>
-<p>Note (from 17 Nov review): on the <strong>family save</strong> path, per the agreed decision, member <strong>addition should not</strong> happen via family update — add members only via <code>member/save</code>. The <code>familyMemberPojos</code> array in <code>RequestFamilyPojo</code> is intended for the <strong>create</strong> case; on update it should carry family-level fields only.</p>
+<p>Note (17 Nov review): on <code>family/save</code>, members should <strong>not</strong> be added via the family path — use <code>member/save</code>. <code>familyMemberPojos</code> on <code>RequestFamilyPojo</code> is for the create case only.</p>
 </blockquote>
 </article></div></body></html>
