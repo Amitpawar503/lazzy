@@ -1,9 +1,9 @@
 {
   "swagger": "2.0",
   "info": {
-    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1). REMOVED: POST /api/v1/device/status/store (orchestrator is consume-only; device data stored via the telemetry SDK->Kafka->Network hub, not via this API).",
-    "version": "1.5-merged",
-    "title": "FSC API Documentation (merged)",
+    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1). REMOVED: POST /api/v1/device/status/store (orchestrator is consume-only; device data stored via the telemetry SDK->Kafka->Network hub, not via this API). | v1.6: NEW Fraud Alert Controller — GET /api/v1/fraud/alert/fetch (spam/fraud call alert data: otpCount, callTimerSeconds, callStartTime, riskLevel, capturedData) and POST /api/v1/fraud/alert/action (responder warning/action: WARN|END_CALL|MARK_SAFE|NOTIFY_MEMBER|BLOCK_NUMBER). ENHANCED /api/v1/device/status/fetch — typed DeviceDetail (batteryPercent, ringerOn/ringerMode, phoneOff, reachable, networkType/strength, lockState, checkinWorking, sosWorking, appInstalled, lastSeen) alongside the raw property list.",
+    "version": "1.6-merged",
+    "title": "FSC API Documentation (merged + spam alerts)",
     "termsOfService": "urn:tos",
     "contact": {},
     "license": {
@@ -41,6 +41,10 @@
     {
       "name": "History Controller",
       "description": "History Controller"
+    },
+    {
+      "name": "Fraud Alert Controller",
+      "description": "Spam / fraud call alerts for responders"
     }
   ],
   "paths": {
@@ -143,7 +147,7 @@
         "tags": [
           "DeviceStatus Controller"
         ],
-        "summary": "API to fetch Device status data",
+        "summary": "Fetch device status — typed detail per member: battery %, ringer on/off, phone off/on, reachable, network, lock, and check-in / SOS working, with lastUpdatedOn per signal.",
         "operationId": "checkinStatusCheckUsingGET",
         "produces": [
           "*/*"
@@ -877,6 +881,123 @@
         },
         "deprecated": false
       }
+    },
+    "/api/v1/fraud/alert/fetch": {
+      "get": {
+        "tags": [
+          "Fraud Alert Controller"
+        ],
+        "summary": "Get spam / fraud call alert data (OTP count, call timer and other captured data). Provide alertId for one; or familyId/msisdn for active alerts.",
+        "operationId": "fetchSpamAlertUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id of the circle",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "Member MSISDN to filter alerts for",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "alertId",
+            "in": "query",
+            "description": "Specific alert id (omit to list active alerts)",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by status",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "Active",
+              "Warned",
+              "Ended",
+              "Safe"
+            ],
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseSpamAlertPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/fraud/alert/action": {
+      "post": {
+        "tags": [
+          "Fraud Alert Controller"
+        ],
+        "summary": "Record a warning / action taken by a responder on a spam alert (warn, end-call, mark-safe, notify, block).",
+        "operationId": "spamAlertActionUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestSpamAlertActionPojo",
+            "description": "Responder action payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestSpamAlertActionPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
     }
   },
   "definitions": {
@@ -1177,7 +1298,22 @@
       "properties": {
         "propertyName": {
           "type": "string",
-          "description": "Name of the device property"
+          "description": "Name of the device property",
+          "enum": [
+            "BATTERY_PERCENT",
+            "CHARGING",
+            "RINGER_MODE",
+            "PHONE_OFF",
+            "REACHABLE",
+            "NETWORK_TYPE",
+            "NETWORK_STRENGTH",
+            "LOCATION",
+            "LOCK_STATE",
+            "CHECKIN_WORKING",
+            "SOS_WORKING",
+            "APP_INSTALLED",
+            "LAST_SEEN"
+          ]
         },
         "propertyValue": {
           "type": "string",
@@ -1231,10 +1367,13 @@
         "msisdn": {
           "type": "string",
           "description": "MSISDN of the user"
+        },
+        "deviceDetail": {
+          "$ref": "#/definitions/DeviceDetail"
         }
       },
       "title": "ResponseDeviceStatusInfo",
-      "description": "Response Device Status Info"
+      "description": "Response Device Status Info — typed deviceDetail (battery, ringer, phone-off, reachable, check-in/SOS working) plus the raw property list"
     },
     "ResponseFamilyMemberPojo": {
       "type": "object",
@@ -1716,6 +1855,266 @@
       },
       "title": "ResponseHistoryPojo",
       "description": "Response consolidated alert & history"
+    },
+    "SpamAlertInfo": {
+      "type": "object",
+      "title": "SpamAlertInfo",
+      "description": "One spam / fraud call alert with data captured during the call",
+      "required": [
+        "alertId",
+        "memberMsisdn",
+        "alertType",
+        "status"
+      ],
+      "properties": {
+        "alertId": {
+          "type": "string",
+          "description": "Unique id of the alert"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id of the circle"
+        },
+        "memberMsisdn": {
+          "type": "string",
+          "description": "MSISDN of the member on the suspicious call"
+        },
+        "callerMsisdn": {
+          "type": "string",
+          "description": "MSISDN / number of the spam caller (if captured)"
+        },
+        "alertType": {
+          "type": "string",
+          "description": "Type of alert",
+          "enum": [
+            "SPAM",
+            "OTP",
+            "FRAUD",
+            "PHISHING"
+          ]
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "Assessed risk",
+          "enum": [
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "otpCount": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Number of OTPs detected/read out during the call"
+        },
+        "otpShared": {
+          "type": "boolean",
+          "description": "Whether an OTP appears to have been shared"
+        },
+        "callTimerSeconds": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Call duration so far, in seconds (the live call timer)"
+        },
+        "callStartTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the call started"
+        },
+        "callActive": {
+          "type": "boolean",
+          "description": "True while the call is still ongoing"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current alert status",
+          "enum": [
+            "Active",
+            "Warned",
+            "Ended",
+            "Safe"
+          ]
+        },
+        "capturedData": {
+          "type": "string",
+          "description": "Other data captured for that call window (keywords, bank name, amount, etc.)"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional alert data"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this alert was last updated"
+        }
+      }
+    },
+    "ResponseSpamAlertPojo": {
+      "type": "object",
+      "title": "ResponseSpamAlertPojo",
+      "description": "Response spam / fraud alert data",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "spamAlertInfos": {
+          "type": "array",
+          "description": "Matching alerts, newest first (one element when alertId supplied)",
+          "items": {
+            "$ref": "#/definitions/SpamAlertInfo"
+          }
+        },
+        "responseCode": {
+          "type": "string"
+        },
+        "responseMessage": {
+          "type": "string"
+        },
+        "transactionId": {
+          "type": "string"
+        }
+      }
+    },
+    "RequestSpamAlertActionPojo": {
+      "type": "object",
+      "title": "RequestSpamAlertActionPojo",
+      "description": "Warning / action recorded by a responder on a spam alert",
+      "required": [
+        "alertId",
+        "responderMsisdn",
+        "action"
+      ],
+      "properties": {
+        "alertId": {
+          "type": "string",
+          "description": "Alert the action is taken on"
+        },
+        "responderMsisdn": {
+          "type": "string",
+          "description": "MSISDN of the responder taking the action"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action taken",
+          "enum": [
+            "WARN",
+            "END_CALL",
+            "MARK_SAFE",
+            "NOTIFY_MEMBER",
+            "BLOCK_NUMBER"
+          ]
+        },
+        "actionTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the action was taken"
+        },
+        "message": {
+          "type": "string",
+          "description": "Optional warning text / note shown or logged"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional data"
+        }
+      }
+    },
+    "DeviceDetail": {
+      "type": "object",
+      "title": "DeviceDetail",
+      "description": "Typed snapshot of a member's device (latest value per signal)",
+      "properties": {
+        "batteryPercent": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Battery level 0-100"
+        },
+        "charging": {
+          "type": "boolean",
+          "description": "Whether the device is charging"
+        },
+        "ringerOn": {
+          "type": "boolean",
+          "description": "True if ringer is on (audible), false if silent/vibrate"
+        },
+        "ringerMode": {
+          "type": "string",
+          "description": "Ringer mode",
+          "enum": [
+            "NORMAL",
+            "VIBRATE",
+            "SILENT"
+          ]
+        },
+        "phoneOff": {
+          "type": "boolean",
+          "description": "True if the phone is off / powered down"
+        },
+        "reachable": {
+          "type": "boolean",
+          "description": "True if the device is currently reachable on the network"
+        },
+        "networkType": {
+          "type": "string",
+          "description": "Connectivity type",
+          "enum": [
+            "WIFI",
+            "5G",
+            "4G",
+            "3G",
+            "2G",
+            "NO_NETWORK"
+          ]
+        },
+        "networkStrength": {
+          "type": "string",
+          "description": "Signal strength",
+          "enum": [
+            "STRONG",
+            "MODERATE",
+            "WEAK",
+            "NONE"
+          ]
+        },
+        "locationShared": {
+          "type": "boolean",
+          "description": "Whether location is being shared"
+        },
+        "lockState": {
+          "type": "string",
+          "description": "Device lock state",
+          "enum": [
+            "LOCKED",
+            "UNLOCKED",
+            "UNKNOWN"
+          ]
+        },
+        "checkinWorking": {
+          "type": "boolean",
+          "description": "True if check-in is functional for this member (app + permissions ok)"
+        },
+        "sosWorking": {
+          "type": "boolean",
+          "description": "True if SOS is functional for this member (app + permissions ok)"
+        },
+        "appInstalled": {
+          "type": "boolean",
+          "description": "True if the Family Safety app is installed"
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last time the device was seen on the network"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this snapshot was last updated (E8)"
+        }
+      }
     }
   }
 }
