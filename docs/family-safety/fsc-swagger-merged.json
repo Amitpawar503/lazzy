@@ -1,8 +1,8 @@
 {
   "swagger": "2.0",
   "info": {
-    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1). REMOVED: POST /api/v1/device/status/store (orchestrator is consume-only; device data stored via the telemetry SDK->Kafka->Network hub, not via this API). | v1.6: NEW Fraud Alert Controller — GET /api/v1/fraud/alert/fetch (spam/fraud call alert data: otpCount, callTimerSeconds, callStartTime, riskLevel, capturedData) and POST /api/v1/fraud/alert/action (responder warning/action: WARN|END_CALL|MARK_SAFE|NOTIFY_MEMBER|BLOCK_NUMBER). ENHANCED /api/v1/device/status/fetch — typed DeviceDetail (batteryPercent, ringerOn/ringerMode, phoneOff, reachable, networkType/strength, lockState, checkinWorking, sosWorking, appInstalled, lastSeen) alongside the raw property list. | v1.7: REMOVED family/save and member/save — member provisioning now via Subscription. NEW Subscription Controller (POST /subscription CREATE|CANCEL|SUSPEND|RESUME on MSISDN; GET /subscription/features/fetch; POST /subscription/features/toggle). NEW Alert Controller GET /alert/fetch (open alerts + history, role-scoped). NEW CLM Controller GET /clm/payload/fetch (CLM payload for checkin/sos). NEW Deeplink Controller GET /deeplink/resolve (deeplinkId + msisdn/groupId). NEW Permission Controller POST /permission/update + GET /permission/fetch (permissions + feature status for all members). ENHANCED DeviceDetail (reachabilityReason, lastOnNetworkAt, lastBatteryLevel) and ResponseSosData (location, lastKnownLocation, battery, networkStrength).",
-    "version": "1.7-merged",
+    "description": "FSC API — merged edition. MERGES: (1) POST /api/v1/family/save = create+update; (2) POST /api/v1/member/save = add+update; (3) GET /api/v1/member/get = get+getAll (memberId optional); (4) POST /api/v1/trigger/checkin = create+response+status-update (action enum); (5) POST /api/v1/trigger/sos = create+update (action enum). METHOD CHANGES: DELETE /api/v1/member/delete, DELETE /api/v1/trigger/sos/cancel (were POST). Reads unchanged: family/get, member/get, trigger/checkin/status/check, trigger/sos/status/check, device/status/*, alarm/*. ENHANCEMENTS folded (17 Nov review E1-E8): check-in message/day-selection/duration/time-only (E2), status-check targetMsisdn+date-range (E3), check-in admin validation via initiatorMsisdn (E4), SOS cancel initiator check (E5), SOS responder-resolve (E6), SOS location + LBS fallback (E7), device-status lastUpdatedOn (E8). Dropped (not needed): alarm/sos/kill stays for Network use only. NEW: GET /api/v1/history/fetch = consolidated alert & activity history (check-in/SOS/fraud/alarm/device-status) with member/type/date filters (B1). REMOVED: POST /api/v1/device/status/store (orchestrator is consume-only; device data stored via the telemetry SDK->Kafka->Network hub, not via this API). | v1.6: NEW Fraud Alert Controller — GET /api/v1/fraud/alert/fetch (spam/fraud call alert data: otpCount, callTimerSeconds, callStartTime, riskLevel, capturedData) and POST /api/v1/fraud/alert/action (responder warning/action: WARN|END_CALL|MARK_SAFE|NOTIFY_MEMBER|BLOCK_NUMBER). ENHANCED /api/v1/device/status/fetch — typed DeviceDetail (batteryPercent, ringerOn/ringerMode, phoneOff, reachable, networkType/strength, lockState, checkinWorking, sosWorking, appInstalled, lastSeen) alongside the raw property list. | v1.7: REMOVED family/save and member/save — member provisioning now via Subscription. NEW Subscription Controller (POST /subscription CREATE|CANCEL|SUSPEND|RESUME on MSISDN; GET /subscription/features/fetch; POST /subscription/features/toggle). NEW Alert Controller GET /alert/fetch (open alerts + history, role-scoped). NEW CLM Controller GET /clm/payload/fetch (CLM payload for checkin/sos). NEW Deeplink Controller GET /deeplink/resolve (deeplinkId + msisdn/groupId). NEW Permission Controller POST /permission/update + GET /permission/fetch (permissions + feature status for all members). ENHANCED DeviceDetail (reachabilityReason, lastOnNetworkAt, lastBatteryLevel) and ResponseSosData (location, lastKnownLocation, battery, networkStrength). | v1.8: REMOVED all /api/v1/member/* (member/get, member/delete, member/role/update) — subscription APIs replace them (provision/cancel/suspend/resume on MSISDN; role set on subscription CREATE; member list via family/get).",
+    "version": "1.8-merged",
     "title": "FSC API Documentation (merged + subscription/alerts/permissions)",
     "termsOfService": "urn:tos",
     "contact": {},
@@ -25,10 +25,6 @@
     {
       "name": "Family Controller",
       "description": "Family Controller"
-    },
-    {
-      "name": "Member Controller",
-      "description": "Member Controller"
     },
     {
       "name": "Trigger Checkin Controller",
@@ -251,126 +247,6 @@
         "deprecated": false
       }
     },
-    "/api/v1/member/get": {
-      "get": {
-        "tags": [
-          "Member Controller"
-        ],
-        "summary": "Get a member or all members (MERGED get + getAll). Provide memberId=one; omit=all members of familyId.",
-        "operationId": "getMemberUsingGET",
-        "produces": [
-          "*/*"
-        ],
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "query",
-            "description": "Unique familyId",
-            "required": true,
-            "type": "integer",
-            "allowEmptyValue": false,
-            "format": "int64"
-          },
-          {
-            "name": "memberId",
-            "in": "query",
-            "description": "Unique memberId. Omit to return all members.",
-            "required": false,
-            "type": "integer",
-            "allowEmptyValue": false,
-            "format": "int64"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/ResponseFamilyMemberPojo"
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
-          }
-        },
-        "deprecated": false
-      }
-    },
-    "/api/v1/member/role/update": {
-      "post": {
-        "tags": [
-          "Member Controller"
-        ],
-        "summary": "API to update role of a family member",
-        "operationId": "updateRoleUsingPOST",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "*/*"
-        ],
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "query",
-            "description": "Unique familyId of the member",
-            "required": true,
-            "type": "integer",
-            "format": "int64",
-            "allowEmptyValue": false
-          },
-          {
-            "name": "familyMemberRole",
-            "in": "query",
-            "description": "New Role of the Member",
-            "required": true,
-            "type": "string",
-            "allowEmptyValue": false,
-            "enum": [
-              "ADMIN",
-              "SUB_ADMIN",
-              "SPONSER",
-              "MEMBER"
-            ]
-          },
-          {
-            "name": "memberId",
-            "in": "query",
-            "description": "Unique memberId of the member",
-            "required": true,
-            "type": "integer",
-            "format": "int64",
-            "allowEmptyValue": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/ResponseGenericPojo"
-            }
-          },
-          "201": {
-            "description": "Created"
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
-          }
-        },
-        "deprecated": false
-      }
-    },
     "/api/v1/trigger/checkin/status/check": {
       "get": {
         "tags": [
@@ -494,56 +370,6 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/ResponseSosData"
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          },
-          "404": {
-            "description": "Not Found"
-          }
-        },
-        "deprecated": false
-      }
-    },
-    "/api/v1/member/delete": {
-      "delete": {
-        "tags": [
-          "Member Controller"
-        ],
-        "summary": "Delete Member from family (method changed POST -> DELETE)",
-        "operationId": "deleteMemberUsingDELETE",
-        "produces": [
-          "*/*"
-        ],
-        "parameters": [
-          {
-            "name": "familyId",
-            "in": "query",
-            "description": "Unique familyId of the member",
-            "required": true,
-            "type": "integer",
-            "allowEmptyValue": false,
-            "format": "int64"
-          },
-          {
-            "name": "memberId",
-            "in": "query",
-            "description": "Unique memberId of the member",
-            "required": true,
-            "type": "integer",
-            "allowEmptyValue": false,
-            "format": "int64"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/ResponseGenericPojo"
             }
           },
           "401": {
@@ -1719,34 +1545,6 @@
       "title": "ResponseDeviceStatusInfo",
       "description": "Response Device Status Info — typed deviceDetail (battery, ringer, phone-off, reachable, check-in/SOS working) plus the raw property list"
     },
-    "ResponseFamilyMemberPojo": {
-      "type": "object",
-      "required": [
-        "responseCode",
-        "responseMessage",
-        "transactionId"
-      ],
-      "properties": {
-        "familyMemberInfos": {
-          "type": "array",
-          "description": "Members (one element when memberId supplied)",
-          "items": {
-            "$ref": "#/definitions/ResponseFamilyMemberInfo"
-          }
-        },
-        "responseCode": {
-          "type": "string"
-        },
-        "responseMessage": {
-          "type": "string"
-        },
-        "transactionId": {
-          "type": "string"
-        }
-      },
-      "title": "ResponseFamilyMemberPojo",
-      "description": "Response Family Member Details (list-capable; MERGED get + getAll)"
-    },
     "ResponseFamilyPojo": {
       "type": "object",
       "required": [
@@ -1937,60 +1735,6 @@
       },
       "title": "ResponseSosData",
       "description": "Response SOS Data"
-    },
-    "ResponseFamilyMemberInfo": {
-      "type": "object",
-      "required": [
-        "airtelCustomer",
-        "membershipStatus",
-        "msisdn"
-      ],
-      "properties": {
-        "airtelCustomer": {
-          "type": "integer",
-          "format": "int32",
-          "description": "0 if Airtel customer else 1"
-        },
-        "circleMemberRole": {
-          "type": "string",
-          "description": "Role",
-          "enum": [
-            "ADMIN",
-            "SUB_ADMIN",
-            "SPONSER",
-            "MEMBER"
-          ]
-        },
-        "familyId": {
-          "type": "integer",
-          "format": "int64",
-          "description": "Family id"
-        },
-        "memberId": {
-          "type": "integer",
-          "format": "int64",
-          "description": "Member id"
-        },
-        "membershipId": {
-          "type": "integer",
-          "format": "int64",
-          "description": "Membership id"
-        },
-        "membershipStatus": {
-          "type": "string",
-          "description": "Status",
-          "enum": [
-            "Active",
-            "Inactive"
-          ]
-        },
-        "msisdn": {
-          "type": "string",
-          "description": "MSISDN"
-        }
-      },
-      "title": "ResponseFamilyMemberInfo",
-      "description": "Family member details"
     },
     "RequestTriggerCheckinPojo": {
       "type": "object",
