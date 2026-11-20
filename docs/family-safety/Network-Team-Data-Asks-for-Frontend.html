@@ -1,0 +1,464 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/Network-Team-Data-Asks-for-Frontend</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Data &amp; Content needed from the Network team (for the frontend)</h1>
+<p><strong>Sources:</strong> Safety Circle PRD (MVP) · FSC BEFE API Requirements (B01–B74) · Airtel Secure HLD (Whalebone) · FSC swagger v1.6-merged
+<strong>Date:</strong> 20 Nov 2026 · <strong>Scope:</strong> what the <strong>app frontend renders</strong> that must be sourced from the <strong>Network team</strong></p>
+<h2>0. Ownership boundary (who this doc is addressed to)</h2>
+<table>
+<thead>
+<tr>
+<th>Owns</th>
+<th>Systems</th>
+<th>In this doc?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Network team</strong> (this ask)</td>
+<td>FSC circle domain, OTA engine (SOS / check-in / alarm), device telemetry (battery / ringer / network / location), <strong>Safe Network</strong> (spam / OTP / fraud + Safety Report), reachability / HLR, LBS, MNP / lifecycle events</td>
+<td><strong>Yes — all sections</strong></td>
+</tr>
+<tr>
+<td>Whalebone (partner)</td>
+<td>Device Safety + Parental content-filter / app-rules / events</td>
+<td>Only the <strong>membership ↔ subscriptionID link</strong> FSC must hold</td>
+</tr>
+<tr>
+<td>Billing / CRM</td>
+<td>Packs, eligibility, subscription status, grace/pause</td>
+<td>Flagged where the FE needs it; <strong>not a Network ask</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Status key:</strong> ✅ exists in FSC swagger · 🟡 exists, must extend · 🔴 GAP (Network to build/share).</p>
+<hr>
+<h2>1. Family Dashboard — Home &amp; Member cards (US 24, 27, 28)</h2>
+<p>Every member card and detail page renders live signals. <strong>The FE needs, per member, from Network:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Data the FE shows</th>
+<th>Field(s)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Reachability state + reason</td>
+<td><code>reachabilityReason</code> = REACHABLE / SWITCHED_OFF / NO_COVERAGE / FLIGHT_MODE / INACTIVE_NUMBER</td>
+<td>🔴 reachability API</td>
+</tr>
+<tr>
+<td>Last seen on network</td>
+<td><code>lastOnNetworkAt</code> (timestamp)</td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Battery</td>
+<td><code>batteryPercent</code> (current) + <code>lastBatteryLevel</code> (before going offline)</td>
+<td>🟡 typed device-status</td>
+</tr>
+<tr>
+<td>Ringer (Android only)</td>
+<td><code>ringerMode</code> = NORMAL / VIBRATE / SILENT</td>
+<td>🟡</td>
+</tr>
+<tr>
+<td>Network</td>
+<td><code>networkType</code>, <code>networkStrength</code></td>
+<td>🟡</td>
+</tr>
+<tr>
+<td>Per-signal freshness</td>
+<td><code>lastUpdatedOn</code> <strong>per signal</strong> (so the card can show "last updated 10:05")</td>
+<td>✅ (E8)</td>
+</tr>
+<tr>
+<td>Feature health</td>
+<td><code>checkinWorking</code>, <code>sosWorking</code>, missing-permission flags per feature</td>
+<td>🔴 feature-health model</td>
+</tr>
+<tr>
+<td>Latest check-in summary</td>
+<td>one-line status (see §3)</td>
+<td>🟡</td>
+</tr>
+<tr>
+<td>Active alert (highest priority)</td>
+<td>SOS &gt; Fall &gt; Safe Trip &gt; Check-in &gt; Fraud &gt; Unreachability</td>
+<td>🔴 alert feed</td>
+</tr>
+</tbody></table>
+<p><strong>Asks:</strong> (1) typed device-status fetch returning battery / ringer / network / location / reachability <strong>with <code>lastUpdatedOn</code> per property</strong>; (2) <strong>refresh semantics</strong> — signals refresh within ~1–2 min when any member opens the page; (3) <strong>flight-mode vs switched-off</strong> — can Network tell them apart, or must the FE show "Switched off or in flight mode"?; (4) <strong>iPhone availability list</strong> — which signals are N/A on iOS (ringer, network strength, continuous battery).</p>
+<hr>
+<h2>2. SOS (US 15–17)</h2>
+<table>
+<thead>
+<tr>
+<th>Data the FE shows</th>
+<th>Field(s)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Create SOS (after client countdown)</td>
+<td><code>triggerId</code>, snapshot <code>location</code> (lat,long), <code>battery</code>, <code>networkStrength</code></td>
+<td>🟡 extend trigger/sos/create</td>
+</tr>
+<tr>
+<td>Live SOS state</td>
+<td><code>status</code> (Active/Resolved/Cancelled), <code>responders[]</code> (who is responding), <code>acknowledgementStatus</code></td>
+<td>🟡 richer live DTO</td>
+</tr>
+<tr>
+<td>Live location stream while active</td>
+<td>periodic <code>location</code> pings</td>
+<td>🔴 location pings / stream</td>
+</tr>
+<tr>
+<td>LBS fallback</td>
+<td>network location when app location missing — <strong>during SOS only</strong></td>
+<td>🔴 LBS lookup API</td>
+</tr>
+<tr>
+<td>Phone offline during SOS</td>
+<td>"last connected at <code>lastOnNetworkAt</code>" + last-known location</td>
+<td>🟡</td>
+</tr>
+<tr>
+<td>Dissolve / mistake / auto-24h</td>
+<td>initiator-only cancel (<code>initiatorMsisdn</code>), auto-expire 24h</td>
+<td>🟡 clarify cancel vs kill</td>
+</tr>
+<tr>
+<td>No-internet SOS</td>
+<td>SMS short-code (e.g. "SOS" → 52263) registers SOS; no-network → native 112 dial</td>
+<td>🔴 short-code registration</td>
+</tr>
+</tbody></table>
+<p><strong>Asks:</strong> richer SOS live DTO (responders, ack, location-stream meta, battery); <strong>LBS location API</strong> for SOS; <strong>SMS short-code SOS</strong> registration path; clarify <strong><code>alarm/incoming</code> vs <code>trigger/sos</code></strong> payloads; confirm <strong>who owns escalation</strong> (IVR at 2 min, presidential + SMS, whole-circle at 5/7 min).</p>
+<hr>
+<h2>3. Safety Check-in (US 20–23)</h2>
+<table>
+<thead>
+<tr>
+<th>Data the FE shows</th>
+<th>Field(s)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Create (1+ targets)</td>
+<td><code>familyId</code>, <code>targets[]</code>, <code>message</code>, <code>scheduleType</code></td>
+<td>🟡 extend multi-target</td>
+</tr>
+<tr>
+<td>Reply</td>
+<td><code>checkinResponse</code> = I'M_OKAY / NEED_HELP + status text</td>
+<td>🟡 extend reply channel</td>
+</tr>
+<tr>
+<td>Status on card</td>
+<td>per target: Awaiting / Replied-okay / Need-help / Dismissed / Expired + timestamps</td>
+<td>🟡</td>
+</tr>
+<tr>
+<td>Schedules</td>
+<td>days (MON–SUN), time (HH:mm), start/end date, pause/resume</td>
+<td>🟡 (folded in v1.6)</td>
+</tr>
+<tr>
+<td>Rules the FE enforces with Network</td>
+<td>one open per target, <strong>≤3/day</strong>, IVR at 15 min, expire 24h, <strong>unreachable-at-send short-circuit</strong></td>
+<td>🟡 / 🔴</td>
+</tr>
+<tr>
+<td>"I've connected with her" ack (post need-help)</td>
+<td><code>connected</code> action</td>
+<td>🔴 connected-ack</td>
+</tr>
+</tbody></table>
+<p><strong>Asks:</strong> check-in <strong>list</strong> API, <strong>schedules CRUD</strong>, <strong>daily-limit</strong> + one-open enforcement, <strong>need-help → connected</strong> flow, and <strong>IVR/SMS escalation</strong> owner (messaging platform, orchestrated by FSC).</p>
+<hr>
+<h2>4. Fraud &amp; Spam alerts — Safe Network (US 18–19)</h2>
+<p>The headline Airtel differentiator — <strong>all from Network / Safe Network.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Data the FE shows</th>
+<th>Field(s)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Live alert triggers</td>
+<td>spam-flagged incoming call ≥ 1 min; <strong>bank OTP during spam call</strong>; bank OTP during <strong>unknown-number</strong> call</td>
+<td>🔴 typed fraud feed</td>
+</tr>
+<tr>
+<td>Alert data (responder view)</td>
+<td><code>memberMsisdn</code>, <code>alertType</code> = SPAM / OTP, <strong><code>callTimerSeconds</code></strong> (duration so far), <strong><code>otpCount</code></strong>, <code>callActive</code>, <code>status</code>, <code>riskLevel</code></td>
+<td>🔴 (added in v1.6 fraud/alert/fetch)</td>
+</tr>
+<tr>
+<td><strong>Never</strong> exposed</td>
+<td>caller's number — must not be in payload or history</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Call-ended summary</td>
+<td>"Call ended after 6 min · OTP received (count)"</td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Responder actions</td>
+<td><strong>send warning</strong> (flash / USSD, no reply needed), <strong>call</strong>, <strong>remote end-call</strong> (pending Legal)</td>
+<td>🔴 warn + end-call APIs</td>
+</tr>
+<tr>
+<td>Safety Report</td>
+<td>last <strong>3 months</strong> spam calls / spam SMS / fraud links — <strong>admin/co-admin only</strong>, works <strong>without app</strong> (network data)</td>
+<td>🟡 reuse + family-access auth</td>
+</tr>
+</tbody></table>
+<p><strong>Asks:</strong> typed <strong>fraud alert feed</strong> (SPAM / OTP, with call timer + OTP count, no caller number); <strong>warn (flash/USSD)</strong> API; <strong>remote end-call</strong> feasibility + legal; <strong>Safety Report</strong> family-access authorization (per-member, responders only, revoke on leave).</p>
+<hr>
+<h2>5. Alerts &amp; History (US 29)</h2>
+<table>
+<thead>
+<tr>
+<th>Data the FE shows</th>
+<th>Field(s)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Consolidated history</td>
+<td>types: SOS, CHECKIN, CHECKIN_NEED_HELP, FRAUD_SPAM, LOW_BATTERY, BACK_ONLINE, GEOFENCE, DEVICE_SAFETY, CIRCLE_EVENT, PARENTAL_REQUEST</td>
+<td>🟡 (history/fetch added)</td>
+</tr>
+<tr>
+<td>Filters</td>
+<td>by member (<code>msisdn</code>), <code>eventType</code>, date range (<strong>7 or 30 days</strong>)</td>
+<td>🟡</td>
+</tr>
+<tr>
+<td>Role-scoped visibility</td>
+<td>fraud / low-battery → responders only; who-resolved/dismissed recorded</td>
+<td>🔴 role scoping</td>
+</tr>
+<tr>
+<td>Retention</td>
+<td><strong>7–30 days — confirm with Network/eng</strong></td>
+<td>🔴 decision</td>
+</tr>
+</tbody></table>
+<p><strong>Asks:</strong> unified <strong>alert/history</strong> list with <strong>role-scoped filters</strong> + agreed <strong>retention</strong> (7 vs 30). Note: FRAUD rows originate from Safe Network / Whalebone; titles (mom/dad) are mapped by Channel via UCM.</p>
+<hr>
+<h2>6. Reachability, lifecycle &amp; number events (US 10, 11, 25, 26)</h2>
+<table>
+<thead>
+<tr>
+<th>Data the FE shows</th>
+<th>Event / field</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Low-battery alert</td>
+<td>battery ≤ 20% → responders; <strong>once per discharge</strong>; resets on charge</td>
+<td>🔴 eventing</td>
+</tr>
+<tr>
+<td>Back-online</td>
+<td>"Mom is back on network" after unreachable (works like today's back-on-network SMS, in-app)</td>
+<td>🔴 back-online subscription</td>
+</tr>
+<tr>
+<td>Port-out</td>
+<td><strong>start</strong> (porting code requested — early warning) <strong>and complete</strong></td>
+<td>🔴 MNP events</td>
+</tr>
+<tr>
+<td>SIM-swap / new SIM same number</td>
+<td>re-confirm prompt (SIM-swap guard)</td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Ownership change (Airtel only)</td>
+<td>pause membership + re-consent</td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Number inactive / barred</td>
+<td>prepaid lapsed, bill-barred, permanent disconnect → "Number inactive" vs "not reachable"</td>
+<td>🔴 / 🟡</td>
+</tr>
+<tr>
+<td>App-uninstall</td>
+<td>reduce to non-app features; notify admin</td>
+<td>🔴 app telemetry</td>
+</tr>
+<tr>
+<td>Non-Airtel re-consent</td>
+<td>3-month cycle (app / SMS / IVR)</td>
+<td>🔴 consent cycle</td>
+</tr>
+</tbody></table>
+<p><strong>Asks:</strong> <strong>reachability/HLR</strong> API (off vs no-coverage vs inactive, last-on-network); <strong>back-online</strong> subscription; <strong>low-battery fanout</strong>; <strong>MNP / ownership / permanent-disconnect</strong> event stream to FSC.</p>
+<hr>
+<h2>7. Circle &amp; membership (FSC foundation — supporting the above)</h2>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>Field(s)</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MSISDN → circle lookup (one-circle rule)</td>
+<td><code>getCircleByMsisdn</code></td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Member list / roles / responders</td>
+<td>ADMIN / CO_ADMIN / MEMBER + responder flags</td>
+<td>🟡 responders GAP</td>
+</tr>
+<tr>
+<td>Invite lifecycle</td>
+<td>create / get / respond / resend / expire / list (2-day TTL, 3-per-30-day cap)</td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Feature flags + relationship on membership</td>
+<td>per-member feature state, relationship label</td>
+<td>🔴</td>
+</tr>
+<tr>
+<td>Membership ↔ Whalebone <code>subscriptionID</code> (= MSISDN)</td>
+<td>linkage FSC must store for Device Safety / Parental</td>
+<td>🔴</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>8. Not a Network ask (flagged for completeness)</h2>
+<ul>
+<li><strong>Subscription / eligibility / banners</strong> (US 12–14): Billing/CRM — eligibility (Airtel? LOB? corporate? in-circle? pack active?), status (Active/Trial/Expiring/Paused/Closing), grace/resume. Network only supplies the <code>getCircleByMsisdn</code> piece of eligibility.</li>
+<li><strong>Device Safety / Parental content</strong> (§09–10): Whalebone <code>/management</code> + <code>/events</code>. Network's part is only the FSC linkage and device telemetry.</li>
+</ul>
+<hr>
+<h2>9. Consolidated ask list to the Network team (priority)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Ask</th>
+<th>Feature</th>
+<th>Status</th>
+<th>Priority</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Typed <strong>device-status</strong> (battery/ringer/network/location/reachability + <code>lastUpdatedOn</code>/property)</td>
+<td>Dashboard, SOS</td>
+<td>🟡</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Reachability/HLR</strong> API (off vs no-coverage vs inactive; flight-vs-off)</td>
+<td>Dashboard</td>
+<td>🔴</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>SOS</strong> live DTO + <strong>LBS</strong> fallback + no-internet short-code</td>
+<td>SOS</td>
+<td>🟡/🔴</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Fraud/spam</strong> typed feed (call timer, OTP count, no caller no.) + <strong>warn</strong>/<strong>end-call</strong></td>
+<td>Fraud</td>
+<td>🔴</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Safety Report</strong> family-access authorization</td>
+<td>Fraud</td>
+<td>🟡</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Check-in</strong> schedules/list/limits + need-help→connected</td>
+<td>Check-in</td>
+<td>🟡/🔴</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>Alert/history</strong> unified list, role-scoped, 7/30-day retention</td>
+<td>History</td>
+<td>🔴</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>Back-online</strong>, <strong>low-battery</strong>, <strong>MNP/ownership/disconnect</strong> events</td>
+<td>Reachability</td>
+<td>🔴</td>
+<td>P1</td>
+</tr>
+<tr>
+<td>9</td>
+<td><strong>Invite lifecycle</strong> + <code>getCircleByMsisdn</code> + responder/feature flags</td>
+<td>Circle</td>
+<td>🔴</td>
+<td>P0</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Membership ↔ Whalebone subscriptionID linkage</td>
+<td>Device Safety/Parental</td>
+<td>🔴</td>
+<td>P1</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>10. Open questions for Network (from PRD callouts)</h2>
+<ol>
+<li><strong>Flight mode vs switched off</strong> — distinguishable at network level? (US 24)</li>
+<li><strong>Presidential alert</strong> — can it carry an "Open Airtel App" button/link on Android + iOS? (US 16)</li>
+<li><strong>Remote call disconnect</strong> — technically + legally feasible? (US 18)</li>
+<li><strong>Back-online</strong> detection feasibility (US 26)</li>
+<li><strong>SOS without app/internet</strong> — SMS short-code + native 112 (US 15 CFT)</li>
+<li><strong>iPhone signal availability</strong> — which signals are N/A (US 24 callout)</li>
+<li><strong>History retention</strong> — 7 vs 30 days (US 9/29)</li>
+<li><strong>LBS</strong> accuracy/latency during SOS (US 15)</li>
+<li><strong>Port-out early warning</strong> — alert when porting code requested, before completion (US 11)</li>
+<li><strong>Device telemetry pipeline</strong> owner — SDK → Kafka → Network hub (confirm with Ajay Saini)</li>
+</ol>
+<hr>
+<p><em>Prepared for the Network ask meeting. Field names reference FSC swagger v1.6-merged and the BEFE requirements; routes are proposals pending Network/Guardian confirmation.</em></p>
+</article></div></body></html>
