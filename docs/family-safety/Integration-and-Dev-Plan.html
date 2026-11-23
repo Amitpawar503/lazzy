@@ -1,0 +1,198 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/Integration-and-Dev-Plan</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Integration &amp; Dev Plan (Whalebone · Network · UCM)</h1>
+<p><strong>Team:</strong> 2 developers · <strong>Start:</strong> 23 Nov 2026 (dev starts today) · <strong>Target MVP:</strong> ~8 weeks (4 × 2-week sprints)
+<strong>Layer built:</strong> Family Safety <strong>orchestrator</strong> (BEFE/Guardian) — stateless, consume-only (no DP persist), fanning out to 3 downstreams.</p>
+<h2>1. Systems &amp; ownership split</h2>
+<table>
+<thead>
+<tr>
+<th>Downstream</th>
+<th>What we integrate</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Network / FSC</strong> (<code>/fsc</code> v1.8)</td>
+<td>Subscription (provision/cancel/suspend/resume + features), SOS, Check-in, Device status, Fraud/spam, Alerts+History, CLM payload, Deeplink, Permissions, Alarm</td>
+<td><strong>Dev 1</strong></td>
+</tr>
+<tr>
+<td><strong>Whalebone</strong> (<code>/management</code> + <code>/events</code> + SDK)</td>
+<td>Device Safety + Parental: subscriptions, devices (filter/applications/scheduled-filter), allow/deny lists, events, pair-app/SDK, segment_id state</td>
+<td><strong>Dev 2</strong></td>
+</tr>
+<tr>
+<td><strong>UCM</strong></td>
+<td>Relationship titles (mom/dad), member name/profile resolution, Family-Mode / app-installed / Airtel flags</td>
+<td><strong>Dev 2</strong></td>
+</tr>
+<tr>
+<td><strong>Orchestrator core</strong> (shared)</td>
+<td>Scaffold, auth context, downstream clients, retry/idempotency, aggregation, observability</td>
+<td><strong>Dev 1 lead + Dev 2</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Rule of thumb:</strong> Dev 1 owns the <strong>Network/FSC</strong> vertical + orchestrator spine; Dev 2 owns the <strong>Whalebone + UCM</strong> verticals. Both pair on the shared skeleton in Sprint 0.</p>
+<h2>2. Timeline (Gantt)</h2>
+<pre class="mermaid" data-processed="true"><svg id="mermaid-1795410641262" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 962 412" style="max-width: 962px;" role="graphics-document document" aria-roledescription="gantt"><style>#mermaid-1795410641262{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1795410641262 .error-icon{fill:#552222;}#mermaid-1795410641262 .error-text{fill:#552222;stroke:#552222;}#mermaid-1795410641262 .edge-thickness-normal{stroke-width:2px;}#mermaid-1795410641262 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1795410641262 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1795410641262 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1795410641262 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1795410641262 .marker{fill:#666;stroke:#666;}#mermaid-1795410641262 .marker.cross{stroke:#666;}#mermaid-1795410641262 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1795410641262 .mermaid-main-font{font-family:var(--mermaid-font-family, "trebuchet ms", verdana, arial, sans-serif);}#mermaid-1795410641262 .exclude-range{fill:#eeeeee;}#mermaid-1795410641262 .section{stroke:none;opacity:0.2;}#mermaid-1795410641262 .section0{fill:hsl(0, 0%, 73.9215686275%);}#mermaid-1795410641262 .section2{fill:hsl(0, 0%, 73.9215686275%);}#mermaid-1795410641262 .section1,#mermaid-1795410641262 .section3{fill:white;opacity:0.2;}#mermaid-1795410641262 .sectionTitle0{fill:#333;}#mermaid-1795410641262 .sectionTitle1{fill:#333;}#mermaid-1795410641262 .sectionTitle2{fill:#333;}#mermaid-1795410641262 .sectionTitle3{fill:#333;}#mermaid-1795410641262 .sectionTitle{text-anchor:start;font-family:var(--mermaid-font-family, "trebuchet ms", verdana, arial, sans-serif);}#mermaid-1795410641262 .grid .tick{stroke:hsl(0, 0%, 90%);opacity:0.8;shape-rendering:crispEdges;}#mermaid-1795410641262 .grid .tick text{font-family:"trebuchet ms",verdana,arial,sans-serif;fill:#000000;}#mermaid-1795410641262 .grid path{stroke-width:0;}#mermaid-1795410641262 .today{fill:none;stroke:#d42;stroke-width:2px;}#mermaid-1795410641262 .task{stroke-width:2;}#mermaid-1795410641262 .taskText{text-anchor:middle;font-family:var(--mermaid-font-family, "trebuchet ms", verdana, arial, sans-serif);}#mermaid-1795410641262 .taskTextOutsideRight{fill:#333;text-anchor:start;font-family:var(--mermaid-font-family, "trebuchet ms", verdana, arial, sans-serif);}#mermaid-1795410641262 .taskTextOutsideLeft{fill:#333;text-anchor:end;}#mermaid-1795410641262 .task.clickable{cursor:pointer;}#mermaid-1795410641262 .taskText.clickable{cursor:pointer;fill:#003163!important;font-weight:bold;}#mermaid-1795410641262 .taskTextOutsideLeft.clickable{cursor:pointer;fill:#003163!important;font-weight:bold;}#mermaid-1795410641262 .taskTextOutsideRight.clickable{cursor:pointer;fill:#003163!important;font-weight:bold;}#mermaid-1795410641262 .taskText0,#mermaid-1795410641262 .taskText1,#mermaid-1795410641262 .taskText2,#mermaid-1795410641262 .taskText3{fill:white;}#mermaid-1795410641262 .task0,#mermaid-1795410641262 .task1,#mermaid-1795410641262 .task2,#mermaid-1795410641262 .task3{fill:#707070;stroke:hsl(0, 0%, 33.9215686275%);}#mermaid-1795410641262 .taskTextOutside0,#mermaid-1795410641262 .taskTextOutside2{fill:#333;}#mermaid-1795410641262 .taskTextOutside1,#mermaid-1795410641262 .taskTextOutside3{fill:#333;}#mermaid-1795410641262 .active0,#mermaid-1795410641262 .active1,#mermaid-1795410641262 .active2,#mermaid-1795410641262 .active3{fill:#eee;stroke:hsl(0, 0%, 33.9215686275%);}#mermaid-1795410641262 .activeText0,#mermaid-1795410641262 .activeText1,#mermaid-1795410641262 .activeText2,#mermaid-1795410641262 .activeText3{fill:#333!important;}#mermaid-1795410641262 .done0,#mermaid-1795410641262 .done1,#mermaid-1795410641262 .done2,#mermaid-1795410641262 .done3{stroke:#666;fill:#bbb;stroke-width:2;}#mermaid-1795410641262 .doneText0,#mermaid-1795410641262 .doneText1,#mermaid-1795410641262 .doneText2,#mermaid-1795410641262 .doneText3{fill:#333!important;}#mermaid-1795410641262 .crit0,#mermaid-1795410641262 .crit1,#mermaid-1795410641262 .crit2,#mermaid-1795410641262 .crit3{stroke:hsl(10.9090909091, 73.3333333333%, 40%);fill:#d42;stroke-width:2;}#mermaid-1795410641262 .activeCrit0,#mermaid-1795410641262 .activeCrit1,#mermaid-1795410641262 .activeCrit2,#mermaid-1795410641262 .activeCrit3{stroke:hsl(10.9090909091, 73.3333333333%, 40%);fill:#eee;stroke-width:2;}#mermaid-1795410641262 .doneCrit0,#mermaid-1795410641262 .doneCrit1,#mermaid-1795410641262 .doneCrit2,#mermaid-1795410641262 .doneCrit3{stroke:hsl(10.9090909091, 73.3333333333%, 40%);fill:#bbb;stroke-width:2;cursor:pointer;shape-rendering:crispEdges;}#mermaid-1795410641262 .milestone{transform:rotate(45deg) scale(0.8,0.8);}#mermaid-1795410641262 .milestoneText{font-style:italic;}#mermaid-1795410641262 .doneCritText0,#mermaid-1795410641262 .doneCritText1,#mermaid-1795410641262 .doneCritText2,#mermaid-1795410641262 .doneCritText3{fill:#333!important;}#mermaid-1795410641262 .activeCritText0,#mermaid-1795410641262 .activeCritText1,#mermaid-1795410641262 .activeCritText2,#mermaid-1795410641262 .activeCritText3{fill:#333!important;}#mermaid-1795410641262 .titleText{text-anchor:middle;font-size:18px;fill:#333;font-family:var(--mermaid-font-family, "trebuchet ms", verdana, arial, sans-serif);}#mermaid-1795410641262 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g></g><g class="grid" transform="translate(75, 362)" fill="none" font-size="10" font-family="sans-serif" text-anchor="middle"><path class="domain" stroke="currentColor" d="M0.5,-327V0.5H812.5V-327"></path><g class="tick" opacity="1" transform="translate(119.5,0)"><line stroke="currentColor" y2="-327"></line><text fill="#000" y="3" dy="1em" stroke="none" font-size="10" style="text-anchor: middle;"> 29 Nov</text></g><g class="tick" opacity="1" transform="translate(257.5,0)"><line stroke="currentColor" y2="-327"></line><text fill="#000" y="3" dy="1em" stroke="none" font-size="10" style="text-anchor: middle;"> 06 Dec</text></g><g class="tick" opacity="1" transform="translate(396.5,0)"><line stroke="currentColor" y2="-327"></line><text fill="#000" y="3" dy="1em" stroke="none" font-size="10" style="text-anchor: middle;"> 13 Dec</text></g><g class="tick" opacity="1" transform="translate(535.5,0)"><line stroke="currentColor" y2="-327"></line><text fill="#000" y="3" dy="1em" stroke="none" font-size="10" style="text-anchor: middle;"> 20 Dec</text></g><g class="tick" opacity="1" transform="translate(673.5,0)"><line stroke="currentColor" y2="-327"></line><text fill="#000" y="3" dy="1em" stroke="none" font-size="10" style="text-anchor: middle;"> 27 Dec</text></g><g class="tick" opacity="1" transform="translate(812.5,0)"><line stroke="currentColor" y2="-327"></line><text fill="#000" y="3" dy="1em" stroke="none" font-size="10" style="text-anchor: middle;"> 03 Jan</text></g></g><g><rect x="0" y="48" width="924.5" height="24" class="section section0"></rect><rect x="0" y="72" width="924.5" height="24" class="section section1"></rect><rect x="0" y="168" width="924.5" height="24" class="section section2"></rect><rect x="0" y="96" width="924.5" height="24" class="section section1"></rect><rect x="0" y="192" width="924.5" height="24" class="section section2"></rect><rect x="0" y="264" width="924.5" height="24" class="section section3"></rect><rect x="0" y="120" width="924.5" height="24" class="section section1"></rect><rect x="0" y="216" width="924.5" height="24" class="section section2"></rect><rect x="0" y="288" width="924.5" height="24" class="section section3"></rect><rect x="0" y="144" width="924.5" height="24" class="section section1"></rect><rect x="0" y="240" width="924.5" height="24" class="section section2"></rect><rect x="0" y="312" width="924.5" height="24" class="section section3"></rect><rect x="0" y="336" width="924.5" height="24" class="section section3"></rect></g><g><rect id="s0" rx="3" ry="3" x="75" y="50" width="59" height="20" transform-origin="104.5px 60px" class="task task0 "></rect><rect id="a1" rx="3" ry="3" x="134" y="74" width="179" height="20" transform-origin="223.5px 84px" class="task task1 "></rect><rect id="b1" rx="3" ry="3" x="134" y="170" width="179" height="20" transform-origin="223.5px 180px" class="task task2 "></rect><rect id="a2" rx="3" ry="3" x="313" y="98" width="198" height="20" transform-origin="412px 108px" class="task task1 "></rect><rect id="b2" rx="3" ry="3" x="313" y="194" width="198" height="20" transform-origin="412px 204px" class="task task2 "></rect><rect id="m1" rx="3" ry="3" x="303" y="266" width="20" height="20" transform-origin="313px 276px" class="task milestone  task3 "></rect><rect id="a3" rx="3" ry="3" x="511" y="122" width="198" height="20" transform-origin="610px 132px" class="task task1 "></rect><rect id="b3" rx="3" ry="3" x="511" y="218" width="198" height="20" transform-origin="610px 228px" class="task task2 "></rect><rect id="m2" rx="3" ry="3" x="501" y="290" width="20" height="20" transform-origin="511px 300px" class="task milestone  task3 "></rect><rect id="a4" rx="3" ry="3" x="709" y="146" width="178" height="20" transform-origin="798px 156px" class="task task1 "></rect><rect id="b4" rx="3" ry="3" x="709" y="242" width="178" height="20" transform-origin="798px 252px" class="task task2 "></rect><rect id="m3" rx="3" ry="3" x="699" y="314" width="20" height="20" transform-origin="709px 324px" class="task milestone  task3 "></rect><rect id="m4" rx="3" ry="3" x="877" y="338" width="20" height="20" transform-origin="887px 348px" class="task milestone  task3 "></rect><text id="s0-text" font-size="11" x="139" y="63.5" text-height="20" class=" taskTextOutsideRight taskTextOutside0  width-261.078125">Skeleton + downstream connectivity + contract freeze   </text><text id="a1-text" font-size="11" x="318" y="87.5" text-height="20" class=" taskTextOutsideRight taskTextOutside1  width-205.46875">Subscription + features + home aggregate   </text><text id="b1-text" font-size="11" x="318" y="183.5" text-height="20" class=" taskTextOutsideRight taskTextOutside2  width-284.81884765625">Whalebone connectors + sub create/suspend + UCM titles </text><text id="a2-text" font-size="11" x="412" y="111.5" text-height="20" class=" taskText taskText1  width-119.21875">SOS + Check-in + alarm                      </text><text id="b2-text" font-size="11" x="516" y="207.5" text-height="20" class=" taskTextOutsideRight taskTextOutside2  width-241.8125">Device Safety (pair/filter/apps/events) + SDK glue     </text><text id="m1-text" font-size="11" x="328" y="279.5" text-height="20" class=" taskTextOutsideRight taskTextOutside3  milestoneText width-117.09375">M1 provisioning + home        </text><text id="a3-text" font-size="11" x="506" y="135.5" text-height="20" class=" taskTextOutsideLeft taskTextOutside1 ">Fraud + Alerts/History + Permissions + CLM + Deeplink </text><text id="b3-text" font-size="11" x="506" y="231.5" text-height="20" class=" taskTextOutsideLeft taskTextOutside2 ">Parental (schedules/screen-time/apps/lists/places)     </text><text id="m2-text" font-size="11" x="526" y="303.5" text-height="20" class=" taskTextOutsideRight taskTextOutside3  milestoneText width-165.58056640625">M2 SOS + checkin + devicesafety </text><text id="a4-text" font-size="11" x="798" y="159.5" text-height="20" class=" taskText taskText1  width-132.984375">E2E + hardening (Network)                    </text><text id="b4-text" font-size="11" x="798" y="255.5" text-height="20" class=" taskText taskText2  width-176.40625">E2E + hardening (Whalebone/UCM)                         </text><text id="m3-text" font-size="11" x="724" y="327.5" text-height="20" class=" taskTextOutsideRight taskTextOutside3  milestoneText width-135.140625">M3 fraud + alerts + parental   </text><text id="m4-text" font-size="11" x="872" y="351.5" text-height="20" class=" taskTextOutsideLeft taskTextOutside3  milestoneText">M4 MVP launch-ready           </text></g><g><text dy="0em" x="10" y="62" font-size="11" class="sectionTitle sectionTitle0"><tspan alignment-baseline="central" x="10">Setup (both)</tspan></text><text dy="0em" x="10" y="122" font-size="11" class="sectionTitle sectionTitle1"><tspan alignment-baseline="central" x="10">Dev1 · Network/FSC</tspan></text><text dy="0em" x="10" y="218" font-size="11" class="sectionTitle sectionTitle2"><tspan alignment-baseline="central" x="10">Dev2 · Whalebone/UCM</tspan></text><text dy="0em" x="10" y="314" font-size="11" class="sectionTitle sectionTitle3"><tspan alignment-baseline="central" x="10">Milestones</tspan></text></g><g class="today"><line x1="79" x2="79" y1="25" y2="387" class="today"></line></g><text x="481" y="25" class="titleText">Family Safety integration — 2 devs, 8 weeks</text></svg></pre>
+<h2>3. Sprint plan</h2>
+<h3>Sprint 0 — Day 1–3 (both, this week)</h3>
+<ul>
+<li>Repo, CI, orchestrator service skeleton (stateless, config-driven); health/trace/log.</li>
+<li><strong>Connectivity + auth</strong> to all 3: FSC base URL + keys; Whalebone <code>Wb-Access-Key</code>/<code>Wb-Secret-Key</code>; UCM creds. One successful call each (<code>family/get</code>, <code>GET /management/devices/{id}</code>, UCM profile).</li>
+<li><strong>Contract freeze:</strong> FSC swagger <strong>v1.8</strong>, Whalebone <code>/management</code>+<code>/events</code>, UCM title API. Generate downstream clients + mock servers.</li>
+<li>Decide the <strong>identity map</strong>: <code>msisdn = deviceId = subscriptionId</code>, <code>circleId = familyId</code>, membershipId.</li>
+<li><strong>Definition of Done</strong> + branch/PR flow agreed.</li>
+</ul>
+<h3>Sprint 1 — Wk 1–2 → <strong>M1: provisioning + home</strong></h3>
+<table>
+<thead>
+<tr>
+<th>Owner</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Dev 1</strong></td>
+<td><code>POST /subscription</code> (CREATE/CANCEL/SUSPEND/RESUME on msisdn); <code>GET /subscription/features/fetch</code>; <code>POST /features/toggle</code>; <strong>Home aggregate</strong> = <code>family/get</code> + <code>device/status/fetch</code> + features</td>
+</tr>
+<tr>
+<td><strong>Dev 2</strong></td>
+<td>Whalebone client; <code>POST /management/subscriptions</code> (segment_id=devicesafety) + suspend/activate; <code>GET /management/devices/{id}</code>; <strong>UCM</strong> title (mom/dad) + name resolution; app-installed/Airtel flags</td>
+</tr>
+</tbody></table>
+<h3>Sprint 2 — Wk 3–4 → <strong>M2: SOS + check-in + device safety</strong></h3>
+<table>
+<thead>
+<tr>
+<th>Owner</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Dev 1</strong></td>
+<td><code>POST /trigger/sos</code> (CREATE/ACK/RESOLVE) + <code>DELETE /sos/cancel</code> + <code>sos/status/check</code> → <strong>live SOS DTO</strong> (location/battery/responders); <code>POST /trigger/checkin</code> (CREATE/RESPONSE/DISMISS/PAUSE/RESUME) + status; <code>alarm/incoming</code></td>
+</tr>
+<tr>
+<td><strong>Dev 2</strong></td>
+<td>Device Safety: <code>pair-app</code> token → SDK bootstrap glue; <code>PUT /devices/{id}/filter</code> (7 threats true); <code>PUT /applications</code>; `GET /events/search</td>
+</tr>
+</tbody></table>
+<h3>Sprint 3 — Wk 5–6 → <strong>M3: fraud + alerts + parental</strong></h3>
+<table>
+<thead>
+<tr>
+<th>Owner</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Dev 1</strong></td>
+<td><code>GET /fraud/alert/fetch</code> + <code>POST /fraud/alert/action</code> (warn/end-call); <strong>Alerts+History</strong> = <code>alert/fetch</code> + <code>history/fetch</code> with role-scoping + UCM titles; <strong>Permissions</strong> <code>update</code>/<code>fetch</code> + feature-status engine; <code>clm/payload/fetch</code>; <code>deeplink/resolve</code></td>
+</tr>
+<tr>
+<td><strong>Dev 2</strong></td>
+<td>Parental: <code>scheduled-filter</code> (bedtime/study presets), <code>content-filter</code>, allow/deny <code>lists</code>, screen-time, apps, places/usage/location mapping; GET-merge-PUT policy builder; reports via <code>/events/stats</code></td>
+</tr>
+</tbody></table>
+<h3>Sprint 4 — Wk 7–8 → <strong>M4: launch-ready</strong></h3>
+<ul>
+<li>E2E integration tests across all 3 downstreams; idempotency + retry/back-off (429/409 per Whalebone ops rules); reachability/lifecycle wiring; observability/alerting; UAT; bug-fix; launch checklist.</li>
+</ul>
+<h2>4. Integration points &amp; cross-cutting</h2>
+<ul>
+<li><strong>Notification deeplink</strong> → <code>deeplink/resolve</code> (deeplinkId + msisdn/groupId) → app calls the right checkin/sos/fraud API. (Dev 1, Sprint 3.)</li>
+<li><strong>CLM payload</strong> for checkin/sos message/escalation config → <code>clm/payload/fetch</code>. (Dev 1.)</li>
+<li><strong>Permission → feature-status</strong> engine: permissions on/off per member drive <code>checkinWorking</code>/<code>sosWorking</code> etc., pushed to Channel. (Dev 1.)</li>
+<li><strong>Membership ↔ Whalebone subscriptionId (= MSISDN)</strong> linkage. (Dev 2.)</li>
+<li><strong>UCM titles</strong> injected into alerts/history and member cards. (Dev 2.)</li>
+</ul>
+<h2>5. External dependencies / asks (track as blockers)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Needed from</th>
+<th>Item</th>
+<th>Blocks</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Network</td>
+<td>GAP APIs: reachability/HLR, back-online, low-battery, MNP/lifecycle events, invite lifecycle, <code>getCircleByMsisdn</code></td>
+<td>Home signals, lifecycle</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Network</td>
+<td>CLM payload contract + deeplink id scheme confirmation</td>
+<td>Sprint 3</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Network</td>
+<td>LBS lookup + no-internet SOS short-code</td>
+<td>SOS edges</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Whalebone</td>
+<td>Airtel-hosted backend URL, resolver discovery domain, Access/Secret keys, app-catalogue IDs</td>
+<td>Dev 2 Sprint 1</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Whalebone</td>
+<td>segment_id auto-apply (steps 3/7 "new dev")</td>
+<td>Parental activation</td>
+</tr>
+<tr>
+<td>6</td>
+<td>UCM</td>
+<td>Title mapping + profile API contract + auth</td>
+<td>Dev 2 Sprint 1</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Legal</td>
+<td>Remote end-call; non-app invite acceptance</td>
+<td>Fraud action, invites</td>
+</tr>
+</tbody></table>
+<h2>6. Risks</h2>
+<ul>
+<li><strong>Downstream readiness</strong> — several Network APIs are GAP (not yet built/shared); use mocks, keep contracts frozen, escalate early.</li>
+<li><strong>Whalebone "new development"</strong> (auto segment_id) not in MVP window — may need manual filter PUTs as fallback.</li>
+<li><strong>SDK pairing</strong> (Android/iOS) owned by app team — coordinate the token hand-off.</li>
+<li><strong>2-dev bandwidth</strong> — Parental is the largest surface; if it slips, it is P1 and can trail SOS/check-in (P0).</li>
+</ul>
+<h2>7. Start today (Day 1 actions)</h2>
+<ol>
+<li>Create the orchestrator repo + CI; both devs clone.</li>
+<li>Request/confirm credentials: FSC keys, Whalebone Access/Secret + backend URL, UCM creds (dependency #4, #6).</li>
+<li>Stand up mock servers from FSC v1.8 + Whalebone + UCM contracts.</li>
+<li>Dev 1 → <code>POST /subscription</code> skeleton + <code>family/get</code> client. Dev 2 → Whalebone <code>GET /management/devices/{id}</code> + UCM title client.</li>
+<li>Daily 15-min standup; shared board with the Sprint-1 tasks above.</li>
+</ol>
+<hr>
+<p><em>Grounded in FSC swagger v1.8, the Airtel Secure (Whalebone) HLD, and the BEFE requirements. P0 = circle provisioning + SOS + check-in + device status + fraud + alerts; P1 = device safety, parental, lifecycle/banners.</em></p>
+</article></div></body></html>
