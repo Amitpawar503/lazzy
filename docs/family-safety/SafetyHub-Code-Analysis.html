@@ -1,0 +1,270 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/SafetyHub-Code-Analysis</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Safety-Hub — Code &amp; Architecture Analysis</h1>
+<p><strong>Scope:</strong> <code>origin/integration</code> base + <code>MYAIR-123395-Network-Integration</code> + <code>MYAIR-123390-UCM-Integration</code>
+<strong>Date:</strong> 23 Nov 2026 · <strong>Basis:</strong> the shared branch code extract (not a live checkout)
+<strong>Service:</strong> <code>safety-hub</code> — the Family Safety orchestrator (BEFE/Guardian), channel context <code>/safety/hub</code>.</p>
+<h2>1. Folder / package structure</h2>
+<pre><code>com.airtel.online.safetyhub
+├── audit/                SafetyHubAuditLoggingEvent         (channels-logger @Audit enricher)
+├── config/               NetworkRestClientConfig, UcmRestClientConfig
+│   └── properties/       NetworkDownstreamProperties, UcmProperties   (@ConfigurationProperties)
+├── connector/            ── downstream "ports"
+│   ├── network/          NetworkConnector + impl/NetworkConnectorImpl
+│   └── ucm/              UcmConnector     + impl/UcmConnectorImpl
+├── constants/            ApiNameConstants, ApiPathConstants, CommonConstants, NetworkConstants, UcmConstants
+├── controller/           FamilySafetyController                        (channel REST API)
+├── enums/                GroupStatus, MemberServiceStatus, ProfileIdType, SafetyHubErrorCode
+├── exception/            SafetyHubError, SafetyHubException
+│   └── handler/          GlobalExceptionHandler                        (@ControllerAdvice)
+├── mapper/               SafetyCircleProfileMapper + impl              (UCM → channel ACL)
+├── pojo/vos/
+│   ├── network/          Network* records (device status, family, member DTOs)
+│   ├── profile/          CircleMember(+MetaData), SafetyCircleProfileData/Response  (channel VOs)
+│   └── ucm/              Ucm* records (TMF-style party/group model)
+├── service/              SafetyCircleProfileService + impl             (facade/orchestration)
+└── util/                 TraceSupport, ValidationUtil
+resources: bootstrap.yaml · log4j2-{prod,sit,tnd}.xml
+test:      controller / mapper / service (UCM side only)
+</code></pre>
+<p><strong>Verdict:</strong> clean <strong>layered + ports-and-adapters</strong> layout — <code>controller → service → connector(port)/mapper</code>, DTOs isolated in <code>pojo/vos</code>, cross-cutting in <code>audit</code>/<code>exception</code>/<code>util</code>. Package-by-layer (not by feature); fine at this size, but as SOS/check-in/fraud/subscription land it will grow wide — consider package-by-feature later.</p>
+<h2>2. Architecture</h2>
+<pre class="mermaid" data-processed="true"><svg id="mermaid-1795417361011" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 1844.765625px;" viewBox="-8 -8 1844.765625 367.92657470703125" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#mermaid-1795417361011{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#000000;}#mermaid-1795417361011 .error-icon{fill:#552222;}#mermaid-1795417361011 .error-text{fill:#552222;stroke:#552222;}#mermaid-1795417361011 .edge-thickness-normal{stroke-width:2px;}#mermaid-1795417361011 .edge-thickness-thick{stroke-width:3.5px;}#mermaid-1795417361011 .edge-pattern-solid{stroke-dasharray:0;}#mermaid-1795417361011 .edge-pattern-dashed{stroke-dasharray:3;}#mermaid-1795417361011 .edge-pattern-dotted{stroke-dasharray:2;}#mermaid-1795417361011 .marker{fill:#666;stroke:#666;}#mermaid-1795417361011 .marker.cross{stroke:#666;}#mermaid-1795417361011 svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#mermaid-1795417361011 .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#000000;}#mermaid-1795417361011 .cluster-label text{fill:#333;}#mermaid-1795417361011 .cluster-label span,#mermaid-1795417361011 p{color:#333;}#mermaid-1795417361011 .label text,#mermaid-1795417361011 span,#mermaid-1795417361011 p{fill:#000000;color:#000000;}#mermaid-1795417361011 .node rect,#mermaid-1795417361011 .node circle,#mermaid-1795417361011 .node ellipse,#mermaid-1795417361011 .node polygon,#mermaid-1795417361011 .node path{fill:#eee;stroke:#999;stroke-width:1px;}#mermaid-1795417361011 .flowchart-label text{text-anchor:middle;}#mermaid-1795417361011 .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#mermaid-1795417361011 .node .label{text-align:center;}#mermaid-1795417361011 .node.clickable{cursor:pointer;}#mermaid-1795417361011 .arrowheadPath{fill:#333333;}#mermaid-1795417361011 .edgePath .path{stroke:#666;stroke-width:2.0px;}#mermaid-1795417361011 .flowchart-link{stroke:#666;fill:none;}#mermaid-1795417361011 .edgeLabel{background-color:white;text-align:center;}#mermaid-1795417361011 .edgeLabel rect{opacity:0.5;background-color:white;fill:white;}#mermaid-1795417361011 .labelBkg{background-color:rgba(255, 255, 255, 0.5);}#mermaid-1795417361011 .cluster rect{fill:hsl(0, 0%, 98.9215686275%);stroke:#707070;stroke-width:1px;}#mermaid-1795417361011 .cluster text{fill:#333;}#mermaid-1795417361011 .cluster span,#mermaid-1795417361011 p{color:#333;}#mermaid-1795417361011 div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(-160, 0%, 93.3333333333%);border:1px solid #707070;border-radius:2px;pointer-events:none;z-index:100;}#mermaid-1795417361011 .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#000000;}#mermaid-1795417361011 :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="mermaid-1795417361011_flowchart-pointEnd" class="marker flowchart" viewBox="0 0 10 10" refX="6" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1795417361011_flowchart-pointStart" class="marker flowchart" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1795417361011_flowchart-circleEnd" class="marker flowchart" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1795417361011_flowchart-circleStart" class="marker flowchart" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="mermaid-1795417361011_flowchart-crossEnd" class="marker cross flowchart" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="mermaid-1795417361011_flowchart-crossStart" class="marker cross flowchart" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edgePaths"><path d="M175.977,241.036L196.565,241.036C217.154,241.036,258.331,241.036,298.11,241.036C337.89,241.036,376.271,241.036,395.462,241.036L414.653,241.036" id="L-APP-C-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-APP LE-C" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M542.248,220.739L561.806,209.023C581.364,197.307,620.479,173.874,651.808,162.158C683.137,150.442,706.68,150.442,718.452,150.442L730.223,150.442" id="L-C-S-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-C LE-S" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M897.581,130.145L910.325,125.979C923.07,121.812,948.558,113.479,964.586,109.312C980.614,105.145,987.18,105.145,990.464,105.145L993.747,105.145" id="L-S-M-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-S LE-M" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M897.581,170.739L910.325,174.906C923.07,179.072,948.558,187.406,971.405,191.572C994.252,195.739,1014.456,195.739,1024.559,195.739L1034.661,195.739" id="L-S-UC-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-S LE-UC" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M1193.68,195.739L1204.665,195.739C1215.651,195.739,1237.622,195.739,1251.891,195.739C1266.16,195.739,1272.727,195.739,1276.01,195.739L1279.294,195.739" id="L-UC-UI-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-UC LE-UI" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M1495.234,195.739L1505.552,195.739C1515.87,195.739,1536.505,195.739,1556.257,195.739C1576.009,195.739,1594.878,195.739,1604.313,195.739L1613.747,195.739" id="L-UI-UCM-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-UI LE-UCM" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M179.516,40.073L199.514,40.073C219.513,40.073,259.51,40.073,298.624,40.073C337.739,40.073,375.969,40.073,395.085,40.073L414.2,40.073" id="L-NC-NI-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-NC LE-NI" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M597.234,40.073L607.628,40.073C618.021,40.073,638.807,40.073,666.012,40.073C693.218,40.073,726.842,40.073,743.654,40.073L760.466,40.073" id="L-NI-NET-0" class=" edge-thickness-normal edge-pattern-solid flowchart-link LS-NI LE-NET" style="fill:none;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M596.781,241.036L607.25,241.036C617.719,241.036,638.656,241.036,658.635,241.036C678.614,241.036,697.633,241.036,707.143,241.036L716.653,241.036" id="L-C-OBS-0" class=" edge-thickness-normal edge-pattern-dotted flowchart-link LS-C LE-OBS" style="fill:none;stroke-width:2px;stroke-dasharray:3;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path><path d="M542.248,261.333L561.806,273.049C581.364,284.765,620.479,308.197,652.842,319.914C685.205,331.63,710.816,331.63,723.621,331.63L736.427,331.63" id="L-C-GEH-0" class=" edge-thickness-normal edge-pattern-dotted flowchart-link LS-C LE-GEH" style="fill:none;stroke-width:2px;stroke-dasharray:3;" marker-end="url(#mermaid-1795417361011_flowchart-pointEnd)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(299.5078125, 241.03594970703125)"><g class="label" transform="translate(-94.9921875, -12.796875)"><foreignObject width="189.984375" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">POST /family-safety/profile</span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(1557.140625, 195.73907470703125)"><g class="label" transform="translate(-36.90625, -12.796875)"><foreignObject width="73.8125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">RestClient</span></div></foreignObject></g></g><g class="edgeLabel"><g class="label" transform="translate(0, 0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(659.59375, 40.072662353515625)"><g class="label" transform="translate(-36.90625, -12.796875)"><foreignObject width="73.8125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">RestClient</span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(659.59375, 241.03594970703125)"><g class="label" transform="translate(-37.359375, -12.796875)"><foreignObject width="74.71875" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">audit/trace</span></div></foreignObject></g></g><g class="edgeLabel" transform="translate(659.59375, 331.62969970703125)"><g class="label" transform="translate(-20.890625, -12.796875)"><foreignObject width="41.78125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel">errors</span></div></foreignObject></g></g></g><g class="nodes"><g class="node default default flowchart-label" id="flowchart-APP-0" data-node="true" data-id="APP" transform="translate(89.7578125, 241.03594970703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-86.21875" y="-20.296875" width="172.4375" height="40.59375"></rect><g class="label" style="" transform="translate(-78.71875, -12.796875)"><rect></rect><foreignObject width="157.4375" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Thanks App / Channel</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-C-1" data-node="true" data-id="C" transform="translate(508.3671875, 241.03594970703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-88.4140625" y="-20.296875" width="176.828125" height="40.59375"></rect><g class="label" style="" transform="translate(-80.9140625, -12.796875)"><rect></rect><foreignObject width="161.828125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">FamilySafetyController</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-S-3" data-node="true" data-id="S" transform="translate(835.5, 150.44219970703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-99.9765625" y="-20.296875" width="199.953125" height="40.59375"></rect><g class="label" style="" transform="translate(-92.4765625, -12.796875)"><rect></rect><foreignObject width="184.953125" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">SafetyCircleProfileService</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-M-5" data-node="true" data-id="M" transform="translate(1116.8203125, 105.14532470703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-117.7734375" y="-20.296875" width="235.546875" height="40.59375"></rect><g class="label" style="" transform="translate(-110.2734375, -12.796875)"><rect></rect><foreignObject width="220.546875" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">SafetyCircleProfileMapper ACL</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-UC-7" data-node="true" data-id="UC" transform="translate(1116.8203125, 195.73907470703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-76.859375" y="-20.296875" width="153.71875" height="40.59375"></rect><g class="label" style="" transform="translate(-69.359375, -12.796875)"><rect></rect><foreignObject width="138.71875" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">UcmConnector port</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-UI-9" data-node="true" data-id="UI" transform="translate(1389.9140625, 195.73907470703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-105.3203125" y="-20.296875" width="210.640625" height="40.59375"></rect><g class="label" style="" transform="translate(-97.8203125, -12.796875)"><rect></rect><foreignObject width="195.640625" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">UcmConnectorImpl adapter</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-UCM-11" label-offset-y="15.663803566427038" data-node="true" data-id="UCM" transform="translate(1723.90625, 195.73907470703125)"><path style="" d="M 0,15.663803566427038 a 104.859375,15.663803566427038 0,0,0 209.71875 0 a 104.859375,15.663803566427038 0,0,0 -209.71875 0 l 0,56.257553566427035 a 104.859375,15.663803566427038 0,0,0 209.71875 0 l 0,-56.257553566427035" transform="translate(-104.859375,-43.79258034964056)"></path><g class="label" style="" transform="translate(-97.359375, -12.796875)"><rect></rect><foreignObject width="194.71875" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">UCM /v1/profile/safetycircle</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-NC-12" data-node="true" data-id="NC" transform="translate(89.7578125, 40.072662353515625)"><rect class="basic label-container" style="" rx="0" ry="0" x="-89.7578125" y="-20.296875" width="179.515625" height="40.59375"></rect><g class="label" style="" transform="translate(-82.2578125, -12.796875)"><rect></rect><foreignObject width="164.515625" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">NetworkConnector port</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-NI-13" data-node="true" data-id="NI" transform="translate(508.3671875, 40.072662353515625)"><rect class="basic label-container" style="" rx="0" ry="0" x="-88.8671875" y="-20.296875" width="177.734375" height="40.59375"></rect><g class="label" style="" transform="translate(-81.3671875, -12.796875)"><rect></rect><foreignObject width="162.734375" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">NetworkConnectorImpl</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-NET-15" label-offset-y="13.183859151601087" data-node="true" data-id="NET" transform="translate(835.5, 40.072662353515625)"><path style="" d="M 0,13.183859151601087 a 69.734375,13.183859151601087 0,0,0 139.46875 0 a 69.734375,13.183859151601087 0,0,0 -139.46875 0 l 0,53.777609151601084 a 69.734375,13.183859151601087 0,0,0 139.46875 0 l 0,-53.777609151601084" transform="translate(-69.734375,-40.07266372740163)"></path><g class="label" style="" transform="translate(-62.234375, -12.796875)"><rect></rect><foreignObject width="124.46875" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Network FSC /fsc</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-OBS-17" data-node="true" data-id="OBS" transform="translate(835.5, 241.03594970703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-113.546875" y="-20.296875" width="227.09375" height="40.59375"></rect><g class="label" style="" transform="translate(-106.046875, -12.796875)"><rect></rect><foreignObject width="212.09375" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">Micrometer + channels-logger</span></div></foreignObject></g></g><g class="node default default flowchart-label" id="flowchart-GEH-19" data-node="true" data-id="GEH" transform="translate(835.5, 331.62969970703125)"><rect class="basic label-container" style="" rx="0" ry="0" x="-93.7734375" y="-20.296875" width="187.546875" height="40.59375"></rect><g class="label" style="" transform="translate(-86.2734375, -12.796875)"><rect></rect><foreignObject width="172.546875" height="25.59375"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="nodeLabel">GlobalExceptionHandler</span></div></foreignObject></g></g></g></g></g></svg></pre>
+<p>Stateless, consume-only (no DP persist) — matches the ADR. The UCM slice is wired end-to-end (controller→service→mapper→connector); the Network slice has the connector + DTOs but <strong>no controller/service consuming it yet</strong>.</p>
+<h2>3. Java 21 features used</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Used?</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Records</strong> (immutable data carriers)</td>
+<td>✅ heavily</td>
+<td>every <code>pojo/vos/*</code>, request/response records</td>
+</tr>
+<tr>
+<td><strong>Pattern matching for <code>instanceof</code></strong></td>
+<td>✅</td>
+<td><code>ex instanceof SafetyHubException she</code>, <code>output.get() instanceof ResponseEntity&lt;?&gt; re</code></td>
+</tr>
+<tr>
+<td><strong><code>SequencedCollection.getFirst()</code></strong> (JEP 431, <strong>21-specific</strong>)</td>
+<td>✅</td>
+<td><code>partyGroup().getFirst()</code>, <code>relatedParty().getFirst()</code>, <code>circleMembers().getFirst()</code></td>
+</tr>
+<tr>
+<td>Enhanced enums + <code>@JsonCreator/@JsonValue</code></td>
+<td>✅</td>
+<td><code>GroupStatus</code>, <code>MemberServiceStatus</code></td>
+</tr>
+<tr>
+<td><strong>Virtual threads</strong> (JEP 444)</td>
+<td>❌</td>
+<td>blocking RestClient on platform threads; <code>spring.threads.virtual</code> not enabled</td>
+</tr>
+<tr>
+<td><strong>Switch pattern matching / record patterns</strong> (JEP 440/441)</td>
+<td>❌</td>
+<td>error/type resolution uses <code>instanceof</code> + streams, not <code>switch</code></td>
+</tr>
+<tr>
+<td><strong>Sealed types</strong></td>
+<td>❌</td>
+<td><code>SafetyHubError</code> could be sealed; it isn't</td>
+</tr>
+<tr>
+<td>Text blocks / <code>var</code> / string templates</td>
+<td>❌</td>
+<td>not used</td>
+</tr>
+</tbody></table>
+<p><strong>Takeaway:</strong> the code is on Java 21 and modern (records + instanceof patterns + <code>getFirst()</code>), but uses little that is <em>exclusively</em> 21 — switch-pattern-matching over the enums/error types and <strong>virtual threads</strong> for the blocking downstream calls are the obvious unused wins.</p>
+<h2>4. Spring Boot 4 / Spring 7 features used</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Signal</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong><code>RestClient</code></strong> (modern sync client, replaces <code>RestTemplate</code>)</td>
+<td>both <code>*RestClientConfig</code></td>
+</tr>
+<tr>
+<td><strong><code>@ConfigurationProperties</code></strong> typed binding</td>
+<td><code>NetworkDownstreamProperties</code>, <code>UcmProperties</code></td>
+</tr>
+<tr>
+<td><strong>Boot 4 relocated test packages</strong></td>
+<td><code>org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest</code> (Boot 3 was <code>...test.autoconfigure.web.servlet</code>)</td>
+</tr>
+<tr>
+<td><strong><code>@MockitoBean</code></strong> bean-override (Spring 6.2+/Boot 4, replaces <code>@MockBean</code>)</td>
+<td><code>...test.context.bean.override.mockito.MockitoBean</code></td>
+</tr>
+<tr>
+<td><strong>Micrometer Tracing</strong> (W3C/B3/Jaeger propagation, baggage)</td>
+<td><code>TraceSupport</code>, <code>bootstrap.yaml management.tracing</code></td>
+</tr>
+<tr>
+<td><code>@ControllerAdvice</code> + <code>ResponseEntityExceptionHandler</code></td>
+<td><code>GlobalExceptionHandler</code></td>
+</tr>
+<tr>
+<td>Actuator, OTLP exporter config</td>
+<td><code>bootstrap.yaml management.*</code></td>
+</tr>
+</tbody></table>
+<h2>5. Design patterns</h2>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Ports &amp; Adapters (Hexagonal)</strong></td>
+<td><code>*Connector</code> interface (port) + <code>*ConnectorImpl</code> (adapter)</td>
+</tr>
+<tr>
+<td><strong>Anti-Corruption Layer / Translator</strong></td>
+<td><code>SafetyCircleProfileMapperImpl</code> (UCM TMF party model → channel VO)</td>
+</tr>
+<tr>
+<td><strong>Adapter</strong></td>
+<td>connectors adapt downstream REST to domain calls</td>
+</tr>
+<tr>
+<td><strong>Facade</strong></td>
+<td><code>SafetyCircleProfileServiceImpl</code> over connector + mapper + trace</td>
+</tr>
+<tr>
+<td><strong>DTO / Value Object</strong></td>
+<td>records in <code>pojo/vos</code></td>
+</tr>
+<tr>
+<td><strong>Builder</strong></td>
+<td><code>RestClient.builder</code>, <code>UriComponentsBuilder</code>, <code>AuditData.Builder</code></td>
+</tr>
+<tr>
+<td><strong>Factory method</strong></td>
+<td><code>fromValue</code>, <code>fromChannelValue</code>, <code>notImplemented()</code></td>
+</tr>
+<tr>
+<td><strong>Strategy (enum-mapped)</strong></td>
+<td><code>ProfileIdType</code> (channel↔UCM id mapping)</td>
+</tr>
+<tr>
+<td><strong>Template method</strong></td>
+<td><code>ResponseEntityExceptionHandler</code> overrides; <code>executeGet</code> helper</td>
+</tr>
+<tr>
+<td><strong>Decorator / AOP</strong></td>
+<td><code>@Audit</code> annotation enriching controller + connector</td>
+</tr>
+<tr>
+<td><strong>Singleton</strong></td>
+<td>Spring beans; <code>private</code> ctors on <code>constants/*</code> and <code>util/*</code></td>
+</tr>
+</tbody></table>
+<h2>6. Principles observed</h2>
+<ul>
+<li><strong>SOLID</strong> — SRP (one job per class), <strong>DIP</strong> (depends on <code>*Connector</code>/<code>*Mapper</code>/<code>*Service</code> abstractions), ISP (tiny interfaces), OCP (enum + error-code tables).</li>
+<li><strong>Immutability</strong> (records), <strong>fail-fast validation</strong> (<code>ValidationUtil.requireNonBlank</code>), <strong>centralised error handling</strong>, <strong>externalised config</strong> + profiles (sit/prod/tnd), <strong>constructor injection</strong>, <strong>structured logging + distributed tracing</strong>.</li>
+<li>Clean, consistent, testable (UCM side).</li>
+</ul>
+<hr>
+<h2>7. Where it lacks (prioritised)</h2>
+<h3>🔴 Critical — the two branches do not cleanly merge</h3>
+<p>The shared files <strong>diverged</strong> on each branch; a naive merge breaks compilation:</p>
+<table>
+<thead>
+<tr>
+<th>Shared file</th>
+<th>Network branch</th>
+<th>UCM branch</th>
+<th>Merge risk</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ApiNameConstants</code></td>
+<td>only <code>NETWORK_*</code></td>
+<td>only <code>FETCH_*</code>/<code>UCM_*</code></td>
+<td>one overwrites the other → missing constants → <strong>won't compile</strong></td>
+</tr>
+<tr>
+<td><code>SafetyHubErrorCode</code></td>
+<td><code>NETWORK_*</code> + <code>UNKNOWN</code></td>
+<td><code>ID_/TYPE_/PROFILE_/UCM_*</code> + <code>UNKNOWN</code></td>
+<td><strong>neither has the other's codes</strong> → both sides fail to compile after merge</td>
+</tr>
+<tr>
+<td><code>GlobalExceptionHandler</code></td>
+<td>handles <code>ValidationException</code> + <code>ResourceNotFoundException</code></td>
+<td><strong>deletes</strong> those two exceptions; handles <code>MissingServletRequestParameter</code></td>
+<td>Network handler imports classes UCM deleted → <strong>broken</strong></td>
+</tr>
+<tr>
+<td><code>bootstrap.yaml</code></td>
+<td><code>network.context-path: /fsc</code> + member paths</td>
+<td><code>network.context-path: /cx/network</code>, adds <code>channels.logger</code>, <code>ucm</code></td>
+<td><strong>conflicting base path</strong> + divergent config</td>
+</tr>
+</tbody></table>
+<p><strong>Action:</strong> an explicit integration merge that <strong>unions</strong> the error-code enum and the <code>ApiNameConstants</code>, reconciles the single <code>GlobalExceptionHandler</code> (keep validation + missing-param + downstream handlers together, decide the fate of <code>ValidationException</code>/<code>ResourceNotFoundException</code>), and settles <strong>one</strong> <code>network.context-path</code>.</p>
+<h3>🟠 High</h3>
+<ol>
+<li><strong>Stale <code>member/get</code></strong> — <code>NetworkDownstreamProperties.memberGetPath=/api/v1/member/get</code> + <code>getMember()</code> target an endpoint <strong>removed</strong> from the Network contract (subscription replaces member CRUD). Rework to <code>family/get</code> / <code>subscription/features/fetch</code>. <code>NetworkMember</code>/<code>NetworkMembersResponse</code> also duplicate <code>NetworkFamilyMember</code>.</li>
+<li><strong>Context-path mismatch</strong> — <code>/fsc</code> (Network branch + swagger) vs <code>/cx/network</code> (UCM branch). Pick one; FSC v1.8 base is <code>/fsc</code>.</li>
+<li><strong>No resilience</strong> — no retry/back-off, no circuit breaker (Resilience4j), and downstream business envelope (<code>responseCode</code>/<code>responseMessage</code>) is deserialized but <strong>never checked</strong> → an HTTP-200 <code>responseCode=FAILURE</code> is treated as success. Also <code>.body()</code> may return <strong>null</strong> (NPE risk) — not guarded.</li>
+<li><strong><code>SimpleClientHttpRequestFactory</code></strong> — opens a new connection per call (no pooling). Use a pooled factory (<code>JdkClientHttpRequestFactory</code>/Apache HttpClient) and, on Java 21, enable <strong>virtual threads</strong> for the blocking calls.</li>
+<li><strong>PII in logs/audit</strong> — <code>log.info("...uri={}")</code> logs the MSISDN query param; the audit enricher serialises full request/response (profile, msisdn) with <strong>no masking</strong>. Add MSISDN masking + payload redaction.</li>
+</ol>
+<h3>🟡 Medium</h3>
+<ol start="6">
+<li><strong>Security</strong> — <code>security.basic: admin/admin</code> committed as placeholder; move to vault/secrets. Downstream auth is thin: UCM sends <code>x-user-id = the msisdn itself</code> and Network calls carry <strong>no credentials</strong> — confirm the real auth (mTLS/OAuth/API key).</li>
+<li><strong>Downstream status mapping</strong> — <code>executeGet</code> collapses every failure to <code>NETWORK_CALL_FAILED / 502</code>; a 404/400 downstream should map distinctly (not all BAD_GATEWAY).</li>
+<li><strong>Mapper assumptions</strong> — only the <strong>first</strong> <code>partyGroup</code> and <strong>first</strong> <code>partyRoleGroup</code> are read; multiple groups/role-groups are silently dropped. Document or handle.</li>
+<li><strong>Test coverage gap</strong> — Network side has <strong>zero tests</strong> (connector, its error handler variant, DTO mapping). No downstream contract test (WireMock) on either side. Add Network connector tests + WireMock stubs.</li>
+<li><strong>Channel API shape</strong> — <code>POST /family-safety/profile</code> is a <strong>read</strong> done as POST with query params; prefer <code>GET</code>, and add <code>@Valid</code>/bean-validation + MSISDN format checks. No API versioning (<code>/v1</code>).</li>
+</ol>
+<h3>⚪ Low / scope</h3>
+<ol start="11">
+<li><strong>Whalebone track absent</strong> — <code>downstream.whalebone</code> stub exists but no connector/config/pojos yet (expected; not started in this extract).</li>
+<li><strong>Constant duplication</strong> across branches (<code>QUERY_*</code>, id-type constants) — consolidate on merge.</li>
+<li><strong>Package-by-layer</strong> will sprawl as features land — consider package-by-feature (<code>sos/</code>, <code>checkin/</code>, <code>fraud/</code>, <code>profile/</code>).</li>
+</ol>
+<h2>8. Quick wins (first)</h2>
+<ol>
+<li><strong>Integration-merge reconciliation</strong> of <code>SafetyHubErrorCode</code>, <code>ApiNameConstants</code>, <code>GlobalExceptionHandler</code>, <code>bootstrap.yaml</code> — unblocks a compiling <code>integration</code> branch.</li>
+<li>Drop/replace <strong><code>member/get</code></strong>; fix the <strong>context-path</strong> to <code>/fsc</code>.</li>
+<li>Add <strong>downstream envelope check</strong> + null-body guard; map 4xx/5xx distinctly.</li>
+<li><strong>Mask MSISDN</strong> in logs + audit.</li>
+<li>Switch to a <strong>pooled request factory</strong> + <code>spring.threads.virtual.enabled=true</code>.</li>
+<li>Add <strong>Network connector tests + WireMock</strong>.</li>
+</ol>
+<hr>
+<p><em>Analysis from the branch code extract. Strengths: clean hexagonal layering, records + modern Spring (RestClient, @MockitoBean), good UCM test coverage, tracing/audit baked in. Main risk: the Network and UCM branches have diverged on shared files and need a deliberate integration merge before they compile together.</em></p>
+</article></div><div class="mermaidTooltip" style="opacity: 0;"></div></body></html>
