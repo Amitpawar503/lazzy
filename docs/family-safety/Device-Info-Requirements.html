@@ -224,8 +224,166 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td><strong>Check-in SMS/IVR fallback ("Reply 1 if fine, 2 if need help"; "Airtel called her, no answer"); TIME-SENSITIVE push</strong></td>
 <td>Messaging/IVR + notification channel — <strong>not device telemetry</strong>; confirms the check-in escalation contract (push → SMS → IVR), owned by CLM/Bumblebee + Network.</td>
 </tr>
+<tr>
+<td><strong>Spam: "Unknown number" / "Caller: Not in her contacts" / "Possible spam call"; "Bank OTP — Not received / Not shared"</strong></td>
+<td>Classifying a caller as <strong>unknown vs known needs CONTACTS</strong> (device permission) — new. Spam-flag + OTP detection stay <strong>network/Safe-Network</strong>; device supplies only the contacts match.</td>
+</tr>
+<tr>
+<td><strong>SOS: live map/location; "Dad has no internet → SOS by SMS → airtel.in/sos/…"; "Call 112"; home-screen/lock widget; Live Activity / ongoing notification; SOS card shows "Battery 76%"</strong></td>
+<td><strong>GPS location</strong> (SOS window), <strong>no-internet SOS via SMS short-code</strong> + native <strong>112</strong>, and <strong>widget / Live Activity / ongoing notification</strong> are <strong>device/OS capabilities</strong> (app side), not telemetry fetch; battery % is reused in the SOS card.</td>
+</tr>
+<tr>
+<td><strong>Parental: app categories (social/messaging/games/video), per-app toggles, "Instagram is blocked", scheduled blocks</strong></td>
+<td>Needs the <strong>installed-app inventory / app ids</strong> on the child device (Whalebone app-catalogue + device) for app blocking — P1. Not a dashboard telemetry signal.</td>
+</tr>
 </tbody></table>
-<h2>6. Privacy / governance notes</h2>
+<h2>6. Master list — all device info (single consolidated list)</h2>
+<p>Everything surfaced across <strong>all</strong> the Safety Circle screens, de-duplicated, with where it comes from and priority.</p>
+<h3>A. Device telemetry — fetched via <code>GET /device/status/fetch</code> (hourly; last value + <code>lastUpdatedOn</code> + <code>available</code>)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Signal (param)</th>
+<th>ENUM</th>
+<th>Priority</th>
+<th>Used by</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>device_battery_info</code></td>
+<td><code>BATTERY_PERCENT</code></td>
+<td>P0</td>
+<td>card %, low-battery ≤20%</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>device_battery_plugin</code> / <code>device_battery_plugout</code></td>
+<td><code>CHARGING</code></td>
+<td>P0</td>
+<td>charging; reset low-battery alert</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>device_network_reachability_info</code> (+ transition: offline duration, back-on)</td>
+<td><code>NETWORK_REACHABILITY</code> (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT), <code>LAST_ON_NETWORK</code></td>
+<td>P0</td>
+<td>phone-off / no-network / back-online; check-in deferral</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>device_network_signal_strength</code> <em>(add)</em></td>
+<td><code>NETWORK_STRENGTH</code> (STRONG/MODERATE/WEAK/NONE)</td>
+<td>P0</td>
+<td>signal bars</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>device_wifi_info</code> / network type</td>
+<td><code>NETWORK_TYPE</code> (WIFI/5G/4G/…)</td>
+<td>P0/P1</td>
+<td>network type; off-net Device Safety</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>device_ringer_status_info</code></td>
+<td><code>RINGER_MODE</code> (NORMAL/VIBRATE/SILENT)</td>
+<td>P0</td>
+<td>ringer on card; ring-even-on-silent</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>device_ringer_change_info</code></td>
+<td><code>RINGER_MODE</code> (event)</td>
+<td>P0</td>
+<td>keep ringer fresh</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>device_sim_info</code></td>
+<td><code>SIM_STATUS</code>, <code>NUMBER_ACTIVE</code></td>
+<td>P0</td>
+<td>number inactive, port-out, SIM-swap, non-Airtel</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>device_location_info</code> (GPS) <em>(add)</em></td>
+<td><code>LOCATION</code></td>
+<td>P0 (SOS only)</td>
+<td>live SOS map; consent-gated</td>
+</tr>
+<tr>
+<td>10</td>
+<td>per-signal freshness <em>(add)</em></td>
+<td><code>lastUpdatedOn</code> + stale flag</td>
+<td>P0</td>
+<td>"just now" / "Not confirmed since"</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>device_contacts_info</code> <em>(add)</em></td>
+<td><code>CONTACTS_MATCH</code> (via permission)</td>
+<td>P0</td>
+<td>caller "not in contacts" → OTP/unknown-call alert</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>device_usage_info</code></td>
+<td><code>USAGE</code></td>
+<td>P1</td>
+<td>parental screen-time/usage</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>device_screen_engagement_info</code></td>
+<td><code>SCREEN_ENGAGEMENT</code></td>
+<td>P1</td>
+<td>parental; last-active liveness</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>device_signal_lock_signal</code> / <code>device_signal_unlock_signal</code></td>
+<td><code>LOCK_STATE</code></td>
+<td>P1</td>
+<td>lock state; liveness</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>device_app_inventory</code> (installed apps) <em>(add)</em></td>
+<td><code>APP_LIST</code></td>
+<td>P1</td>
+<td>parental app blocking</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>device_call_info</code></td>
+<td><code>CALL_STATE</code></td>
+<td>P1 (optional)</td>
+<td>fraud call context (spam = network)</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>device_sms_info</code></td>
+<td>—</td>
+<td><strong>Excluded (MVP)</strong></td>
+<td>OTP is network-side; DPDP</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>device_hotspot_info</code></td>
+<td>—</td>
+<td><strong>Excluded (MVP)</strong></td>
+<td>not surfaced</td>
+</tr>
+</tbody></table>
+<h3>B. Device / OS capabilities — app side, NOT a telemetry fetch</h3>
+<p>SOS home-screen/lock widget · Quick Settings tile / Control Centre · iPhone Live Activity / Android ongoing notification · no-internet <strong>SOS via SMS short-code</strong> + native <strong>112</strong> dial · critical/time-sensitive push · presidential alert.</p>
+<h3>C. Permissions — via <code>permission/*</code>, drive Working/Not-Working (computed, not telemetry)</h3>
+<p>LOCATION (ALWAYS / WHILE_USING / OFF), NOTIFICATION, CRITICAL_ALERTS, CONTACTS, BACKGROUND_LOCATION, DISPLAY_OVER_APPS, FULL_SCREEN_ALERT, RUN_IN_BACKGROUND.</p>
+<h3>D. Not device telemetry — other systems</h3>
+<p>Device-Safety blocked events <code>{domain, threat_type, channel, timestamp}</code> → <strong>Whalebone <code>/events</code></strong> · spam-flag + OTP detection → <strong>Network / Safe Network</strong> · check-in SMS/IVR escalation → <strong>CLM/Bumblebee + Network</strong> · feature Working/Not-Working → <strong>permissions</strong>.</p>
+<h2>7. Privacy / governance notes</h2>
 <ul>
 <li><strong>Consume-only</strong>: orchestrator fetches; it never stores device/telemetry (DPDP, zero-persist).</li>
 <li><strong>Location</strong> only within an active SOS window, consent-gated; otherwise not fetched.</li>

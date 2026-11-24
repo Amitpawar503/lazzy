@@ -69,8 +69,46 @@ The Mom/Dad/Riya/own pages, "What's working", "What you share", "Phone permissio
 | **"A permission is missing" → SOS "Location off"; Phone permissions: Notifications / Critical alerts / Location (Always vs While-using)** | **Permissions drive the Working / Not-Working flags** via the `permission/*` API — `checkinWorking`/`sosWorking` are computed, not telemetry. Permission set: LOCATION (ALWAYS/WHILE_USING/OFF), NOTIFICATION, CRITICAL_ALERTS. |
 | **"Dad's phone was off — Off for 4 hours, back on at 10:40 pm"; "Dad's phone is off — your check-in goes out when his phone is back on"** | Reachability needs **transition events**: off→on with **offline duration** + back-on timestamp (drives the back-online alert AND **defers a queued check-in** until the phone is back on). Network-sourced. |
 | **Check-in SMS/IVR fallback ("Reply 1 if fine, 2 if need help"; "Airtel called her, no answer"); TIME-SENSITIVE push** | Messaging/IVR + notification channel — **not device telemetry**; confirms the check-in escalation contract (push → SMS → IVR), owned by CLM/Bumblebee + Network. |
+| **Spam: "Unknown number" / "Caller: Not in her contacts" / "Possible spam call"; "Bank OTP — Not received / Not shared"** | Classifying a caller as **unknown vs known needs CONTACTS** (device permission) — new. Spam-flag + OTP detection stay **network/Safe-Network**; device supplies only the contacts match. |
+| **SOS: live map/location; "Dad has no internet → SOS by SMS → airtel.in/sos/…"; "Call 112"; home-screen/lock widget; Live Activity / ongoing notification; SOS card shows "Battery 76%"** | **GPS location** (SOS window), **no-internet SOS via SMS short-code** + native **112**, and **widget / Live Activity / ongoing notification** are **device/OS capabilities** (app side), not telemetry fetch; battery % is reused in the SOS card. |
+| **Parental: app categories (social/messaging/games/video), per-app toggles, "Instagram is blocked", scheduled blocks** | Needs the **installed-app inventory / app ids** on the child device (Whalebone app-catalogue + device) for app blocking — P1. Not a dashboard telemetry signal. |
 
-## 6. Privacy / governance notes
+## 6. Master list — all device info (single consolidated list)
+
+Everything surfaced across **all** the Safety Circle screens, de-duplicated, with where it comes from and priority.
+
+### A. Device telemetry — fetched via `GET /device/status/fetch` (hourly; last value + `lastUpdatedOn` + `available`)
+| # | Signal (param) | ENUM | Priority | Used by |
+|---|---|---|---|---|
+| 1 | `device_battery_info` | `BATTERY_PERCENT` | P0 | card %, low-battery ≤20% |
+| 2 | `device_battery_plugin` / `device_battery_plugout` | `CHARGING` | P0 | charging; reset low-battery alert |
+| 3 | `device_network_reachability_info` (+ transition: offline duration, back-on) | `NETWORK_REACHABILITY` (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT), `LAST_ON_NETWORK` | P0 | phone-off / no-network / back-online; check-in deferral |
+| 4 | `device_network_signal_strength` *(add)* | `NETWORK_STRENGTH` (STRONG/MODERATE/WEAK/NONE) | P0 | signal bars |
+| 5 | `device_wifi_info` / network type | `NETWORK_TYPE` (WIFI/5G/4G/…) | P0/P1 | network type; off-net Device Safety |
+| 6 | `device_ringer_status_info` | `RINGER_MODE` (NORMAL/VIBRATE/SILENT) | P0 | ringer on card; ring-even-on-silent |
+| 7 | `device_ringer_change_info` | `RINGER_MODE` (event) | P0 | keep ringer fresh |
+| 8 | `device_sim_info` | `SIM_STATUS`, `NUMBER_ACTIVE` | P0 | number inactive, port-out, SIM-swap, non-Airtel |
+| 9 | `device_location_info` (GPS) *(add)* | `LOCATION` | P0 (SOS only) | live SOS map; consent-gated |
+| 10 | per-signal freshness *(add)* | `lastUpdatedOn` + stale flag | P0 | "just now" / "Not confirmed since" |
+| 11 | `device_contacts_info` *(add)* | `CONTACTS_MATCH` (via permission) | P0 | caller "not in contacts" → OTP/unknown-call alert |
+| 12 | `device_usage_info` | `USAGE` | P1 | parental screen-time/usage |
+| 13 | `device_screen_engagement_info` | `SCREEN_ENGAGEMENT` | P1 | parental; last-active liveness |
+| 14 | `device_signal_lock_signal` / `device_signal_unlock_signal` | `LOCK_STATE` | P1 | lock state; liveness |
+| 15 | `device_app_inventory` (installed apps) *(add)* | `APP_LIST` | P1 | parental app blocking |
+| 16 | `device_call_info` | `CALL_STATE` | P1 (optional) | fraud call context (spam = network) |
+| 17 | `device_sms_info` | — | **Excluded (MVP)** | OTP is network-side; DPDP |
+| 18 | `device_hotspot_info` | — | **Excluded (MVP)** | not surfaced |
+
+### B. Device / OS capabilities — app side, NOT a telemetry fetch
+SOS home-screen/lock widget · Quick Settings tile / Control Centre · iPhone Live Activity / Android ongoing notification · no-internet **SOS via SMS short-code** + native **112** dial · critical/time-sensitive push · presidential alert.
+
+### C. Permissions — via `permission/*`, drive Working/Not-Working (computed, not telemetry)
+LOCATION (ALWAYS / WHILE_USING / OFF), NOTIFICATION, CRITICAL_ALERTS, CONTACTS, BACKGROUND_LOCATION, DISPLAY_OVER_APPS, FULL_SCREEN_ALERT, RUN_IN_BACKGROUND.
+
+### D. Not device telemetry — other systems
+Device-Safety blocked events `{domain, threat_type, channel, timestamp}` → **Whalebone `/events`** · spam-flag + OTP detection → **Network / Safe Network** · check-in SMS/IVR escalation → **CLM/Bumblebee + Network** · feature Working/Not-Working → **permissions**.
+
+## 7. Privacy / governance notes
 
 - **Consume-only**: orchestrator fetches; it never stores device/telemetry (DPDP, zero-persist).
 - **Location** only within an active SOS window, consent-gated; otherwise not fetched.
