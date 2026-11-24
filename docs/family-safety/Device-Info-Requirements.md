@@ -67,6 +67,8 @@ The Mom/Dad/Riya/own pages, "What's working", "What you share", "Phone permissio
 | **Spam call alerts "on your Airtel number"; OTP "to your responders"** | Fraud/OTP are **network/Safe-Network + Airtel-only** — not device SMS/call content. |
 | **Device Safety "What's working": Dangerous websites / Scam links / Ads = Working; "Blocked this month": domain + threat + channel (SMS/WhatsApp) + date** | These are **Whalebone events** (`/events/search`), NOT device telemetry — `{domain, threat_type, channel, timestamp}`. Keep out of the device/status ENUM. |
 | **"A permission is missing" → SOS "Location off"; Phone permissions: Notifications / Critical alerts / Location (Always vs While-using)** | **Permissions drive the Working / Not-Working flags** via the `permission/*` API — `checkinWorking`/`sosWorking` are computed, not telemetry. Permission set: LOCATION (ALWAYS/WHILE_USING/OFF), NOTIFICATION, CRITICAL_ALERTS. |
+| **"Dad's phone was off — Off for 4 hours, back on at 10:40 pm"; "Dad's phone is off — your check-in goes out when his phone is back on"** | Reachability needs **transition events**: off→on with **offline duration** + back-on timestamp (drives the back-online alert AND **defers a queued check-in** until the phone is back on). Network-sourced. |
+| **Check-in SMS/IVR fallback ("Reply 1 if fine, 2 if need help"; "Airtel called her, no answer"); TIME-SENSITIVE push** | Messaging/IVR + notification channel — **not device telemetry**; confirms the check-in escalation contract (push → SMS → IVR), owned by CLM/Bumblebee + Network. |
 
 ## 6. Privacy / governance notes
 

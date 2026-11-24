@@ -216,6 +216,14 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td><strong>"A permission is missing" → SOS "Location off"; Phone permissions: Notifications / Critical alerts / Location (Always vs While-using)</strong></td>
 <td><strong>Permissions drive the Working / Not-Working flags</strong> via the <code>permission/*</code> API — <code>checkinWorking</code>/<code>sosWorking</code> are computed, not telemetry. Permission set: LOCATION (ALWAYS/WHILE_USING/OFF), NOTIFICATION, CRITICAL_ALERTS.</td>
 </tr>
+<tr>
+<td><strong>"Dad's phone was off — Off for 4 hours, back on at 10:40 pm"; "Dad's phone is off — your check-in goes out when his phone is back on"</strong></td>
+<td>Reachability needs <strong>transition events</strong>: off→on with <strong>offline duration</strong> + back-on timestamp (drives the back-online alert AND <strong>defers a queued check-in</strong> until the phone is back on). Network-sourced.</td>
+</tr>
+<tr>
+<td><strong>Check-in SMS/IVR fallback ("Reply 1 if fine, 2 if need help"; "Airtel called her, no answer"); TIME-SENSITIVE push</strong></td>
+<td>Messaging/IVR + notification channel — <strong>not device telemetry</strong>; confirms the check-in escalation contract (push → SMS → IVR), owned by CLM/Bumblebee + Network.</td>
+</tr>
 </tbody></table>
 <h2>6. Privacy / governance notes</h2>
 <ul>
