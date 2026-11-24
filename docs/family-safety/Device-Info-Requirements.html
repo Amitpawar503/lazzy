@@ -236,6 +236,14 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td><strong>Parental: app categories (social/messaging/games/video), per-app toggles, "Instagram is blocked", scheduled blocks</strong></td>
 <td>Needs the <strong>installed-app inventory / app ids</strong> on the child device (Whalebone app-catalogue + device) for app blocking — P1. Not a dashboard telemetry signal.</td>
 </tr>
+<tr>
+<td><strong>"Riya's phone is off — Battery ran out at 5:12 pm" (phone dies); "Last battery 1%"</strong></td>
+<td>Reachability needs a <strong>BATTERY_DEAD</strong> reason (phone off because battery depleted), distinct from switched-off/flight — derived from battery→0 + offline. Ties <code>BATTERY_PERCENT</code> to <code>NETWORK_REACHABILITY</code>.</td>
+</tr>
+<tr>
+<td><strong>Circle settings / Roles / Responders / Leave / Subscription / Parental-setup screens</strong></td>
+<td>Feature / permission / subscription flows — <strong>no new telemetry</strong>. Covered by permissions API, subscription API and Whalebone.</td>
+</tr>
 </tbody></table>
 <h2>6. Master list — all device info (single consolidated list)</h2>
 <p>Everything surfaced across <strong>all</strong> the Safety Circle screens, de-duplicated, with where it comes from and priority.</p>
@@ -267,9 +275,9 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <tr>
 <td>3</td>
 <td><code>device_network_reachability_info</code> (+ transition: offline duration, back-on)</td>
-<td><code>NETWORK_REACHABILITY</code> (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT), <code>LAST_ON_NETWORK</code></td>
+<td><code>NETWORK_REACHABILITY</code> (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT / <strong>BATTERY_DEAD</strong>), <code>LAST_ON_NETWORK</code></td>
 <td>P0</td>
-<td>phone-off / no-network / back-online; check-in deferral</td>
+<td>phone-off / no-network / "battery ran out at HH:mm" / back-online; check-in deferral</td>
 </tr>
 <tr>
 <td>4</td>

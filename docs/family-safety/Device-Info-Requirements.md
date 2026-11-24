@@ -72,6 +72,8 @@ The Mom/Dad/Riya/own pages, "What's working", "What you share", "Phone permissio
 | **Spam: "Unknown number" / "Caller: Not in her contacts" / "Possible spam call"; "Bank OTP — Not received / Not shared"** | Classifying a caller as **unknown vs known needs CONTACTS** (device permission) — new. Spam-flag + OTP detection stay **network/Safe-Network**; device supplies only the contacts match. |
 | **SOS: live map/location; "Dad has no internet → SOS by SMS → airtel.in/sos/…"; "Call 112"; home-screen/lock widget; Live Activity / ongoing notification; SOS card shows "Battery 76%"** | **GPS location** (SOS window), **no-internet SOS via SMS short-code** + native **112**, and **widget / Live Activity / ongoing notification** are **device/OS capabilities** (app side), not telemetry fetch; battery % is reused in the SOS card. |
 | **Parental: app categories (social/messaging/games/video), per-app toggles, "Instagram is blocked", scheduled blocks** | Needs the **installed-app inventory / app ids** on the child device (Whalebone app-catalogue + device) for app blocking — P1. Not a dashboard telemetry signal. |
+| **"Riya's phone is off — Battery ran out at 5:12 pm" (phone dies); "Last battery 1%"** | Reachability needs a **BATTERY_DEAD** reason (phone off because battery depleted), distinct from switched-off/flight — derived from battery→0 + offline. Ties `BATTERY_PERCENT` to `NETWORK_REACHABILITY`. |
+| **Circle settings / Roles / Responders / Leave / Subscription / Parental-setup screens** | Feature / permission / subscription flows — **no new telemetry**. Covered by permissions API, subscription API and Whalebone. |
 
 ## 6. Master list — all device info (single consolidated list)
 
@@ -82,7 +84,7 @@ Everything surfaced across **all** the Safety Circle screens, de-duplicated, wit
 |---|---|---|---|---|
 | 1 | `device_battery_info` | `BATTERY_PERCENT` | P0 | card %, low-battery ≤20% |
 | 2 | `device_battery_plugin` / `device_battery_plugout` | `CHARGING` | P0 | charging; reset low-battery alert |
-| 3 | `device_network_reachability_info` (+ transition: offline duration, back-on) | `NETWORK_REACHABILITY` (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT), `LAST_ON_NETWORK` | P0 | phone-off / no-network / back-online; check-in deferral |
+| 3 | `device_network_reachability_info` (+ transition: offline duration, back-on) | `NETWORK_REACHABILITY` (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT / **BATTERY_DEAD**), `LAST_ON_NETWORK` | P0 | phone-off / no-network / "battery ran out at HH:mm" / back-online; check-in deferral |
 | 4 | `device_network_signal_strength` *(add)* | `NETWORK_STRENGTH` (STRONG/MODERATE/WEAK/NONE) | P0 | signal bars |
 | 5 | `device_wifi_info` / network type | `NETWORK_TYPE` (WIFI/5G/4G/…) | P0/P1 | network type; off-net Device Safety |
 | 6 | `device_ringer_status_info` | `RINGER_MODE` (NORMAL/VIBRATE/SILENT) | P0 | ringer on card; ring-even-on-silent |
