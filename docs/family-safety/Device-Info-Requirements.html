@@ -406,9 +406,15 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <h3>B. Device / OS capabilities — app side, NOT a telemetry fetch</h3>
 <p>SOS home-screen/lock widget · Quick Settings tile / Control Centre · iPhone Live Activity / Android ongoing notification · no-internet <strong>SOS via SMS short-code</strong> + native <strong>112</strong> dial · critical/time-sensitive push · presidential alert.</p>
 <h3>C. Permissions — via <code>permission/*</code>, drive Working/Not-Working (computed, not telemetry)</h3>
-<p>LOCATION (ALWAYS / WHILE_USING / OFF), NOTIFICATION, CRITICAL_ALERTS, CONTACTS, BACKGROUND_LOCATION, DISPLAY_OVER_APPS, FULL_SCREEN_ALERT, RUN_IN_BACKGROUND.</p>
+<ul>
+<li><strong>Core features:</strong> LOCATION (ALWAYS / WHILE_USING / OFF), NOTIFICATION, CRITICAL_ALERTS, CONTACTS, BACKGROUND_LOCATION, DISPLAY_OVER_APPS, FULL_SCREEN_ALERT, RUN_IN_BACKGROUND.</li>
+<li><strong>Device Safety (Whalebone SDK):</strong> ACCESSIBILITY (scam-link blocking), VPN (dangerous-websites + ads blocking), NOTIFICATIONS (warnings), SAFARI_EXTENSION (iPhone). Each gates a protection: VPN off → "Dangerous websites / Ads <strong>Not working</strong>"; Accessibility off → "Scam links <strong>Not working</strong>".</li>
+</ul>
 <h3>D. Not device telemetry — other systems</h3>
-<p>Device-Safety blocked events <code>{domain, threat_type, channel, timestamp}</code> → <strong>Whalebone <code>/events</code></strong> · spam-flag + OTP detection → <strong>Network / Safe Network</strong> · check-in SMS/IVR escalation → <strong>CLM/Bumblebee + Network</strong> · feature Working/Not-Working → <strong>permissions</strong>.</p>
+<ul>
+<li><strong>Device Safety (Whalebone):</strong> protection status per category (Dangerous websites / Scam links / Ads = Working / Not working) + blocked events <code>{domain, threat_type, channel (SMS/WhatsApp/browser), timestamp}</code> via <code>/events/search</code>; activation = VPN + Accessibility + Notifications permissions (SDK). Not a device/status signal.</li>
+<li><strong>Spam-flag + OTP detection</strong> → Network / Safe Network · <strong>check-in SMS/IVR escalation</strong> → CLM/Bumblebee + Network · <strong>feature Working/Not-Working</strong> → permissions · <strong>"Plan expired → Recharge"</strong> → subscription API · <strong>"number may have a new owner"</strong> → <code>SIM_STATUS=NEW_OWNER</code>.</li>
+</ul>
 <h2>7. Privacy / governance notes</h2>
 <ul>
 <li><strong>Consume-only</strong>: orchestrator fetches; it never stores device/telemetry (DPDP, zero-persist).</li>

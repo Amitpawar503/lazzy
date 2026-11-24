@@ -113,10 +113,12 @@ Everything surfaced across **all** the Safety Circle screens, de-duplicated, wit
 SOS home-screen/lock widget · Quick Settings tile / Control Centre · iPhone Live Activity / Android ongoing notification · no-internet **SOS via SMS short-code** + native **112** dial · critical/time-sensitive push · presidential alert.
 
 ### C. Permissions — via `permission/*`, drive Working/Not-Working (computed, not telemetry)
-LOCATION (ALWAYS / WHILE_USING / OFF), NOTIFICATION, CRITICAL_ALERTS, CONTACTS, BACKGROUND_LOCATION, DISPLAY_OVER_APPS, FULL_SCREEN_ALERT, RUN_IN_BACKGROUND.
+- **Core features:** LOCATION (ALWAYS / WHILE_USING / OFF), NOTIFICATION, CRITICAL_ALERTS, CONTACTS, BACKGROUND_LOCATION, DISPLAY_OVER_APPS, FULL_SCREEN_ALERT, RUN_IN_BACKGROUND.
+- **Device Safety (Whalebone SDK):** ACCESSIBILITY (scam-link blocking), VPN (dangerous-websites + ads blocking), NOTIFICATIONS (warnings), SAFARI_EXTENSION (iPhone). Each gates a protection: VPN off → "Dangerous websites / Ads **Not working**"; Accessibility off → "Scam links **Not working**".
 
 ### D. Not device telemetry — other systems
-Device-Safety blocked events `{domain, threat_type, channel, timestamp}` → **Whalebone `/events`** · spam-flag + OTP detection → **Network / Safe Network** · check-in SMS/IVR escalation → **CLM/Bumblebee + Network** · feature Working/Not-Working → **permissions**.
+- **Device Safety (Whalebone):** protection status per category (Dangerous websites / Scam links / Ads = Working / Not working) + blocked events `{domain, threat_type, channel (SMS/WhatsApp/browser), timestamp}` via `/events/search`; activation = VPN + Accessibility + Notifications permissions (SDK). Not a device/status signal.
+- **Spam-flag + OTP detection** → Network / Safe Network · **check-in SMS/IVR escalation** → CLM/Bumblebee + Network · **feature Working/Not-Working** → permissions · **"Plan expired → Recharge"** → subscription API · **"number may have a new owner"** → `SIM_STATUS=NEW_OWNER`.
 
 ## 7. Privacy / governance notes
 
