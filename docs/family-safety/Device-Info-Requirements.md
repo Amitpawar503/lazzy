@@ -74,6 +74,9 @@ The Mom/Dad/Riya/own pages, "What's working", "What you share", "Phone permissio
 | **Parental: app categories (social/messaging/games/video), per-app toggles, "Instagram is blocked", scheduled blocks** | Needs the **installed-app inventory / app ids** on the child device (Whalebone app-catalogue + device) for app blocking — P1. Not a dashboard telemetry signal. |
 | **"Riya's phone is off — Battery ran out at 5:12 pm" (phone dies); "Last battery 1%"** | Reachability needs a **BATTERY_DEAD** reason (phone off because battery depleted), distinct from switched-off/flight — derived from battery→0 + offline. Ties `BATTERY_PERCENT` to `NETWORK_REACHABILITY`. |
 | **Circle settings / Roles / Responders / Leave / Subscription / Parental-setup screens** | Feature / permission / subscription flows — **no new telemetry**. Covered by permissions API, subscription API and Whalebone. |
+| **§13 states: "Phone off since 8:40 pm", "No network since 6:38 pm", "Battery low · may turn off soon", "Number inactive", "The number has a new owner", "Recharge runs out"** | Confirms the exact dashboard states → `NETWORK_REACHABILITY` {SWITCHED_OFF, NO_COVERAGE, …} with a **"since" timestamp**; **battery-low** is a derived threshold on `BATTERY_PERCENT`; `SIM_STATUS` values = ACTIVE / INACTIVE / RECHARGE_LAPSED / NEW_OWNER / PORTED_OUT. |
+| **"Dad deletes the Airtel app": battery/ringer/Device-Safety = "Needs the Airtel app"; phone-off, no-network, spam, number-inactive still work** | **Signal source split:** app/SDK-sourced (battery, ringer, screen, lock, usage, location, Device-Safety) **drop on uninstall**; network-sourced (reachability/phone-off, signal, SIM/number, spam) **persist**. `APP_INSTALLED` gates availability of the app-sourced signals. |
+| **"Notify me when he's back" → "Dad is back on network" push; "Without the app" → SMS check-in** | Back-online is a **subscribe + event** (network); no-app members fall back to SMS — messaging, not telemetry. |
 
 ## 6. Master list — all device info (single consolidated list)
 
@@ -89,7 +92,7 @@ Everything surfaced across **all** the Safety Circle screens, de-duplicated, wit
 | 5 | `device_wifi_info` / network type | `NETWORK_TYPE` (WIFI/5G/4G/…) | P0/P1 | network type; off-net Device Safety |
 | 6 | `device_ringer_status_info` | `RINGER_MODE` (NORMAL/VIBRATE/SILENT) | P0 | ringer on card; ring-even-on-silent |
 | 7 | `device_ringer_change_info` | `RINGER_MODE` (event) | P0 | keep ringer fresh |
-| 8 | `device_sim_info` | `SIM_STATUS`, `NUMBER_ACTIVE` | P0 | number inactive, port-out, SIM-swap, non-Airtel |
+| 8 | `device_sim_info` | `SIM_STATUS` (ACTIVE/INACTIVE/RECHARGE_LAPSED/NEW_OWNER/PORTED_OUT), `NUMBER_ACTIVE` | P0 | number inactive, port-out, SIM-swap, new-owner, non-Airtel |
 | 9 | `device_location_info` (GPS) *(add)* | `LOCATION` | P0 (SOS only) | live SOS map; consent-gated |
 | 10 | per-signal freshness *(add)* | `lastUpdatedOn` + stale flag | P0 | "just now" / "Not confirmed since" |
 | 11 | `device_contacts_info` *(add)* | `CONTACTS_MATCH` (via permission) | P0 | caller "not in contacts" → OTP/unknown-call alert |
@@ -100,6 +103,11 @@ Everything surfaced across **all** the Safety Circle screens, de-duplicated, wit
 | 16 | `device_call_info` | `CALL_STATE` | P1 (optional) | fraud call context (spam = network) |
 | 17 | `device_sms_info` | — | **Excluded (MVP)** | OTP is network-side; DPDP |
 | 18 | `device_hotspot_info` | — | **Excluded (MVP)** | not surfaced |
+
+**Signal source (critical for the app-uninstall case):**
+- **App / SDK-sourced** (go off when the Airtel app is removed): BATTERY_PERCENT, CHARGING, RINGER_MODE, SCREEN_ENGAGEMENT, LOCK_STATE, USAGE, LOCATION, CONTACTS_MATCH, Device-Safety.
+- **Network-sourced** (persist without the app, Airtel SIM only): NETWORK_REACHABILITY/phone-off, NETWORK_STRENGTH, SIM_STATUS, spam-flag.
+- `APP_INSTALLED` gates whether the app-sourced signals are available; non-Airtel members get neither network signals nor app signals they haven't granted.
 
 ### B. Device / OS capabilities — app side, NOT a telemetry fetch
 SOS home-screen/lock widget · Quick Settings tile / Control Centre · iPhone Live Activity / Android ongoing notification · no-internet **SOS via SMS short-code** + native **112** dial · critical/time-sensitive push · presidential alert.

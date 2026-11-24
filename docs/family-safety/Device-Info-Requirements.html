@@ -244,6 +244,18 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td><strong>Circle settings / Roles / Responders / Leave / Subscription / Parental-setup screens</strong></td>
 <td>Feature / permission / subscription flows — <strong>no new telemetry</strong>. Covered by permissions API, subscription API and Whalebone.</td>
 </tr>
+<tr>
+<td><strong>§13 states: "Phone off since 8:40 pm", "No network since 6:38 pm", "Battery low · may turn off soon", "Number inactive", "The number has a new owner", "Recharge runs out"</strong></td>
+<td>Confirms the exact dashboard states → <code>NETWORK_REACHABILITY</code> {SWITCHED_OFF, NO_COVERAGE, …} with a <strong>"since" timestamp</strong>; <strong>battery-low</strong> is a derived threshold on <code>BATTERY_PERCENT</code>; <code>SIM_STATUS</code> values = ACTIVE / INACTIVE / RECHARGE_LAPSED / NEW_OWNER / PORTED_OUT.</td>
+</tr>
+<tr>
+<td><strong>"Dad deletes the Airtel app": battery/ringer/Device-Safety = "Needs the Airtel app"; phone-off, no-network, spam, number-inactive still work</strong></td>
+<td><strong>Signal source split:</strong> app/SDK-sourced (battery, ringer, screen, lock, usage, location, Device-Safety) <strong>drop on uninstall</strong>; network-sourced (reachability/phone-off, signal, SIM/number, spam) <strong>persist</strong>. <code>APP_INSTALLED</code> gates availability of the app-sourced signals.</td>
+</tr>
+<tr>
+<td><strong>"Notify me when he's back" → "Dad is back on network" push; "Without the app" → SMS check-in</strong></td>
+<td>Back-online is a <strong>subscribe + event</strong> (network); no-app members fall back to SMS — messaging, not telemetry.</td>
+</tr>
 </tbody></table>
 <h2>6. Master list — all device info (single consolidated list)</h2>
 <p>Everything surfaced across <strong>all</strong> the Safety Circle screens, de-duplicated, with where it comes from and priority.</p>
@@ -310,9 +322,9 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <tr>
 <td>8</td>
 <td><code>device_sim_info</code></td>
-<td><code>SIM_STATUS</code>, <code>NUMBER_ACTIVE</code></td>
+<td><code>SIM_STATUS</code> (ACTIVE/INACTIVE/RECHARGE_LAPSED/NEW_OWNER/PORTED_OUT), <code>NUMBER_ACTIVE</code></td>
 <td>P0</td>
-<td>number inactive, port-out, SIM-swap, non-Airtel</td>
+<td>number inactive, port-out, SIM-swap, new-owner, non-Airtel</td>
 </tr>
 <tr>
 <td>9</td>
@@ -385,6 +397,12 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td>not surfaced</td>
 </tr>
 </tbody></table>
+<p><strong>Signal source (critical for the app-uninstall case):</strong></p>
+<ul>
+<li><strong>App / SDK-sourced</strong> (go off when the Airtel app is removed): BATTERY_PERCENT, CHARGING, RINGER_MODE, SCREEN_ENGAGEMENT, LOCK_STATE, USAGE, LOCATION, CONTACTS_MATCH, Device-Safety.</li>
+<li><strong>Network-sourced</strong> (persist without the app, Airtel SIM only): NETWORK_REACHABILITY/phone-off, NETWORK_STRENGTH, SIM_STATUS, spam-flag.</li>
+<li><code>APP_INSTALLED</code> gates whether the app-sourced signals are available; non-Airtel members get neither network signals nor app signals they haven't granted.</li>
+</ul>
 <h3>B. Device / OS capabilities — app side, NOT a telemetry fetch</h3>
 <p>SOS home-screen/lock widget · Quick Settings tile / Control Centre · iPhone Live Activity / Android ongoing notification · no-internet <strong>SOS via SMS short-code</strong> + native <strong>112</strong> dial · critical/time-sensitive push · presidential alert.</p>
 <h3>C. Permissions — via <code>permission/*</code>, drive Working/Not-Working (computed, not telemetry)</h3>
