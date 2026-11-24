@@ -1,0 +1,180 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/Device-Info-Requirements</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — Device Info (telemetry) requirements</h1>
+<p><strong>Date:</strong> 24 Nov 2026 · <strong>Source:</strong> Safety Circle Figma screens + PRD §6.1/6.4 · <strong>Feeds:</strong> blocker <strong>AI-2</strong> (finalize <code>device/status/fetch</code> <code>ParameterName</code> ENUM)
+<strong>Flow:</strong> Telemetry SDK → Kafka → Network Device-Telemetry hub → orchestrator <strong>fetch only</strong> (consume-only, no persist).</p>
+<h2>1. What the screens actually need</h2>
+<p>From the <strong>My Safety Circle</strong> home, member cards, "Their phone" section, permissions screen and Alerts &amp; history:</p>
+<ul>
+<li>Member card: <strong>battery % (82%), signal bars, reachability ("Reachable · just now"), ringer</strong> + <strong>last-updated time</strong>.</li>
+<li>"Their phone": <strong>Phone off</strong> (when it switches off), <strong>No network</strong> (when it loses network), <strong>Battery and signal</strong> (+ low-battery alert).</li>
+<li>Permissions: <strong>Location — only during an SOS</strong>; Critical alerts ring even on silent (needs <strong>ringer</strong>).</li>
+<li>Alerts &amp; history: "<strong>Mom's phone was off</strong>", low-battery, back-online — i.e. <strong>reachability + battery + charging</strong> events.</li>
+<li>Number states (US 11): "<strong>Number inactive</strong>", non-Airtel, SIM-swap/port — needs <strong>SIM status</strong>.</li>
+</ul>
+<p><strong>Feature-health flags</strong> (<code>checkinWorking</code>/<code>sosWorking</code>) are derived from <strong>permissions</strong>, not telemetry (separate <code>permission/*</code> API).</p>
+<h2>2. Requirement matrix — the candidate <code>device_*</code> params</h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Needed</th>
+<th>Screen / feature</th>
+<th>Maps to (DeviceDetail / ENUM)</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>device_battery_info</code></td>
+<td><strong>P0</strong></td>
+<td>Card "82%"; low-battery alert ≤20% (US 25)</td>
+<td><code>BATTERY_PERCENT</code></td>
+<td>core signal</td>
+</tr>
+<tr>
+<td><code>device_battery_plugin</code> / <code>device_battery_plugout</code></td>
+<td><strong>P0</strong></td>
+<td>Charging flag; <strong>reset</strong> low-battery alert after charge (US 25)</td>
+<td><code>CHARGING</code></td>
+<td>drives alert lifecycle</td>
+</tr>
+<tr>
+<td><code>device_network_reachability_info</code></td>
+<td><strong>P0</strong></td>
+<td>"Phone off" / "No network" / reachable + last-on-network (US 24)</td>
+<td><code>REACHABILITY</code> (REACHABLE/SWITCHED_OFF/NO_COVERAGE), <code>LAST_ON_NETWORK</code></td>
+<td><strong>core</strong>; phone-off &amp; back-online alerts</td>
+</tr>
+<tr>
+<td><code>device_ringer_status_info</code></td>
+<td><strong>P0</strong></td>
+<td>Ringer on card; SOS/check-in "rings even on silent"</td>
+<td><code>RINGER_MODE</code> (NORMAL/VIBRATE/SILENT)</td>
+<td>Android</td>
+</tr>
+<tr>
+<td><code>device_ringer_change_info</code></td>
+<td><strong>P0</strong></td>
+<td>Keeps ringer status fresh (event form of above)</td>
+<td><code>RINGER_MODE</code> updates</td>
+<td>event push</td>
+</tr>
+<tr>
+<td><code>device_sim_info</code></td>
+<td><strong>P0</strong></td>
+<td>"Number inactive"; non-Airtel; SIM-swap/port guard (US 11)</td>
+<td><code>SIM_STATUS</code>, <code>NUMBER_ACTIVE</code></td>
+<td>SIM/port/ownership lifecycle</td>
+</tr>
+<tr>
+<td><code>device_usage_info</code></td>
+<td><strong>P1</strong></td>
+<td>Parental screen-time + usage/trends (US 6.6)</td>
+<td>parental <code>usage</code></td>
+<td>advanced feature</td>
+</tr>
+<tr>
+<td><code>device_screen_engagement_info</code></td>
+<td><strong>P1</strong></td>
+<td>Parental screen time; "last active" liveness</td>
+<td><code>LAST_SEEN</code> (partial), parental</td>
+<td>mostly parental</td>
+</tr>
+<tr>
+<td><code>device_signal_lock_signal</code> / <code>device_signal_unlock_signal</code></td>
+<td><strong>P1</strong></td>
+<td>Lock state; last-active liveness</td>
+<td><code>LOCK_STATE</code>, <code>LAST_SEEN</code></td>
+<td>supports reachability nuance + parental</td>
+</tr>
+<tr>
+<td><code>device_wifi_info</code></td>
+<td><strong>P1</strong></td>
+<td>Network <strong>type</strong> for display; off-net Device Safety (Whalebone VPN over Wi-Fi)</td>
+<td><code>NETWORK_TYPE</code> = WIFI</td>
+<td>low for dashboard; matters for Device Safety coverage</td>
+</tr>
+<tr>
+<td><code>device_call_info</code></td>
+<td><strong>P1 (optional)</strong></td>
+<td>Fraud/spam call <strong>context</strong> (on call ≥1 min), call timer</td>
+<td>fraud <code>callActive</code>/<code>callDuration</code></td>
+<td>spam <strong>detection is network-side</strong>; device state only supplements — consent/DPDP</td>
+</tr>
+<tr>
+<td><code>device_hotspot_info</code></td>
+<td><strong>No (MVP)</strong></td>
+<td>— not surfaced</td>
+<td>—</td>
+<td>defer to post-MVP</td>
+</tr>
+<tr>
+<td><code>device_sms_info</code></td>
+<td><strong>No (MVP)</strong></td>
+<td>Bank-OTP during call</td>
+<td>—</td>
+<td>OTP detection is <strong>network/Safe Network</strong>; on-device SMS read is privacy-heavy (DPDP) — <strong>exclude</strong></td>
+</tr>
+</tbody></table>
+<h2>3. Needed but <strong>missing</strong> from the candidate list (please add)</h2>
+<table>
+<thead>
+<tr>
+<th>New param</th>
+<th>Needed</th>
+<th>Screen / feature</th>
+<th>Maps to</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>device_network_signal_strength</code></td>
+<td><strong>P0</strong></td>
+<td>Signal <strong>bars</strong> on member card (US 24)</td>
+<td><code>NETWORK_STRENGTH</code> (STRONG/MODERATE/WEAK/NONE)</td>
+</tr>
+<tr>
+<td><code>device_location_info</code> (GPS)</td>
+<td><strong>P0 (SOS only)</strong></td>
+<td>"Their location — only during an SOS"; live SOS map (US 15)</td>
+<td><code>LOCATION</code> — consent-gated, SOS-window only; <strong>LBS fallback is network-side (E7)</strong></td>
+</tr>
+<tr>
+<td><code>device_last_updated</code> (per signal)</td>
+<td><strong>P0</strong></td>
+<td>"Reachable · just now" freshness + "last on network at 10:05"</td>
+<td><code>lastUpdatedOn</code> per property (E8)</td>
+</tr>
+</tbody></table>
+<h2>4. Proposed <code>device/status/fetch</code> ParameterName ENUM (for AI-2)</h2>
+<p><strong>P0 (launch):</strong> <code>BATTERY_PERCENT</code>, <code>CHARGING</code>, <code>NETWORK_REACHABILITY</code>, <code>NETWORK_STRENGTH</code>, <code>NETWORK_TYPE</code>, <code>RINGER_MODE</code>, <code>SIM_STATUS</code>, <code>LAST_ON_NETWORK</code>, <code>LOCATION</code> (SOS-only), plus derived <code>CHECKIN_WORKING</code> / <code>SOS_WORKING</code> (from permissions, not telemetry).</p>
+<p><strong>P1 (fast-follow / parental):</strong> <code>LOCK_STATE</code>, <code>SCREEN_ENGAGEMENT</code>, <code>USAGE</code>, <code>CALL_STATE</code>.</p>
+<p><strong>Excluded (MVP):</strong> <code>SMS</code> (network-side OTP), <code>HOTSPOT</code>.</p>
+<p>Each property returns <strong>value + <code>lastUpdatedOn</code></strong>; for a device off/airplane/unreachable, the hub serves the <strong>last value + timestamp</strong> (still-data), and the app shows "last updated …".</p>
+<h2>5. Privacy / governance notes</h2>
+<ul>
+<li><strong>Consume-only</strong>: orchestrator fetches; it never stores device/telemetry (DPDP, zero-persist).</li>
+<li><strong>Location</strong> only within an active SOS window, consent-gated; otherwise not fetched.</li>
+<li><strong>SMS / call content</strong> excluded — OTP/spam is network-detected; no on-device message reading in MVP.</li>
+<li><strong>Non-Airtel / no-app</strong> members: only app-sourced signals (battery/ringer) where available; network signals (reachability, strength, last-on-network) are <strong>Airtel-only</strong>.</li>
+<li><strong>iPhone</strong>: battery updates on app-open only; ringer/strength may be N/A — mark "Not available on iPhone".</li>
+</ul>
+<hr>
+<p><em>Prepared to finalize the device telemetry contract with the Device Telemetry team (AI-2). P0 set unblocks the Home/Member dashboard and reachability/low-battery alerts; P1 set covers parental + liveness.</em></p>
+</article></div></body></html>
