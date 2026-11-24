@@ -273,9 +273,9 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <tbody><tr>
 <td>1</td>
 <td><code>device_battery_info</code></td>
-<td><code>BATTERY_PERCENT</code></td>
+<td><code>BATTERY_PERCENT</code>, <code>LAST_BATTERY_LEVEL</code></td>
 <td>P0</td>
-<td>card %, low-battery ≤20%</td>
+<td>card %; "Last battery 6%" when offline; low-battery ≤20%</td>
 </tr>
 <tr>
 <td>2</td>
@@ -287,116 +287,27 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <tr>
 <td>3</td>
 <td><code>device_network_reachability_info</code> (+ transition: offline duration, back-on)</td>
-<td><code>NETWORK_REACHABILITY</code> (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT / <strong>BATTERY_DEAD</strong>), <code>LAST_ON_NETWORK</code></td>
+<td><code>NETWORK_REACHABILITY</code> (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT / <strong>BATTERY_DEAD</strong>), <code>LAST_ON_NETWORK</code>, <code>OFFLINE_SINCE</code>, <code>OFFLINE_DURATION</code></td>
 <td>P0</td>
-<td>phone-off / no-network / "battery ran out at HH:mm" / back-online; check-in deferral</td>
-</tr>
-<tr>
-<td>4</td>
-<td><code>device_network_signal_strength</code> <em>(add)</em></td>
-<td><code>NETWORK_STRENGTH</code> (STRONG/MODERATE/WEAK/NONE)</td>
-<td>P0</td>
-<td>signal bars</td>
-</tr>
-<tr>
-<td>5</td>
-<td><code>device_wifi_info</code> / network type</td>
-<td><code>NETWORK_TYPE</code> (WIFI/5G/4G/…)</td>
-<td>P0/P1</td>
-<td>network type; off-net Device Safety</td>
-</tr>
-<tr>
-<td>6</td>
-<td><code>device_ringer_status_info</code></td>
-<td><code>RINGER_MODE</code> (NORMAL/VIBRATE/SILENT)</td>
-<td>P0</td>
-<td>ringer on card; ring-even-on-silent</td>
-</tr>
-<tr>
-<td>7</td>
-<td><code>device_ringer_change_info</code></td>
-<td><code>RINGER_MODE</code> (event)</td>
-<td>P0</td>
-<td>keep ringer fresh</td>
-</tr>
-<tr>
-<td>8</td>
-<td><code>device_sim_info</code></td>
-<td><code>SIM_STATUS</code> (ACTIVE/INACTIVE/RECHARGE_LAPSED/NEW_OWNER/PORTED_OUT), <code>NUMBER_ACTIVE</code></td>
-<td>P0</td>
-<td>number inactive, port-out, SIM-swap, new-owner, non-Airtel</td>
-</tr>
-<tr>
-<td>9</td>
-<td><code>device_location_info</code> (GPS) <em>(add)</em></td>
-<td><code>LOCATION</code></td>
-<td>P0 (SOS only)</td>
-<td>live SOS map; consent-gated</td>
-</tr>
-<tr>
-<td>10</td>
-<td>per-signal freshness <em>(add)</em></td>
-<td><code>lastUpdatedOn</code> + stale flag</td>
-<td>P0</td>
-<td>"just now" / "Not confirmed since"</td>
-</tr>
-<tr>
-<td>11</td>
-<td><code>device_contacts_info</code> <em>(add)</em></td>
-<td><code>CONTACTS_MATCH</code> (via permission)</td>
-<td>P0</td>
-<td>caller "not in contacts" → OTP/unknown-call alert</td>
-</tr>
-<tr>
-<td>12</td>
-<td><code>device_usage_info</code></td>
-<td><code>USAGE</code></td>
-<td>P1</td>
-<td>parental screen-time/usage</td>
-</tr>
-<tr>
-<td>13</td>
-<td><code>device_screen_engagement_info</code></td>
-<td><code>SCREEN_ENGAGEMENT</code></td>
-<td>P1</td>
-<td>parental; last-active liveness</td>
-</tr>
-<tr>
-<td>14</td>
-<td><code>device_signal_lock_signal</code> / <code>device_signal_unlock_signal</code></td>
-<td><code>LOCK_STATE</code></td>
-<td>P1</td>
-<td>lock state; liveness</td>
-</tr>
-<tr>
-<td>15</td>
-<td><code>device_app_inventory</code> (installed apps) <em>(add)</em></td>
-<td><code>APP_LIST</code></td>
-<td>P1</td>
-<td>parental app blocking</td>
-</tr>
-<tr>
-<td>16</td>
-<td><code>device_call_info</code></td>
-<td><code>CALL_STATE</code></td>
-<td>P1 (optional)</td>
-<td>fraud call context (spam = network)</td>
-</tr>
-<tr>
-<td>17</td>
-<td><code>device_sms_info</code></td>
-<td>—</td>
-<td><strong>Excluded (MVP)</strong></td>
-<td>OTP is network-side; DPDP</td>
-</tr>
-<tr>
-<td>18</td>
-<td><code>device_hotspot_info</code></td>
-<td>—</td>
-<td><strong>Excluded (MVP)</strong></td>
-<td>not surfaced</td>
+<td>phone-off/no-network with "since" time; "Off for 4 hours, back on at HH:mm"; check-in deferral; back-online event</td>
 </tr>
 </tbody></table>
+<p><strong>Derived flags (computed by the app/orchestrator, not raw telemetry):</strong> <code>BATTERY_LOW</code> (threshold on <code>BATTERY_PERCENT</code>, "may turn off soon"), <code>STALE</code> (from <code>lastUpdatedOn</code> vs now, "Not confirmed since …"), <code>BACK_ONLINE</code> (reachability off→on event + the subscribe-when-back API).
+| 4 | <code>device_network_signal_strength</code> <em>(add)</em> | <code>NETWORK_STRENGTH</code> (STRONG/MODERATE/WEAK/NONE) | P0 | signal bars |
+| 5 | <code>device_wifi_info</code> / network type | <code>NETWORK_TYPE</code> (WIFI/5G/4G/…) | P0/P1 | network type; off-net Device Safety |
+| 6 | <code>device_ringer_status_info</code> | <code>RINGER_MODE</code> (NORMAL/VIBRATE/SILENT) | P0 | ringer on card; ring-even-on-silent |
+| 7 | <code>device_ringer_change_info</code> | <code>RINGER_MODE</code> (event) | P0 | keep ringer fresh |
+| 8 | <code>device_sim_info</code> | <code>SIM_STATUS</code> (ACTIVE/INACTIVE/RECHARGE_LAPSED/NEW_OWNER/PORTED_OUT), <code>NUMBER_ACTIVE</code> | P0 | number inactive, port-out, SIM-swap, new-owner, non-Airtel |
+| 9 | <code>device_location_info</code> (GPS) <em>(add)</em> | <code>LOCATION</code> | P0 (SOS only) | live SOS map; consent-gated |
+| 10 | per-signal freshness <em>(add)</em> | <code>lastUpdatedOn</code> + stale flag | P0 | "just now" / "Not confirmed since" |
+| 11 | <code>device_contacts_info</code> <em>(add)</em> | <code>CONTACTS_MATCH</code> (via permission) | P0 | caller "not in contacts" → OTP/unknown-call alert |
+| 12 | <code>device_usage_info</code> | <code>USAGE</code> | P1 | parental screen-time/usage |
+| 13 | <code>device_screen_engagement_info</code> | <code>SCREEN_ENGAGEMENT</code> | P1 | parental; last-active liveness |
+| 14 | <code>device_signal_lock_signal</code> / <code>device_signal_unlock_signal</code> | <code>LOCK_STATE</code> | P1 | lock state; liveness |
+| 15 | <code>device_app_inventory</code> (installed apps) <em>(add)</em> | <code>APP_LIST</code> | P1 | parental app blocking |
+| 16 | <code>device_call_info</code> | <code>CALL_STATE</code> | P1 (optional) | fraud call context (spam = network) |
+| 17 | <code>device_sms_info</code> | — | <strong>Excluded (MVP)</strong> | OTP is network-side; DPDP |
+| 18 | <code>device_hotspot_info</code> | — | <strong>Excluded (MVP)</strong> | not surfaced |</p>
 <p><strong>Signal source (critical for the app-uninstall case):</strong></p>
 <ul>
 <li><strong>App / SDK-sourced</strong> (go off when the Airtel app is removed): BATTERY_PERCENT, CHARGING, RINGER_MODE, SCREEN_ENGAGEMENT, LOCK_STATE, USAGE, LOCATION, CONTACTS_MATCH, Device-Safety.</li>

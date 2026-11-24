@@ -85,9 +85,11 @@ Everything surfaced across **all** the Safety Circle screens, de-duplicated, wit
 ### A. Device telemetry — fetched via `GET /device/status/fetch` (hourly; last value + `lastUpdatedOn` + `available`)
 | # | Signal (param) | ENUM | Priority | Used by |
 |---|---|---|---|---|
-| 1 | `device_battery_info` | `BATTERY_PERCENT` | P0 | card %, low-battery ≤20% |
+| 1 | `device_battery_info` | `BATTERY_PERCENT`, `LAST_BATTERY_LEVEL` | P0 | card %; "Last battery 6%" when offline; low-battery ≤20% |
 | 2 | `device_battery_plugin` / `device_battery_plugout` | `CHARGING` | P0 | charging; reset low-battery alert |
-| 3 | `device_network_reachability_info` (+ transition: offline duration, back-on) | `NETWORK_REACHABILITY` (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT / **BATTERY_DEAD**), `LAST_ON_NETWORK` | P0 | phone-off / no-network / "battery ran out at HH:mm" / back-online; check-in deferral |
+| 3 | `device_network_reachability_info` (+ transition: offline duration, back-on) | `NETWORK_REACHABILITY` (REACHABLE / SWITCHED_OFF / NO_COVERAGE / SWITCHED_OFF_OR_FLIGHT / **BATTERY_DEAD**), `LAST_ON_NETWORK`, `OFFLINE_SINCE`, `OFFLINE_DURATION` | P0 | phone-off/no-network with "since" time; "Off for 4 hours, back on at HH:mm"; check-in deferral; back-online event |
+
+**Derived flags (computed by the app/orchestrator, not raw telemetry):** `BATTERY_LOW` (threshold on `BATTERY_PERCENT`, "may turn off soon"), `STALE` (from `lastUpdatedOn` vs now, "Not confirmed since …"), `BACK_ONLINE` (reachability off→on event + the subscribe-when-back API).
 | 4 | `device_network_signal_strength` *(add)* | `NETWORK_STRENGTH` (STRONG/MODERATE/WEAK/NONE) | P0 | signal bars |
 | 5 | `device_wifi_info` / network type | `NETWORK_TYPE` (WIFI/5G/4G/…) | P0/P1 | network type; off-net Device Safety |
 | 6 | `device_ringer_status_info` | `RINGER_MODE` (NORMAL/VIBRATE/SILENT) | P0 | ringer on card; ring-even-on-silent |
