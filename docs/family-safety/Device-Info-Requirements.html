@@ -166,8 +166,58 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <p><strong>P0 (launch):</strong> <code>BATTERY_PERCENT</code>, <code>CHARGING</code>, <code>NETWORK_REACHABILITY</code>, <code>NETWORK_STRENGTH</code>, <code>NETWORK_TYPE</code>, <code>RINGER_MODE</code>, <code>SIM_STATUS</code>, <code>LAST_ON_NETWORK</code>, <code>LOCATION</code> (SOS-only), plus derived <code>CHECKIN_WORKING</code> / <code>SOS_WORKING</code> (from permissions, not telemetry).</p>
 <p><strong>P1 (fast-follow / parental):</strong> <code>LOCK_STATE</code>, <code>SCREEN_ENGAGEMENT</code>, <code>USAGE</code>, <code>CALL_STATE</code>.</p>
 <p><strong>Excluded (MVP):</strong> <code>SMS</code> (network-side OTP), <code>HOTSPOT</code>.</p>
-<p>Each property returns <strong>value + <code>lastUpdatedOn</code></strong>; for a device off/airplane/unreachable, the hub serves the <strong>last value + timestamp</strong> (still-data), and the app shows "last updated …".</p>
-<h2>5. Privacy / governance notes</h2>
+<p>Each property returns <strong>value + <code>lastUpdatedOn</code></strong> (+ an <code>available</code> flag for iPhone gaps); for a device off/airplane/unreachable, the hub serves the <strong>last value + timestamp</strong> (still-data), and the app shows "last updated …" / "Not confirmed since …". <strong>Cadence:</strong> background refresh is <strong>hourly</strong> (per "Signal · Updates every hour"); SOS fetches fresh/LBS on demand. <code>RINGER_MODE</code> is tri-state (NORMAL/VIBRATE/SILENT); <code>REACHABILITY</code> includes a combined <code>SWITCHED_OFF_OR_FLIGHT</code> value.</p>
+<h2>5. Refinements from the member-page screens (L2/L3)</h2>
+<p>The Mom/Dad/Riya/own pages, "What's working", "What you share", "Phone permissions" and the offline/stale states add contract detail:</p>
+<table>
+<thead>
+<tr>
+<th>Observation (screen)</th>
+<th>Implication for telemetry</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>"Signal · Updates every hour"</strong></td>
+<td>Telemetry <strong>cadence is hourly</strong>, not real-time. Fetch returns last value; the app shows "updates every hour". (SOS needs fresh/LBS — separate.)</td>
+</tr>
+<tr>
+<td><strong>"Last battery 6%", "Last on-network 6:45 pm"</strong> (Dad offline)</td>
+<td>Need <strong>last-known value + timestamp</strong> per signal when the device is unreachable (<code>lastBatteryLevel</code>, <code>lastOnNetworkAt</code>).</td>
+</tr>
+<tr>
+<td><strong>"Last update 11:40 pm", "Not confirmed since 11:40 pm"</strong></td>
+<td>Need a <strong>freshness / staleness</strong> marker per signal (<code>lastUpdatedOn</code> + a "stale" flag the app derives).</td>
+</tr>
+<tr>
+<td><strong>"Switched off or in flight mode"</strong> badge</td>
+<td><code>REACHABILITY</code> must carry a <strong>combined</strong> value when off vs flight can't be separated.</td>
+</tr>
+<tr>
+<td><strong>Ringer: "Sound on" / "Vibrate" / "Silent or off"</strong></td>
+<td><code>RINGER_MODE</code> is <strong>tri-state</strong> (NORMAL / VIBRATE / SILENT); "off" rolls into SILENT.</td>
+</tr>
+<tr>
+<td><strong>Ringer "Not shared on iPhone"; battery shown; Signal "Glass"</strong></td>
+<td><strong>iPhone caveats</strong> per signal — ringer not shared, battery on app-open only. Return availability per property.</td>
+</tr>
+<tr>
+<td><strong>"Battery and signal — Always" ; "Location — Only during an SOS"</strong> (What you share)</td>
+<td>Battery/signal/ringer are <strong>always-shared</strong>; <strong>location only in an SOS window</strong> (consent-gated).</td>
+</tr>
+<tr>
+<td><strong>Spam call alerts "on your Airtel number"; OTP "to your responders"</strong></td>
+<td>Fraud/OTP are <strong>network/Safe-Network + Airtel-only</strong> — not device SMS/call content.</td>
+</tr>
+<tr>
+<td><strong>Device Safety "What's working": Dangerous websites / Scam links / Ads = Working; "Blocked this month": domain + threat + channel (SMS/WhatsApp) + date</strong></td>
+<td>These are <strong>Whalebone events</strong> (<code>/events/search</code>), NOT device telemetry — <code>{domain, threat_type, channel, timestamp}</code>. Keep out of the device/status ENUM.</td>
+</tr>
+<tr>
+<td><strong>"A permission is missing" → SOS "Location off"; Phone permissions: Notifications / Critical alerts / Location (Always vs While-using)</strong></td>
+<td><strong>Permissions drive the Working / Not-Working flags</strong> via the <code>permission/*</code> API — <code>checkinWorking</code>/<code>sosWorking</code> are computed, not telemetry. Permission set: LOCATION (ALWAYS/WHILE_USING/OFF), NOTIFICATION, CRITICAL_ALERTS.</td>
+</tr>
+</tbody></table>
+<h2>6. Privacy / governance notes</h2>
 <ul>
 <li><strong>Consume-only</strong>: orchestrator fetches; it never stores device/telemetry (DPDP, zero-persist).</li>
 <li><strong>Location</strong> only within an active SOS window, consent-gated; otherwise not fetched.</li>

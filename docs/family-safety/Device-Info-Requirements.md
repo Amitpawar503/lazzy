@@ -49,9 +49,26 @@ From the **My Safety Circle** home, member cards, "Their phone" section, permiss
 
 **Excluded (MVP):** `SMS` (network-side OTP), `HOTSPOT`.
 
-Each property returns **value + `lastUpdatedOn`**; for a device off/airplane/unreachable, the hub serves the **last value + timestamp** (still-data), and the app shows "last updated …".
+Each property returns **value + `lastUpdatedOn`** (+ an `available` flag for iPhone gaps); for a device off/airplane/unreachable, the hub serves the **last value + timestamp** (still-data), and the app shows "last updated …" / "Not confirmed since …". **Cadence:** background refresh is **hourly** (per "Signal · Updates every hour"); SOS fetches fresh/LBS on demand. `RINGER_MODE` is tri-state (NORMAL/VIBRATE/SILENT); `REACHABILITY` includes a combined `SWITCHED_OFF_OR_FLIGHT` value.
 
-## 5. Privacy / governance notes
+## 5. Refinements from the member-page screens (L2/L3)
+
+The Mom/Dad/Riya/own pages, "What's working", "What you share", "Phone permissions" and the offline/stale states add contract detail:
+
+| Observation (screen) | Implication for telemetry |
+|---|---|
+| **"Signal · Updates every hour"** | Telemetry **cadence is hourly**, not real-time. Fetch returns last value; the app shows "updates every hour". (SOS needs fresh/LBS — separate.) |
+| **"Last battery 6%", "Last on-network 6:45 pm"** (Dad offline) | Need **last-known value + timestamp** per signal when the device is unreachable (`lastBatteryLevel`, `lastOnNetworkAt`). |
+| **"Last update 11:40 pm", "Not confirmed since 11:40 pm"** | Need a **freshness / staleness** marker per signal (`lastUpdatedOn` + a "stale" flag the app derives). |
+| **"Switched off or in flight mode"** badge | `REACHABILITY` must carry a **combined** value when off vs flight can't be separated. |
+| **Ringer: "Sound on" / "Vibrate" / "Silent or off"** | `RINGER_MODE` is **tri-state** (NORMAL / VIBRATE / SILENT); "off" rolls into SILENT. |
+| **Ringer "Not shared on iPhone"; battery shown; Signal "Glass"** | **iPhone caveats** per signal — ringer not shared, battery on app-open only. Return availability per property. |
+| **"Battery and signal — Always" ; "Location — Only during an SOS"** (What you share) | Battery/signal/ringer are **always-shared**; **location only in an SOS window** (consent-gated). |
+| **Spam call alerts "on your Airtel number"; OTP "to your responders"** | Fraud/OTP are **network/Safe-Network + Airtel-only** — not device SMS/call content. |
+| **Device Safety "What's working": Dangerous websites / Scam links / Ads = Working; "Blocked this month": domain + threat + channel (SMS/WhatsApp) + date** | These are **Whalebone events** (`/events/search`), NOT device telemetry — `{domain, threat_type, channel, timestamp}`. Keep out of the device/status ENUM. |
+| **"A permission is missing" → SOS "Location off"; Phone permissions: Notifications / Critical alerts / Location (Always vs While-using)** | **Permissions drive the Working / Not-Working flags** via the `permission/*` API — `checkinWorking`/`sosWorking` are computed, not telemetry. Permission set: LOCATION (ALWAYS/WHILE_USING/OFF), NOTIFICATION, CRITICAL_ALERTS. |
+
+## 6. Privacy / governance notes
 
 - **Consume-only**: orchestrator fetches; it never stores device/telemetry (DPDP, zero-persist).
 - **Location** only within an active SOS window, consent-gated; otherwise not fetched.
