@@ -1,0 +1,182 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/Whalebone-Integration-Analysis</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Whalebone (Airtel Secure) Integration — Use-Case Analysis</h1>
+<p><strong>Date:</strong> 26 Nov 2026 · <strong>Source:</strong> Airtel × Whalebone integration flows (provisioning, device-safety, parental, lifecycle) + agreed-decisions / who-stores-what / status-query tables
+<strong>For:</strong> Family Safety orchestrator — the <strong>Whalebone adapter</strong> (Dev 2 track)</p>
+<h2>1. The model in one line</h2>
+<p><strong>Family ID = Whalebone <code>subscription_id</code>; each member MSISDN = a <code>device_id</code>; each service is a <em>tag</em> on that device.</strong> Turning a service on/off = adding/removing a tag via <strong>full-list PUT</strong> (not PATCH). Whalebone applies the server-side features automatically from the tags; the phone-side protection (VPN / URL inspection) runs through the <strong>SDK</strong>. Whalebone stores <strong>no family hierarchy, no responders, no contacts</strong> — Airtel owns all of that.</p>
+<pre><code>Airtel family ID  ─= subscription_id=→  Whalebone subscription
+   member MSISDN  ─= device_id=→        Whalebone device  ─ tags=[device-safety, parental-control]
+</code></pre>
+<h2>2. The 8 flows (what the orchestrator must do)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Flow</th>
+<th>Orchestrator (Airtel BE) calls</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Buy Airtel Secure (family pack)</td>
+<td><code>POST /management/subscriptions</code> (sub_id=familyId) → <code>POST /management/devices</code> (device_id=buyer MSISDN) → provisioned, <strong>no tags, nothing blocked</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Add family member</td>
+<td>check rights + family link (<strong>UCM</strong>) → <code>POST /management/devices</code> (device_id=member MSISDN, sub_id=familyId) → provisioned, not yet protected</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Device safety ON</strong></td>
+<td>first service → <code>POST /devices</code> with <code>tags=[device-safety]</code>; else <strong>GET-merge-PUT</strong> <code>PUT /devices/{MSISDN}</code> tags = current + device-safety → Whalebone sets all threats blocked → phone: pair-app token, authenticate/importCA, OS VPN consent, start protection; user enables URL inspection (Android Accessibility / iOS Safari ext)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Parental control ON</strong></td>
+<td>tags += parental-control (same upsert) → Whalebone <strong>no action until parent sets filters</strong> → <code>PUT .../filter</code>, <code>PUT .../applications</code>, <code>PUT .../scheduled-filter</code> → pairing/VPN</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Service OFF</strong></td>
+<td>GET current tags → <code>PUT /devices/{MSISDN}</code> tags <strong>without</strong> the removed one → device-safety off: threats not blocked, family allow/deny kept if another device still has it; parental off: schedule deleted, content/app filters not blocked → <strong>if no tag left</strong>, app stops SDK (stopProtection/stopProxy) <strong>but pairing is kept</strong>; MSISDN stays provisioned + active</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Family allow/deny list</td>
+<td><code>POST /management/subscriptions/{familyId}/whitelist</code> or <code>/blacklist</code> (remove: <code>.../delete</code>) → <strong>applies to every device in the family</strong></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Open Airtel Secure (status)</td>
+<td><code>GET /management/subscriptions/{familyId}/devices</code> (status+tags, <strong>≤500/page</strong>) → map tags→features (Airtel's own table) → <strong>VPN status</strong> (new) + <strong>URL-inspection status</strong> (new) per device → feature screens <code>GET .../filter</code>, <code>.../applications</code>, <code>.../scheduled-filter</code>, family lists</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Lifecycle</td>
+<td>pack expire/cancel → <code>POST /subscriptions/{familyId}/suspend</code> (renew <code>.../activate</code>); member removed → <code>POST /devices/{MSISDN}/suspend</code>; member moves family → <code>POST /devices/{MSISDN}/migrate</code>; new number on paired phone → <code>POST /devices/{MSISDN}/unpair-app</code> + SDK unpair/logout</td>
+</tr>
+</tbody></table>
+<h2>3. Agreed decisions (locked)</h2>
+<ol>
+<li><strong>Family ID = subscription_id</strong> — no extra field. <em>(Closed)</em></li>
+<li><strong>Responders from UCM</strong> — Whalebone stores no responders/contacts. <em>(Closed)</em></li>
+<li><strong>No hierarchy at Whalebone</strong> — it knows which MSISDNs are in a family, not who's parent/child; Airtel checks who may manage. <em>(Closed)</em></li>
+<li><strong>Services = MSISDN tags</strong> (<code>device-safety</code>, <code>parental-control</code>) — add/remove switches features automatically. <em>(Confirmed by Whalebone)</em></li>
+<li><strong>Status via two endpoints</strong> — VPN status + URL-inspection status; <strong>no single "protected" flag</strong>; API key stays in Airtel BE. <em>(Answered)</em></li>
+<li><strong>Toggles are PUT (full tag list), not PATCH.</strong> <em>(Answered)</em></li>
+<li><strong>Service→feature mapping lives in Airtel BE</strong> — no mapping API. <em>(Draft for review)</em></li>
+<li><strong>On/off defaults</strong> per table C. <em>(Answered)</em></li>
+</ol>
+<h2>4. Who stores what</h2>
+<table>
+<thead>
+<tr>
+<th>Airtel (orchestrator / UCM)</th>
+<th>Whalebone</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Family hierarchy &amp; roles (UCM) · responders (UCM) · <strong>service→feature mapping</strong> · which members are in Airtel Secure · how protection is presented</td>
+<td>Family ID (as subscription) · member MSISDNs + status (active/suspended) · <strong>service tags per MSISDN</strong> · feature settings (threats, content, apps, schedules, family allow/deny) · <strong>last reported VPN + URL-inspection status (new)</strong></td>
+</tr>
+</tbody></table>
+<h2>5. On/off defaults (table C — key behaviours)</h2>
+<ul>
+<li><strong>Device safety ON</strong> → all threats blocked (new); phone starts VPN via SDK (first time = pair + consent); threat blocking on by default.</li>
+<li><strong>Device safety OFF</strong> → threats not blocked; family allow/deny <strong>kept</strong> if another family device still has device-safety, else deleted; SDK stops URL inspection.</li>
+<li><strong>Parental ON</strong> → <em>nothing blocked until the parent sets filters</em>; SDK starts if not running.</li>
+<li><strong>Parental OFF</strong> → schedule deleted; content/app filters not blocked.</li>
+<li><strong>Both OFF</strong> → PUT leaves an <strong>empty tag list</strong>; MSISDN stays provisioned + active; SDK stopped but <strong>pairing kept</strong> (re-enabling a service later needs no re-pair).</li>
+</ul>
+<h2>6. Status-query model (table D)</h2>
+<table>
+<thead>
+<tr>
+<th>Airtel wants to know</th>
+<th>API</th>
+<th>Query by</th>
+<th>Availability</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Family members + status</td>
+<td><code>GET /management/subscriptions/{id}/devices</code></td>
+<td>family ID</td>
+<td><strong>Today</strong></td>
+</tr>
+<tr>
+<td>One member status + services</td>
+<td><code>GET /management/devices/{MSISDN}</code></td>
+<td>MSISDN</td>
+<td><strong>Today</strong></td>
+</tr>
+<tr>
+<td>Feature settings</td>
+<td><code>GET /management/devices/{MSISDN}/…</code></td>
+<td>MSISDN / family ID</td>
+<td><strong>Today</strong></td>
+</tr>
+<tr>
+<td><strong>VPN protection on/off</strong></td>
+<td>separate Mgmt API endpoint</td>
+<td>MSISDN</td>
+<td><strong>New — 1 wk lead</strong></td>
+</tr>
+<tr>
+<td><strong>URL inspection on/off</strong></td>
+<td>separate Mgmt API endpoint</td>
+<td>MSISDN</td>
+<td><strong>New — 1 wk lead</strong></td>
+</tr>
+</tbody></table>
+<h2>7. New development at Whalebone (lead times)</h2>
+<ol>
+<li><strong>Tag-driven feature switching</strong> (incl. family allow/deny rule) — <strong>2 weeks</strong>.</li>
+<li><strong>VPN protection status</strong> endpoint per device — <strong>1 week</strong>.</li>
+<li><strong>URL-inspection status</strong> endpoint per device — <strong>1 week</strong>.
+Everything else uses <strong>existing</strong> endpoints; exact paths of the new ones to come with the API docs.</li>
+</ol>
+<h2>8. Implications for our build (Whalebone adapter — Dev 2)</h2>
+<p><strong>Adapter responsibilities</strong></p>
+<ul>
+<li><strong>Provisioning:</strong> subscription create + device create (idempotent; 409 on existing → GET + resume per ops rules).</li>
+<li><strong>Tag management as upsert:</strong> always <strong>GET current tags → merge → PUT full list</strong> (never PATCH). Serialize per MSISDN to avoid lost updates.</li>
+<li><strong>Feature writes:</strong> <code>PUT /filter</code> (7 threats always true for device-safety), <code>/applications</code>, <code>/scheduled-filter</code>; <strong>GET-merge-PUT</strong> so omitted types don't get unblocked.</li>
+<li><strong>Family lists:</strong> whitelist/blacklist POST + <code>/delete</code>, family-scoped.</li>
+<li><strong>Status composition:</strong> there is <strong>no single protected flag</strong> — the app/orchestrator must <strong>combine</strong> device list + VPN-status + URL-inspection-status into the UI's "Working / Not working". Pagination ≤500/page.</li>
+<li><strong>Lifecycle:</strong> suspend/activate (pack), device suspend (remove), migrate (move family), unpair-app (device swap).</li>
+<li><strong>Service→feature mapping table</strong> lives in <strong>our BE</strong> (fixed, not runtime) — keep it in <code>engine/feature-status</code> / a config map.</li>
+<li><strong>Membership ↔ subscriptionId (= familyId) + device_id (= MSISDN)</strong> linkage is Airtel's to hold.</li>
+</ul>
+<p><strong>Risks / open items</strong></p>
+<ul>
+<li><strong>3 new Whalebone endpoints</strong> (tag switching 2 wk; VPN + URL status 1 wk each) — gate Device Safety status UI; <strong>exact paths TBD</strong> → hold behind the adapter interface, use mocks until shared. (Maps to our ENV/AI blockers.)</li>
+<li><strong>Service→feature mapping = "Draft for review"</strong> — confirm before build freeze.</li>
+<li><strong>Full-list PUT concurrency</strong> — two toggles racing can drop a tag; serialize per device + retry on 409.</li>
+<li><strong>Pairing kept on both-off</strong> — good (no re-pair), but the app must correctly reflect "provisioned but not protected".</li>
+<li><strong>Allow/deny list is family-wide</strong>, not per-member — a single list applies to every device; UI must set expectations.</li>
+<li><strong>iPhone</strong>: URL inspection via Safari extension; parity differs from Android Accessibility.</li>
+</ul>
+<p><strong>Not Whalebone (reinforced):</strong> responders, family hierarchy/roles, who-may-manage, members-in-Secure, and <strong>presentation of protection</strong> are all <strong>Airtel/UCM</strong> — confirms our earlier "Whalebone events + permissions, not device telemetry" boundary.</p>
+<hr>
+<p><em>Analysis of the Airtel × Whalebone integration use-cases. Net: a clean tag-driven model that fits our orchestrator's Whalebone adapter; the only build-gating unknowns are the 3 new Whalebone endpoints (paths + lead time) and the service→feature mapping sign-off.</em></p>
+</article></div></body></html>
