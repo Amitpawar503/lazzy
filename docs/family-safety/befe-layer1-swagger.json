@@ -1,0 +1,856 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Family Safety — BEFE Layer-1 (App → Channel BE)",
+    "version": "1.0",
+    "description": "App-facing BEFE aggregate APIs that land on Channel BE. THREE reads cover the Safety Circle screens: (1) GET /home = Family + members + relations + roles/responders + ACTIVE SERVICES (network) + SIGNALS (fans out to FSC family/get + member/get(all) + device/status/fetch + UCM titles + history count); (2) GET /members/{membershipId} = member services (FSC member/get) + full DEVICE STATUS (FSC device/status/fetch) + check-in status; (3) GET /history = FSC history/fetch. Response carries everything the UI + BEFE requirements need so the app makes one call per screen."
+  },
+  "host": "guardian.airtel.com",
+  "basePath": "/befe/fsc/v1",
+  "schemes": [
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "tags": [
+    {
+      "name": "Home",
+      "description": "Family / Home aggregate"
+    },
+    {
+      "name": "Member",
+      "description": "Member detail aggregate"
+    },
+    {
+      "name": "History",
+      "description": "Alerts & activity history"
+    }
+  ],
+  "paths": {
+    "/home": {
+      "get": {
+        "tags": [
+          "Home"
+        ],
+        "summary": "Family + members (relation, role, responder) + ACTIVE SERVICES (network) + SIGNALS + recent history. One call for the Home screen.",
+        "operationId": "getHome",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Circle/family id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "Caller MSISDN (role scoping)",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/HomeResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/members/{membershipId}": {
+      "get": {
+        "tags": [
+          "Member"
+        ],
+        "summary": "Member services (network getMember) + full device status (device status API) + check-ins. One call for the member page.",
+        "operationId": "getMember",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "membershipId",
+            "in": "path",
+            "description": "Membership id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family id",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/MemberDetailResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/history": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Consolidated alert & activity history (FSC history/fetch). Filters by member/type/date; role-scoped.",
+        "operationId": "getHistory",
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "Filter to a member",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "description": "Filter",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "CHECK_IN",
+              "SOS",
+              "FRAUD",
+              "ALARM",
+              "DEVICE_STATUS"
+            ]
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "description": "active|history|all",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "active",
+              "history",
+              "all"
+            ]
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "description": "Caller role for visibility",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "CO_ADMIN",
+              "MEMBER",
+              "RESPONDER"
+            ]
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "description": "yyyy-MM-dd",
+            "required": false,
+            "type": "string",
+            "format": "date"
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "description": "yyyy-MM-dd",
+            "required": false,
+            "type": "string",
+            "format": "date"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/HistoryResponse"
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Signals": {
+      "type": "object",
+      "title": "Signals",
+      "description": "Per-member signals — device (battery/ringer) + network (reachability/strength/SIM)",
+      "properties": {
+        "reachabilityReason": {
+          "type": "string",
+          "description": "From Network",
+          "enum": [
+            "REACHABLE",
+            "SWITCHED_OFF",
+            "NO_COVERAGE",
+            "SWITCHED_OFF_OR_FLIGHT",
+            "BATTERY_DEAD",
+            "INACTIVE_NUMBER"
+          ]
+        },
+        "batteryPercent": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0-100 (device)"
+        },
+        "lastBatteryLevel": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Last battery before offline"
+        },
+        "charging": {
+          "type": "boolean"
+        },
+        "ringerMode": {
+          "type": "string",
+          "description": "device",
+          "enum": [
+            "NORMAL",
+            "VIBRATE",
+            "SILENT"
+          ]
+        },
+        "networkType": {
+          "type": "string",
+          "enum": [
+            "WIFI",
+            "5G",
+            "4G",
+            "3G",
+            "2G",
+            "NO_NETWORK"
+          ]
+        },
+        "networkStrength": {
+          "type": "string",
+          "enum": [
+            "STRONG",
+            "MODERATE",
+            "WEAK",
+            "NONE"
+          ]
+        },
+        "lastOnNetworkAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "available": {
+          "type": "boolean",
+          "description": "False when signal unavailable e.g. iPhone ringer / non-Airtel"
+        }
+      }
+    },
+    "ServiceStatus": {
+      "type": "object",
+      "title": "ServiceStatus",
+      "description": "Active-service availability/health per member (from Network)",
+      "properties": {
+        "service": {
+          "type": "string",
+          "enum": [
+            "CHECKIN",
+            "SOS",
+            "FRAUD_SPAM",
+            "REACHABILITY",
+            "SAFE_TRIP",
+            "DEVICE_SAFETY",
+            "PARENTAL_CONTROLS"
+          ]
+        },
+        "available": {
+          "type": "boolean",
+          "description": "Service available for this member (e.g. SPAM Airtel-only)"
+        },
+        "working": {
+          "type": "boolean",
+          "description": "Functional now (app + permissions ok)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "WORKING",
+            "NOT_WORKING",
+            "MISSING_PERMISSION",
+            "NOT_SUBSCRIBED",
+            "NOT_AVAILABLE"
+          ]
+        },
+        "missingPermission": {
+          "type": "string",
+          "description": "e.g. LOCATION when SOS not working"
+        }
+      },
+      "required": [
+        "service"
+      ]
+    },
+    "AlertSummary": {
+      "type": "object",
+      "title": "AlertSummary",
+      "description": "Highest-priority active alert on a card",
+      "properties": {
+        "alertId": {
+          "type": "string"
+        },
+        "alertType": {
+          "type": "string",
+          "enum": [
+            "SOS",
+            "CHECKIN",
+            "CHECKIN_NEED_HELP",
+            "FRAUD_SPAM",
+            "LOW_BATTERY",
+            "BACK_ONLINE",
+            "GEOFENCE",
+            "DEVICE_SAFETY",
+            "CIRCLE_EVENT",
+            "PARENTAL_REQUEST"
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "createdOn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "alertType"
+      ]
+    },
+    "MemberCard": {
+      "type": "object",
+      "title": "MemberCard",
+      "description": "Home member card — identity + relation + role + signals + active services",
+      "properties": {
+        "membershipId": {
+          "type": "string"
+        },
+        "msisdn": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "relationship": {
+          "type": "string",
+          "description": "Mom/Dad/... (UCM)"
+        },
+        "airtelCustomer": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0 Airtel else 1"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "CO_ADMIN",
+            "SUB_ADMIN",
+            "SPONSER",
+            "MEMBER"
+          ]
+        },
+        "isResponder": {
+          "type": "boolean"
+        },
+        "membershipStatus": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "InvitePending",
+            "Paused",
+            "Inactive"
+          ]
+        },
+        "signals": {
+          "$ref": "#/definitions/Signals"
+        },
+        "activeServices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServiceStatus"
+          }
+        },
+        "latestCheckInSummary": {
+          "type": "string",
+          "description": "e.g. 'Replied I'm fine at 9:04'"
+        },
+        "activeAlert": {
+          "$ref": "#/definitions/AlertSummary"
+        },
+        "featuresBrokenHint": {
+          "type": "string",
+          "description": "e.g. 'Location off, SOS wont share location'"
+        }
+      },
+      "required": [
+        "membershipId",
+        "msisdn"
+      ]
+    },
+    "Subscription": {
+      "type": "object",
+      "title": "Subscription",
+      "description": "",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "Trial",
+            "Expiring",
+            "Paused",
+            "Closing",
+            "None"
+          ]
+        },
+        "planId": {
+          "type": "string"
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "endDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "banners": {
+          "type": "array",
+          "items": "string"
+        }
+      }
+    },
+    "HistoryItem": {
+      "type": "object",
+      "title": "HistoryItem",
+      "description": "One alert/activity entry (FSC history/fetch)",
+      "properties": {
+        "eventId": {
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string",
+          "enum": [
+            "CHECK_IN",
+            "SOS",
+            "FRAUD",
+            "ALARM",
+            "DEVICE_STATUS"
+          ]
+        },
+        "eventTimestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "memberMsisdn": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "relation/name via UCM"
+        },
+        "status": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "description": "human-readable summary"
+        },
+        "additionalData": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType"
+      ]
+    },
+    "HomeResponse": {
+      "type": "object",
+      "title": "HomeResponse",
+      "description": "Family/Home aggregate — FSC family/get + member/get(all) + device/status/fetch + UCM titles + history count",
+      "properties": {
+        "familyId": {
+          "type": "string"
+        },
+        "familyName": {
+          "type": "string"
+        },
+        "circleStatus": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "Expiring",
+            "Paused",
+            "Closing"
+          ]
+        },
+        "subscription": {
+          "$ref": "#/definitions/Subscription"
+        },
+        "me": {
+          "$ref": "#/definitions/MemberCard"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MemberCard"
+          }
+        },
+        "responders": {
+          "type": "array",
+          "items": "string"
+        },
+        "activeAlertsCount": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "recentHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HistoryItem"
+          }
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Txn id"
+        },
+        "traceId": {
+          "type": "string",
+          "description": "Trace id"
+        }
+      },
+      "required": [
+        "familyId",
+        "circleStatus",
+        "me",
+        "members",
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ]
+    },
+    "DeviceDetail": {
+      "type": "object",
+      "title": "DeviceDetail",
+      "description": "Full device status (FSC device/status/fetch) for the member page",
+      "properties": {
+        "batteryPercent": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "lastBatteryLevel": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "charging": {
+          "type": "boolean"
+        },
+        "ringerOn": {
+          "type": "boolean"
+        },
+        "ringerMode": {
+          "type": "string",
+          "enum": [
+            "NORMAL",
+            "VIBRATE",
+            "SILENT"
+          ]
+        },
+        "phoneOff": {
+          "type": "boolean"
+        },
+        "reachable": {
+          "type": "boolean"
+        },
+        "reachabilityReason": {
+          "type": "string",
+          "enum": [
+            "REACHABLE",
+            "SWITCHED_OFF",
+            "NO_COVERAGE",
+            "SWITCHED_OFF_OR_FLIGHT",
+            "BATTERY_DEAD",
+            "INACTIVE_NUMBER"
+          ]
+        },
+        "networkType": {
+          "type": "string"
+        },
+        "networkStrength": {
+          "type": "string"
+        },
+        "lockState": {
+          "type": "string",
+          "enum": [
+            "LOCKED",
+            "UNLOCKED",
+            "UNKNOWN"
+          ]
+        },
+        "simStatus": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "INACTIVE",
+            "RECHARGE_LAPSED",
+            "NEW_OWNER",
+            "PORTED_OUT"
+          ]
+        },
+        "checkinWorking": {
+          "type": "boolean"
+        },
+        "sosWorking": {
+          "type": "boolean"
+        },
+        "appInstalled": {
+          "type": "boolean"
+        },
+        "location": {
+          "type": "string",
+          "description": "lat,long — SOS window only"
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastOnNetworkAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      }
+    },
+    "CheckInEntry": {
+      "type": "object",
+      "title": "CheckInEntry",
+      "description": "",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "response": {
+          "type": "string"
+        },
+        "scheduleType": {
+          "type": "string"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "MemberDetailResponse": {
+      "type": "object",
+      "title": "MemberDetailResponse",
+      "description": "Member detail — FSC member/get (services) + device/status/fetch (deviceDetail) + check-in status",
+      "properties": {
+        "member": {
+          "$ref": "#/definitions/MemberCard"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ServiceStatus"
+          }
+        },
+        "deviceDetail": {
+          "$ref": "#/definitions/DeviceDetail"
+        },
+        "latestCheckIn": {
+          "$ref": "#/definitions/CheckInEntry"
+        },
+        "checkInHistory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CheckInEntry"
+          }
+        },
+        "activeAlert": {
+          "$ref": "#/definitions/AlertSummary"
+        },
+        "safetyReportUrl": {
+          "type": "string",
+          "description": "B23 — 3-month Safety Report deep link"
+        },
+        "deviceSafety": {
+          "type": "object",
+          "description": "If advanced feature on — status + protections (Whalebone)",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "ON",
+                "OFF",
+                "PENDING"
+              ]
+            },
+            "protections": {
+              "type": "array",
+              "items": "string"
+            }
+          }
+        },
+        "parental": {
+          "type": "object",
+          "description": "If advanced feature on — summary",
+          "properties": {
+            "activated": {
+              "type": "boolean"
+            },
+            "screenTimeDailyMinutes": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Txn id"
+        },
+        "traceId": {
+          "type": "string",
+          "description": "Trace id"
+        }
+      },
+      "required": [
+        "member",
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ]
+    },
+    "HistoryResponse": {
+      "type": "object",
+      "title": "HistoryResponse",
+      "description": "Alerts & activity history (FSC history/fetch), role-scoped",
+      "properties": {
+        "historyInfos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HistoryItem"
+          }
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Txn id"
+        },
+        "traceId": {
+          "type": "string",
+          "description": "Trace id"
+        }
+      },
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ]
+    }
+  }
+}
