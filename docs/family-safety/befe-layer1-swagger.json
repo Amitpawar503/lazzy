@@ -270,16 +270,172 @@
             }
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Query parameter 'familyId' is required",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Query parameter 'familyId' is required",
+                "httpStatusCode": 400,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40001",
+                    "message": "Query parameter 'familyId' is required",
+                    "type": "VALIDATION"
+                  }
+                ]
+              }
+            }
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Missing or invalid authentication token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Missing or invalid authentication token",
+                "httpStatusCode": 401,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40101",
+                    "message": "Missing or invalid authentication token",
+                    "type": "AUTH"
+                  }
+                ]
+              }
+            }
           },
           "403": {
-            "description": "Forbidden"
+            "description": "Caller MSISDN is not a member of this circle",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Caller MSISDN is not a member of this circle",
+                "httpStatusCode": 403,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40301",
+                    "message": "Caller MSISDN is not a member of this circle",
+                    "type": "FORBIDDEN"
+                  }
+                ]
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Family not found for the given familyId",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Family not found for the given familyId",
+                "httpStatusCode": 404,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40401",
+                    "message": "Family not found for the given familyId",
+                    "type": "RESOURCE_NOT_FOUND"
+                  }
+                ]
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+                "httpStatusCode": 429,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-42901",
+                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+                    "type": "RATE_LIMIT"
+                  }
+                ]
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error occurred",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Unexpected error occurred",
+                "httpStatusCode": 500,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50000",
+                    "message": "Unexpected error occurred",
+                    "type": "UNKNOWN"
+                  }
+                ]
+              }
+            }
+          },
+          "502": {
+            "description": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+                "httpStatusCode": 502,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50302",
+                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+                    "type": "DOWNSTREAM"
+                  }
+                ]
+              }
+            }
+          },
+          "504": {
+            "description": "Downstream service timed out",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Downstream service timed out",
+                "httpStatusCode": 504,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50401",
+                    "message": "Downstream service timed out",
+                    "type": "DOWNSTREAM"
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -426,16 +582,172 @@
             }
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Query parameter 'familyId' is required / invalid membershipId",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Query parameter 'familyId' is required / invalid membershipId",
+                "httpStatusCode": 400,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40001",
+                    "message": "Query parameter 'familyId' is required / invalid membershipId",
+                    "type": "VALIDATION"
+                  }
+                ]
+              }
+            }
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Missing or invalid authentication token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Missing or invalid authentication token",
+                "httpStatusCode": 401,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40101",
+                    "message": "Missing or invalid authentication token",
+                    "type": "AUTH"
+                  }
+                ]
+              }
+            }
           },
           "403": {
-            "description": "Forbidden"
+            "description": "Caller is not allowed to view this member",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Caller is not allowed to view this member",
+                "httpStatusCode": 403,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40301",
+                    "message": "Caller is not allowed to view this member",
+                    "type": "FORBIDDEN"
+                  }
+                ]
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Member or family not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Member or family not found",
+                "httpStatusCode": 404,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40401",
+                    "message": "Member or family not found",
+                    "type": "RESOURCE_NOT_FOUND"
+                  }
+                ]
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+                "httpStatusCode": 429,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-42901",
+                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+                    "type": "RATE_LIMIT"
+                  }
+                ]
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error occurred",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Unexpected error occurred",
+                "httpStatusCode": 500,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50000",
+                    "message": "Unexpected error occurred",
+                    "type": "UNKNOWN"
+                  }
+                ]
+              }
+            }
+          },
+          "502": {
+            "description": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+                "httpStatusCode": 502,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50302",
+                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+                    "type": "DOWNSTREAM"
+                  }
+                ]
+              }
+            }
+          },
+          "504": {
+            "description": "Downstream service timed out",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Downstream service timed out",
+                "httpStatusCode": 504,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50401",
+                    "message": "Downstream service timed out",
+                    "type": "DOWNSTREAM"
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -575,16 +887,172 @@
             }
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Query parameter 'familyId' is required / invalid date range",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Query parameter 'familyId' is required / invalid date range",
+                "httpStatusCode": 400,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40001",
+                    "message": "Query parameter 'familyId' is required / invalid date range",
+                    "type": "VALIDATION"
+                  }
+                ]
+              }
+            }
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Missing or invalid authentication token",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Missing or invalid authentication token",
+                "httpStatusCode": 401,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40101",
+                    "message": "Missing or invalid authentication token",
+                    "type": "AUTH"
+                  }
+                ]
+              }
+            }
           },
           "403": {
-            "description": "Forbidden"
+            "description": "Caller not permitted for this history scope (responder-only types)",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Caller not permitted for this history scope (responder-only types)",
+                "httpStatusCode": 403,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40301",
+                    "message": "Caller not permitted for this history scope (responder-only types)",
+                    "type": "FORBIDDEN"
+                  }
+                ]
+              }
+            }
           },
           "404": {
-            "description": "Not Found"
+            "description": "Family not found",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Family not found",
+                "httpStatusCode": 404,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-40401",
+                    "message": "Family not found",
+                    "type": "RESOURCE_NOT_FOUND"
+                  }
+                ]
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+                "httpStatusCode": 429,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-42901",
+                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
+                    "type": "RATE_LIMIT"
+                  }
+                ]
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error occurred",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Unexpected error occurred",
+                "httpStatusCode": 500,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50000",
+                    "message": "Unexpected error occurred",
+                    "type": "UNKNOWN"
+                  }
+                ]
+              }
+            }
+          },
+          "502": {
+            "description": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+                "httpStatusCode": 502,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50302",
+                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
+                    "type": "DOWNSTREAM"
+                  }
+                ]
+              }
+            }
+          },
+          "504": {
+            "description": "Downstream service timed out",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            },
+            "examples": {
+              "application/json": {
+                "status": "FAILURE",
+                "message": "Downstream service timed out",
+                "httpStatusCode": 504,
+                "traceId": "b70f89b1",
+                "errors": [
+                  {
+                    "code": "SH-50401",
+                    "message": "Downstream service timed out",
+                    "type": "DOWNSTREAM"
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -1209,6 +1677,58 @@
         "responseCode",
         "responseMessage",
         "transactionId"
+      ]
+    },
+    "ApiError": {
+      "type": "object",
+      "title": "ApiError",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "App error code e.g. SH-40001"
+        },
+        "message": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "description": "VALIDATION / AUTH / FORBIDDEN / RESOURCE_NOT_FOUND / RATE_LIMIT / DOWNSTREAM / UNKNOWN"
+        }
+      },
+      "required": [
+        "code",
+        "type"
+      ]
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "title": "ErrorResponse",
+      "description": "Standard error envelope",
+      "properties": {
+        "status": {
+          "type": "string",
+          "example": "FAILURE"
+        },
+        "message": {
+          "type": "string"
+        },
+        "httpStatusCode": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "traceId": {
+          "type": "string"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ApiError"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "httpStatusCode"
       ]
     }
   }
