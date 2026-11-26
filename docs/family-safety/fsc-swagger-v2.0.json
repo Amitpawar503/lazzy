@@ -1,0 +1,2125 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "description": "Api Documentation",
+    "version": "2.0",
+    "title": "Api Documentation",
+    "termsOfService": "urn:tos",
+    "contact": {},
+    "license": {
+      "name": "Apache 2.0",
+      "url": "http://www.apache.org/licenses/LICENSE-2.0"
+    }
+  },
+  "host": "localhost:8080",
+  "basePath": "/fsc",
+  "tags": [
+    {
+      "name": "Alarm Controller",
+      "description": "Alarm Controller"
+    },
+    {
+      "name": "DeviceStatus Controller",
+      "description": "DeviceStatus Controller"
+    },
+    {
+      "name": "Family Controller",
+      "description": "Family Controller"
+    },
+    {
+      "name": "Member Controller",
+      "description": "Member Controller"
+    },
+    {
+      "name": "Trigger Checkin Controller",
+      "description": "Trigger Checkin Controller"
+    },
+    {
+      "name": "Trigger SOS Controller",
+      "description": "Trigger SOS Controller"
+    },
+    {
+      "name": "History Controller",
+      "description": "History Controller"
+    },
+    {
+      "name": "Fraud Alert Controller",
+      "description": "Spam / fraud call alerts for responders"
+    }
+  ],
+  "paths": {
+    "/api/v1/alarm/incoming": {
+      "post": {
+        "tags": [
+          "Alarm Controller"
+        ],
+        "summary": "API to receive incoming alarm",
+        "operationId": "incomingUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestIncomingAlarmPojo",
+            "description": "Request Incoming Alarm Pojo",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestIncomingAlarmPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/alarm/sos/kill": {
+      "post": {
+        "tags": [
+          "Alarm Controller"
+        ],
+        "summary": "API to kill exising SOS Alarm",
+        "operationId": "sosKillUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestSosAlarmKillPojo",
+            "description": "Request Sos Alarm Kill Pojo",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestSosAlarmKillPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/device/status/fetch": {
+      "get": {
+        "tags": [
+          "DeviceStatus Controller"
+        ],
+        "summary": "API to fetch Device status data",
+        "operationId": "checkinStatusCheckUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id to fetch device status of all family members",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "MSISDN to fetch device specific data",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseDeviceStatusDataPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/history/fetch": {
+      "get": {
+        "tags": [
+          "History Controller"
+        ],
+        "summary": "Retrieve consolidated alert & activity history for a family circle (check-in, SOS, fraud, alarm, device-status). Filter by member, type and date range.",
+        "operationId": "fetchHistoryUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id of the circle",
+            "required": true,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "Filter to a specific member MSISDN (optional)",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "description": "Filter by event type (optional)",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "CHECK_IN",
+              "SOS",
+              "FRAUD",
+              "ALARM",
+              "DEVICE_STATUS"
+            ],
+            "allowEmptyValue": false
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "description": "Start of date range (inclusive, yyyy-MM-dd)",
+            "required": false,
+            "type": "string",
+            "format": "date",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "description": "End of date range (inclusive, yyyy-MM-dd)",
+            "required": false,
+            "type": "string",
+            "format": "date",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseHistoryPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/family/get": {
+      "get": {
+        "tags": [
+          "Family Controller"
+        ],
+        "summary": "API to Get Family",
+        "operationId": "getFamilyUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id",
+            "required": true,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseFamilyPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/family/save": {
+      "post": {
+        "tags": [
+          "Family Controller"
+        ],
+        "summary": "API to Create/Update Family",
+        "operationId": "createFamilyUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id",
+            "required": false,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          },
+          {
+            "in": "body",
+            "name": "requestFamilyPojo",
+            "description": "Request Family Pojo",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestFamilyPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/member/delete": {
+      "delete": {
+        "tags": [
+          "Member Controller"
+        ],
+        "summary": "API to Delete Member from family",
+        "operationId": "deleteMemberUsingDELETE",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Unique familyId of the member",
+            "required": false,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "memberMsisdn",
+            "in": "query",
+            "description": "Unique MSISDN of the member",
+            "required": true,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/member/get": {
+      "get": {
+        "tags": [
+          "Member Controller"
+        ],
+        "summary": "API to Get Unique Member or All Members of a family",
+        "operationId": "getMemberUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Unique familyId of the member",
+            "required": false,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "memberMsisdn",
+            "in": "query",
+            "description": "MSISDN of the member",
+            "required": false,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseMembersPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/member/role/update": {
+      "post": {
+        "tags": [
+          "Member Controller"
+        ],
+        "summary": "API to update role of a family member",
+        "operationId": "updateRoleUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Unique familyId of the member",
+            "required": true,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "familyMemberRole",
+            "in": "query",
+            "description": "New Role of the Member",
+            "required": true,
+            "type": "string",
+            "allowEmptyValue": false,
+            "enum": [
+              "ADMIN",
+              "SUB_ADMIN",
+              "SPONSER",
+              "MEMBER"
+            ]
+          },
+          {
+            "name": "memberMsisdn",
+            "in": "query",
+            "description": "Unique MSISDN of the member",
+            "required": true,
+            "type": "integer",
+            "format": "int64",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/member/save": {
+      "post": {
+        "tags": [
+          "Member Controller"
+        ],
+        "summary": "API to Add/Update Member in Family",
+        "operationId": "addMemberUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestMemberPojo",
+            "description": "Request Member Pojo",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestMemberPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/trigger/checkin/": {
+      "post": {
+        "tags": [
+          "Trigger Checkin Controller"
+        ],
+        "summary": "Unified Check-in request (create / response / dismiss / pause / resume)",
+        "operationId": "checkinCreateUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestTriggerCheckinPojo",
+            "description": "Request Trigger Checkin Pojo",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestTriggerCheckinPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/trigger/checkin/status/check": {
+      "get": {
+        "tags": [
+          "Trigger Checkin Controller"
+        ],
+        "summary": "API to check status of Checkin",
+        "operationId": "checkinStatusCheckUsingGET_1",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "description": "Start of date range (inclusive, yyyy-MM-dd) ",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "initiatorMsisdn",
+            "in": "query",
+            "description": "Initiator MSISDN",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "targetMsisdn",
+            "in": "query",
+            "description": "Target MSISDN",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "description": "End of date range (inclusive, yyyy-MM-dd)",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "triggerId",
+            "in": "query",
+            "description": "Trigger Id",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseCheckinStatusPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/trigger/sos/": {
+      "post": {
+        "tags": [
+          "Trigger SOS Controller"
+        ],
+        "summary": "API to Create and Update SOS",
+        "operationId": "sosCreateUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestTriggerSosPojo",
+            "description": "SOS operation payload (fields depend on action)",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestTriggerSosPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/trigger/sos/cancel": {
+      "delete": {
+        "tags": [
+          "Trigger SOS Controller"
+        ],
+        "summary": "API to cancel SOS",
+        "operationId": "sosCancelUsingDELETE",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "additionalData",
+            "in": "query",
+            "description": "Additional data related to SOS Cancellation",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "initiatorMsisdn",
+            "in": "query",
+            "description": "MSISDN requesting cancel — Network validates it matches the SOS initiator",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "triggerId",
+            "in": "query",
+            "description": "Unique Id of the trigger",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/trigger/sos/status/check": {
+      "get": {
+        "tags": [
+          "Trigger SOS Controller"
+        ],
+        "summary": "API to check status of SOS",
+        "operationId": "checkinStatusCheckUsingGET_2",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "initiatorMsisdn",
+            "in": "query",
+            "description": "Initiator MSISDN",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "triggerId",
+            "in": "query",
+            "description": "Trigger Id",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseSosStatusPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/fraud/alert/fetch": {
+      "get": {
+        "tags": [
+          "Fraud Alert Controller"
+        ],
+        "summary": "Get spam / fraud call alert data (OTP count, call timer and other captured data). Provide alertId for one; or familyId/msisdn for active alerts.",
+        "operationId": "fetchSpamAlertUsingGET",
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "name": "familyId",
+            "in": "query",
+            "description": "Family Id of the circle",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "msisdn",
+            "in": "query",
+            "description": "Member MSISDN to filter alerts for",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "alertId",
+            "in": "query",
+            "description": "Specific alert id (omit to list active alerts)",
+            "required": false,
+            "type": "string",
+            "allowEmptyValue": false
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by status",
+            "required": false,
+            "type": "string",
+            "enum": [
+              "Active",
+              "Warned",
+              "Ended",
+              "Safe"
+            ],
+            "allowEmptyValue": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseSpamAlertPojo"
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    },
+    "/api/v1/fraud/alert/action": {
+      "post": {
+        "tags": [
+          "Fraud Alert Controller"
+        ],
+        "summary": "Record a warning / action taken by a responder on a spam alert (warn, end-call, mark-safe, notify, block).",
+        "operationId": "spamAlertActionUsingPOST",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "*/*"
+        ],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "requestSpamAlertActionPojo",
+            "description": "Responder action payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RequestSpamAlertActionPojo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/ResponseGenericPojo"
+            }
+          },
+          "201": {
+            "description": "Created"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "deprecated": false
+      }
+    }
+  },
+  "definitions": {
+    "RequestFamilyMemberPojo": {
+      "type": "object",
+      "required": [
+        "airtelCustomer",
+        "membershipStatus",
+        "msisdn"
+      ],
+      "properties": {
+        "airtelCustomer": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0 if Airtel customer else 1"
+        },
+        "circleMemberRole": {
+          "type": "string",
+          "description": "Role assigned to the family member",
+          "enum": [
+            "ADMIN",
+            "SUB_ADMIN",
+            "SPONSER",
+            "MEMBER"
+          ]
+        },
+        "membershipStatus": {
+          "type": "string",
+          "description": "Status of the family member",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "msisdn": {
+          "type": "string",
+          "description": "MSISDN of the member"
+        }
+      },
+      "title": "RequestFamilyMemberPojo",
+      "description": "Request Family Member Details"
+    },
+    "RequestFamilyPojo": {
+      "type": "object",
+      "required": [
+        "familyDescription",
+        "familyName",
+        "familyStatus"
+      ],
+      "properties": {
+        "familyDescription": {
+          "type": "string",
+          "description": "Description of the family"
+        },
+        "familyMemberPojos": {
+          "type": "array",
+          "description": "List of family members",
+          "items": {
+            "$ref": "#/definitions/RequestFamilyMemberPojo"
+          }
+        },
+        "familyName": {
+          "type": "string",
+          "description": "Name of the family"
+        },
+        "familyStatus": {
+          "type": "string",
+          "description": "Status of the family",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        }
+      },
+      "title": "RequestFamilyPojo",
+      "description": "Request Family Details"
+    },
+    "RequestIncomingAlarmPojo": {
+      "type": "object",
+      "required": [
+        "alarmId",
+        "alarmTargetType",
+        "alarmType",
+        "initiatedBy"
+      ],
+      "properties": {
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional data related to Alarm"
+        },
+        "alarmId": {
+          "type": "string",
+          "description": "Unique Id of the incoming Alarm"
+        },
+        "alarmTargetType": {
+          "type": "string",
+          "description": "Target Type of the Alarm",
+          "enum": [
+            "Individual",
+            "Responder",
+            "Broadcast"
+          ]
+        },
+        "alarmType": {
+          "type": "string",
+          "description": "Type of Alarm to derive message template & channel"
+        },
+        "initiatedBy": {
+          "type": "string",
+          "description": "Value of MSISDN if generated by User else SYSTEM if generated from backend"
+        },
+        "targetFamilyId": {
+          "type": "string",
+          "description": "Target FamilyId required if AlarmTargetType is Responder OR Broadcast "
+        },
+        "targetMsisdn": {
+          "type": "string",
+          "description": "Target MSISDN required if AlarmTargetType is Individual "
+        }
+      },
+      "title": "RequestIncomingAlarmPojo",
+      "description": "Request Incoming Alarm Pojo"
+    },
+    "RequestMemberPojo": {
+      "type": "object",
+      "required": [
+        "airtelCustomer",
+        "familyId",
+        "membershipStatus",
+        "msisdn"
+      ],
+      "properties": {
+        "airtelCustomer": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0 if Airtel customer else 1"
+        },
+        "familyId": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Unique identifier of the Family"
+        },
+        "familyMemberRole": {
+          "type": "string",
+          "description": "Role assigned to the family member",
+          "enum": [
+            "ADMIN",
+            "SUB_ADMIN",
+            "SPONSER",
+            "MEMBER"
+          ]
+        },
+        "membershipStatus": {
+          "type": "string",
+          "description": "Status of the family member",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "msisdn": {
+          "type": "string",
+          "description": "MSISDN of the member"
+        }
+      },
+      "title": "RequestMemberPojo",
+      "description": "Request Family Member Details"
+    },
+    "RequestSosAlarmKillPojo": {
+      "type": "object",
+      "required": [
+        "sosAlarmAction",
+        "sosAlarmId"
+      ],
+      "properties": {
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional data related to SOS Alarm"
+        },
+        "sosAlarmAction": {
+          "type": "string",
+          "description": "Action for SOS Alarm",
+          "enum": [
+            "Kill"
+          ]
+        },
+        "sosAlarmId": {
+          "type": "string",
+          "description": "Unique Id of the SOS Alarm"
+        }
+      },
+      "title": "RequestSosAlarmKillPojo",
+      "description": "Request SOS Alarm Kill Pojo"
+    },
+    "RequestTriggerCheckinPojo": {
+      "type": "object",
+      "required": [
+        "familyId",
+        "triggerCheckinAction"
+      ],
+      "properties": {
+        "additionalData": {
+          "type": "string",
+          "description": "Additional data related to Checkin Trigger"
+        },
+        "checkinResponse": {
+          "type": "string",
+          "description": "[RESPONSE] Check-in response"
+        },
+        "checkinTime": {
+          "type": "string",
+          "description": "[RESPONSE] Check-in timestamp"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "[CREATE] Schedule end date; omit = runs until paused/dismissed, no fixed end. (inclusive, yyyy-MM-dd)"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "[CREATE] Family Id"
+        },
+        "initiatorMsisdn": {
+          "type": "string",
+          "description": "[CREATE] Initiator MSISDN. [DISMISS/PAUSE/RESUME] actor MSISDN — Network validates it is an admin before applying"
+        },
+        "message": {
+          "type": "string",
+          "description": "[CREATE] Check-in message shown to the target member"
+        },
+        "scheduleDays": {
+          "type": "array",
+          "description": "[CREATE, Periodic] Days to run. All 7 = every day; MON-FRI = weekdays; or a custom subset",
+          "items": {
+            "type": "string",
+            "enum": [
+              "EVERYDAY",
+              "WEEKDAYS",
+              "MON",
+              "TUE",
+              "WED",
+              "THU",
+              "FRI",
+              "SAT",
+              "SUN"
+            ]
+          }
+        },
+        "scheduleTime": {
+          "type": "string",
+          "description": "[CREATE] Time of day (HH:mm, local). One check-in per day {pattern: ^([01]\\d|2[0-3]):[0-5]\\d$}"
+        },
+        "scheduleType": {
+          "type": "string",
+          "description": "[CREATE] Schedule type of the Checkin Trigger",
+          "enum": [
+            "OneTime",
+            "Periodic"
+          ]
+        },
+        "startDate": {
+          "type": "string",
+          "description": "[CREATE] Schedule start date (inclusive, yyyy-MM-dd) "
+        },
+        "targetMsisdn": {
+          "type": "string",
+          "description": "[CREATE] Target MSISDN whose checkin is required"
+        },
+        "triggerCheckinAction": {
+          "type": "string",
+          "description": "Operation to perform on Checkin",
+          "enum": [
+            "CREATE",
+            "RESPONSE",
+            "DISMISS",
+            "PAUSE",
+            "RESUME"
+          ]
+        },
+        "triggerId": {
+          "type": "string",
+          "description": "Trigger Id (required for RESPONSE/DISMISS/PAUSE/RESUME; for CREATE pass client id or leave for system)"
+        }
+      },
+      "title": "RequestTriggerCheckinPojo",
+      "description": "Request Trigger Checkin Create Pojo"
+    },
+    "RequestTriggerSosPojo": {
+      "type": "object",
+      "required": [
+        "triggerSosAction"
+      ],
+      "properties": {
+        "acknowledgedBy": {
+          "type": "string",
+          "description": "[ACKNOWLEDGE] MSISDN who acknowledged"
+        },
+        "acknowledgementTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "[ACKNOWLEDGE] Timestamp of Acknowledgement"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Additional data related to SOS update"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "[CREATE] Family Id"
+        },
+        "initiatorMsisdn": {
+          "type": "string",
+          "description": "[CREATE] Initiator MSISDN"
+        },
+        "location": {
+          "type": "string",
+          "description": "[CREATE] Location as 'lat,long' if available. If absent, Network falls back to LBS during SOS"
+        },
+        "resolvedBy": {
+          "type": "string",
+          "description": "[RESOLVE] MSISDN who resolved. May be the initiator or a responder"
+        },
+        "resolvedTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "[RESOLVE] Timestamp of Resolution"
+        },
+        "triggerId": {
+          "type": "string",
+          "description": "Trigger Id (required for ACKNOWLEDGE/RESOLVE; for CREATE pass client id or leave for system)"
+        },
+        "triggerSosAction": {
+          "type": "string",
+          "description": "Operation to perform",
+          "enum": [
+            "CREATE",
+            "ACKNOWLEDGE",
+            "RESOLVE"
+          ]
+        }
+      },
+      "title": "RequestTriggerSosPojo",
+      "description": "Request Trigger SOS Pojo"
+    },
+    "HistoryInfo": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "eventType",
+        "eventTimestamp",
+        "familyId"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Unique id of the event"
+        },
+        "eventType": {
+          "type": "string",
+          "description": "Type of event",
+          "enum": [
+            "CHECK_IN",
+            "SOS",
+            "FRAUD",
+            "ALARM",
+            "DEVICE_STATUS"
+          ]
+        },
+        "eventTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the event occurred"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id"
+        },
+        "initiatorMsisdn": {
+          "type": "string",
+          "description": "MSISDN that initiated the event (or SYSTEM)"
+        },
+        "targetMsisdn": {
+          "type": "string",
+          "description": "MSISDN the event is about (if applicable)"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current status of the event (e.g. Active, Resolved, Received, Pending, Dismissed)"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable summary of the event"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional event data"
+        }
+      },
+      "title": "HistoryInfo",
+      "description": "One alert / activity history entry"
+    },
+    "ResponseHistoryPojo": {
+      "type": "object",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "historyInfos": {
+          "type": "array",
+          "description": "List of history / alert entries, newest first",
+          "items": {
+            "$ref": "#/definitions/HistoryInfo"
+          }
+        },
+        "responseCode": {
+          "type": "string"
+        },
+        "responseMessage": {
+          "type": "string"
+        },
+        "transactionId": {
+          "type": "string"
+        }
+      },
+      "title": "ResponseHistoryPojo",
+      "description": "Response consolidated alert & history"
+    },
+    "ResponseCheckinData": {
+      "type": "object",
+      "required": [
+        "checkinRequestTime",
+        "checkinStatus",
+        "familyId",
+        "initiatorMsisdn",
+        "responseCheckinInfos",
+        "scheduleTime",
+        "scheduleType",
+        "targetMsisdn"
+      ],
+      "properties": {
+        "checkinRequestTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time of the Checkin request"
+        },
+        "checkinStatus": {
+          "type": "string",
+          "description": "Current status of checkin",
+          "enum": [
+            "Active",
+            "Dismissed",
+            "Paused"
+          ]
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Schedule end date, null means until paused/dismissed, no fixed end. (inclusive, yyyy-MM-dd)"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id"
+        },
+        "initiatorMsisdn": {
+          "type": "string",
+          "description": "MSISDN of th Trigger Initiator"
+        },
+        "message": {
+          "type": "string",
+          "description": "Check-in message shown to the target member"
+        },
+        "responseCheckinInfos": {
+          "type": "array",
+          "description": "List of Checkin Responses",
+          "items": {
+            "$ref": "#/definitions/ResponseCheckinInfo"
+          }
+        },
+        "scheduleDays": {
+          "type": "array",
+          "description": "Schedule Days of Checkin",
+          "items": {
+            "type": "string",
+            "enum": [
+              "EVERYDAY",
+              "WEEKDAYS",
+              "MON",
+              "TUE",
+              "WED",
+              "THU",
+              "FRI",
+              "SAT",
+              "SUN"
+            ]
+          }
+        },
+        "scheduleTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Schedule time of the Checkin Trigger"
+        },
+        "scheduleType": {
+          "type": "string",
+          "description": "Schedule type of the Checkin Trigger",
+          "enum": [
+            "OneTime",
+            "Periodic"
+          ]
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Schedule start date (inclusive, yyyy-MM-dd) "
+        },
+        "targetMsisdn": {
+          "type": "string",
+          "description": "Target MSISDN whose checkin is required"
+        }
+      },
+      "title": "ResponseCheckinData",
+      "description": "Response Checkin Data"
+    },
+    "ResponseCheckinInfo": {
+      "type": "object",
+      "required": [
+        "checkinResponse",
+        "checkinResponseStatus",
+        "expectedDate",
+        "lastUpdatedOn"
+      ],
+      "properties": {
+        "checkinResponse": {
+          "type": "string",
+          "description": "Received Checkin Response"
+        },
+        "checkinResponseStatus": {
+          "type": "string",
+          "description": "Current status of checkin response",
+          "enum": [
+            "Pending",
+            "Received",
+            "Expired",
+            "Dismissed"
+          ]
+        },
+        "expectedDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Expected timestamp of checkin"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Status updated on Timestamp"
+        }
+      },
+      "title": "ResponseCheckinInfo",
+      "description": "Response Checkin Info"
+    },
+    "ResponseCheckinStatusPojo": {
+      "type": "object",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "responseCheckinDatas": {
+          "type": "array",
+          "description": "List of Checkins",
+          "items": {
+            "$ref": "#/definitions/ResponseCheckinData"
+          }
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code of the request"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transactionId of the request"
+        }
+      },
+      "title": "ResponseCheckinStatusPojo",
+      "description": "Response Checkin Status Pojo"
+    },
+    "ResponseDeviceStatus": {
+      "type": "object",
+      "required": [
+        "propertyName",
+        "propertyValue"
+      ],
+      "properties": {
+        "propertyName": {
+          "type": "string",
+          "description": "Name of the device property"
+        },
+        "propertyValue": {
+          "type": "string",
+          "description": "Value of the device property"
+        }
+      },
+      "title": "ResponseDeviceStatus",
+      "description": "Response Device Status"
+    },
+    "ResponseDeviceStatusDataPojo": {
+      "type": "object",
+      "required": [
+        "deviceStatusInfos",
+        "familyId"
+      ],
+      "properties": {
+        "deviceStatusInfos": {
+          "type": "array",
+          "description": "List of device infos with status",
+          "items": {
+            "$ref": "#/definitions/ResponseDeviceStatusInfo"
+          }
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id of the user"
+        }
+      },
+      "title": "ResponseDeviceStatusDataPojo",
+      "description": "Request Device Status Data Pojo"
+    },
+    "ResponseDeviceStatusInfo": {
+      "type": "object",
+      "required": [
+        "deviceStatusList",
+        "msisdn"
+      ],
+      "properties": {
+        "deviceStatusList": {
+          "type": "array",
+          "description": "List of device properties status",
+          "items": {
+            "$ref": "#/definitions/ResponseDeviceStatus"
+          }
+        },
+        "msisdn": {
+          "type": "string",
+          "description": "MSISDN of the user"
+        }
+      },
+      "title": "ResponseDeviceStatusInfo",
+      "description": "Response Device Status Info"
+    },
+    "ResponseFamilyMemberPojo": {
+      "type": "object",
+      "required": [
+        "airtelCustomer",
+        "membershipStatus",
+        "msisdn"
+      ],
+      "properties": {
+        "airtelCustomer": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0 if Airtel customer else 1"
+        },
+        "familyMemberRole": {
+          "type": "string",
+          "description": "Role assigned to the family member",
+          "enum": [
+            "ADMIN",
+            "SUB_ADMIN",
+            "SPONSER",
+            "MEMBER"
+          ]
+        },
+        "membershipStatus": {
+          "type": "string",
+          "description": "Status of the family member",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "msisdn": {
+          "type": "string",
+          "description": "MSISDN of the member"
+        }
+      },
+      "title": "ResponseFamilyMemberPojo",
+      "description": "Response Family Member Details"
+    },
+    "ResponseFamilyPojo": {
+      "type": "object",
+      "required": [
+        "familyDescription",
+        "familyName",
+        "familyStatus",
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "familyDescription": {
+          "type": "string",
+          "description": "Description of the family"
+        },
+        "familyId": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Unique identifier of the family"
+        },
+        "familyMemberPojos": {
+          "type": "array",
+          "description": "List of family members",
+          "items": {
+            "$ref": "#/definitions/ResponseFamilyMemberPojo"
+          }
+        },
+        "familyName": {
+          "type": "string",
+          "description": "Name of the family"
+        },
+        "familyStatus": {
+          "type": "string",
+          "description": "Status of the family",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code of the request"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transactionId of the request"
+        }
+      },
+      "title": "ResponseFamilyPojo",
+      "description": "Response Family Details"
+    },
+    "ResponseGenericPojo": {
+      "type": "object",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "responseCode": {
+          "type": "string",
+          "description": "Response code of the request"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transactionId of the request"
+        }
+      },
+      "title": "ResponseGenericPojo",
+      "description": "Response General Info"
+    },
+    "ResponseMemberPojo": {
+      "type": "object",
+      "required": [
+        "airtelCustomer",
+        "membershipStatus",
+        "msisdn"
+      ],
+      "properties": {
+        "airtelCustomer": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0 if Airtel customer else 1"
+        },
+        "familyId": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Unique identifier of the member"
+        },
+        "familyMemberRole": {
+          "type": "string",
+          "description": "Role assigned to the family member",
+          "enum": [
+            "ADMIN",
+            "SUB_ADMIN",
+            "SPONSER",
+            "MEMBER"
+          ]
+        },
+        "membershipStatus": {
+          "type": "string",
+          "description": "Status of the family member",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "msisdn": {
+          "type": "string",
+          "description": "MSISDN of the member"
+        }
+      },
+      "title": "ResponseMemberPojo",
+      "description": "Response Family Member Details"
+    },
+    "ResponseMembersPojo": {
+      "type": "object",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "memberPojos": {
+          "type": "array",
+          "description": "List of Members",
+          "items": {
+            "$ref": "#/definitions/ResponseMemberPojo"
+          }
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code of the request"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transactionId of the request"
+        }
+      },
+      "title": "ResponseMembersPojo",
+      "description": "Response Members Info"
+    },
+    "ResponseSosAcknowledgementData": {
+      "type": "object",
+      "properties": {
+        "acknowledgedBy": {
+          "type": "string",
+          "description": "MSISDN of the acknowledgedBy user "
+        },
+        "acknowledgementTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the Acknowledgement"
+        }
+      },
+      "title": "ResponseSosAcknowledgementData",
+      "description": "Response SOS Acknowledgement Data"
+    },
+    "ResponseSosData": {
+      "type": "object",
+      "required": [
+        "acknowledgementStatus",
+        "alarmStatus",
+        "familyId",
+        "initiatorMsisdn",
+        "sosAcknowledgementDatas",
+        "sosAlarmTimestamp",
+        "sosResolutionStatus"
+      ],
+      "properties": {
+        "acknowledgementStatus": {
+          "type": "string",
+          "description": "Current Acknowledgement Status of SOS",
+          "enum": [
+            "Acknowledged",
+            "UnAcknowledged"
+          ]
+        },
+        "alarmStatus": {
+          "type": "string",
+          "description": "Current Status of SOS alarm",
+          "enum": [
+            "Active",
+            "Inactive"
+          ]
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id"
+        },
+        "initiatorMsisdn": {
+          "type": "string",
+          "description": "MSISDN of th Trigger Initiator"
+        },
+        "location": {
+          "type": "string",
+          "description": "Location as 'lat,long' if available. If absent, Network falls back to LBS during SOS"
+        },
+        "resolutionTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time of the SOS resolution"
+        },
+        "resolvedBy": {
+          "type": "string",
+          "description": "MSISDN of the resolvedBy user "
+        },
+        "sosAcknowledgementDatas": {
+          "type": "array",
+          "description": "List of SOS Acknowledgements",
+          "items": {
+            "$ref": "#/definitions/ResponseSosAcknowledgementData"
+          }
+        },
+        "sosAlarmTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time of the Checkin request"
+        },
+        "sosResolutionStatus": {
+          "type": "string",
+          "description": "Current Resolution Status of SOS",
+          "enum": [
+            "Resolved",
+            "UnResolved"
+          ]
+        }
+      },
+      "title": "ResponseSosData",
+      "description": "Response SOS Data"
+    },
+    "ResponseSosStatusPojo": {
+      "type": "object",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "responseCode": {
+          "type": "string",
+          "description": "Response code of the request"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "responseSosDatas": {
+          "type": "array",
+          "description": "List of SOS data",
+          "items": {
+            "$ref": "#/definitions/ResponseSosData"
+          }
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transactionId of the request"
+        }
+      },
+      "title": "ResponseSosStatusPojo",
+      "description": "Response SOS Status Pojo"
+    },
+    "SpamAlertInfo": {
+      "type": "object",
+      "title": "SpamAlertInfo",
+      "description": "One spam / fraud call alert with data captured during the call",
+      "required": [
+        "alertId",
+        "memberMsisdn",
+        "alertType",
+        "status"
+      ],
+      "properties": {
+        "alertId": {
+          "type": "string",
+          "description": "Unique id of the alert"
+        },
+        "familyId": {
+          "type": "string",
+          "description": "Family Id of the circle"
+        },
+        "memberMsisdn": {
+          "type": "string",
+          "description": "MSISDN of the member on the suspicious call"
+        },
+        "callerMsisdn": {
+          "type": "string",
+          "description": "MSISDN / number of the spam caller (if captured; never shown to the circle)"
+        },
+        "alertType": {
+          "type": "string",
+          "description": "Type of alert",
+          "enum": [
+            "SPAM",
+            "OTP",
+            "FRAUD",
+            "PHISHING"
+          ]
+        },
+        "riskLevel": {
+          "type": "string",
+          "description": "Assessed risk",
+          "enum": [
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "otpCount": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Number of OTPs detected/read out during the call"
+        },
+        "otpShared": {
+          "type": "boolean",
+          "description": "Whether an OTP appears to have been shared"
+        },
+        "callTimerSeconds": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Call duration so far, in seconds (the live call timer)"
+        },
+        "callStartTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the call started"
+        },
+        "callActive": {
+          "type": "boolean",
+          "description": "True while the call is still ongoing"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current alert status",
+          "enum": [
+            "Active",
+            "Warned",
+            "Ended",
+            "Safe"
+          ]
+        },
+        "capturedData": {
+          "type": "string",
+          "description": "Other data captured for that call window (keywords, bank name, amount, etc.)"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional alert data"
+        },
+        "lastUpdatedOn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this alert was last updated"
+        }
+      }
+    },
+    "ResponseSpamAlertPojo": {
+      "type": "object",
+      "title": "ResponseSpamAlertPojo",
+      "description": "Response spam / fraud alert data",
+      "required": [
+        "responseCode",
+        "responseMessage",
+        "transactionId"
+      ],
+      "properties": {
+        "spamAlertInfos": {
+          "type": "array",
+          "description": "Matching alerts, newest first (one element when alertId supplied)",
+          "items": {
+            "$ref": "#/definitions/SpamAlertInfo"
+          }
+        },
+        "responseCode": {
+          "type": "string",
+          "description": "Response code of the request"
+        },
+        "responseMessage": {
+          "type": "string",
+          "description": "Response message"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transactionId of the request"
+        }
+      }
+    },
+    "RequestSpamAlertActionPojo": {
+      "type": "object",
+      "title": "RequestSpamAlertActionPojo",
+      "description": "Warning / action recorded by a responder on a spam alert",
+      "required": [
+        "alertId",
+        "responderMsisdn",
+        "spamAlertAction"
+      ],
+      "properties": {
+        "alertId": {
+          "type": "string",
+          "description": "Alert the action is taken on"
+        },
+        "responderMsisdn": {
+          "type": "string",
+          "description": "MSISDN of the responder taking the action"
+        },
+        "spamAlertAction": {
+          "type": "string",
+          "description": "Action taken by the responder",
+          "enum": [
+            "WARN",
+            "END_CALL",
+            "MARK_SAFE",
+            "NOTIFY_MEMBER",
+            "BLOCK_NUMBER"
+          ]
+        },
+        "actionTimestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the action was taken"
+        },
+        "message": {
+          "type": "string",
+          "description": "Optional warning text / note shown or logged"
+        },
+        "additionalData": {
+          "type": "string",
+          "description": "Any additional data"
+        }
+      }
+    }
+  }
+}
