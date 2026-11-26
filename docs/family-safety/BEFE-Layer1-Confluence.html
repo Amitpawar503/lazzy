@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>docs/family-safety/BEFE-Layer1-Confluence</title><style>:root{--bg:#fff;--fg:#1f2430;--muted:#5b6472;--line:#e3e7ee;--accent:#d0021b;--accent2:#1a5e9a;--code:#f4f6f9;--th:#f0f3f8;--zebra:#fafbfd;}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 80px;}
+.doc-head{border-bottom:3px solid var(--accent);padding-bottom:12px;margin-bottom:8px}
+.doc-head .kicker{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+h1{font-size:27px;line-height:1.25;margin:.2em 0 .3em}
+h2{font-size:21px;margin:1.7em 0 .5em;padding-top:.4em;border-top:1px solid var(--line);color:var(--accent2)}
+h3{font-size:17px;margin:1.2em 0 .4em}h4{font-size:14px;margin:1em 0 .3em;color:var(--muted)}
+a{color:var(--accent2);text-decoration:none}
+code{background:var(--code);padding:.1em .35em;border-radius:4px;font-size:.86em;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+pre code{display:block;padding:12px;overflow:auto;white-space:pre}
+pre{background:var(--code);padding:0;border-radius:6px;overflow:auto}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600}tr:nth-child(even){background:var(--zebra)}
+blockquote{border-left:4px solid var(--accent2);margin:12px 0;padding:6px 14px;background:#f6f9fc;color:var(--muted)}
+hr{border:0;border-top:1px solid var(--line);margin:24px 0}
+.mermaid{background:#fcfdff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:16px 0;text-align:center;overflow-x:auto}
+.mermaid svg{max-width:100%;height:auto}
+@media print{.mermaid,table,pre{break-inside:avoid}.wrap{padding:0 6px}table{font-size:10.5px}}</style></head><body><div class="wrap"><div class="doc-head"><div class="kicker">Airtel Family Safety · Orchestration Layer</div></div><article id="content"><h1>Family Safety — BEFE Layer-1 API Specification</h1>
+<blockquote>
+<p><strong>Space:</strong> Family Safety · <strong>Status:</strong> Draft for review · <strong>Owner:</strong> Channel / BEFE · <strong>Last updated:</strong> 26 Nov 2026
+<strong>Related:</strong> FSC v2.0 swagger (<code>/fsc</code>) · Whalebone API-flow HLD · End-to-End API-flow HLD · Device-Info Requirements</p>
+</blockquote>
+<h2>1. Overview</h2>
+<p>The <strong>BEFE (Guardian) Layer-1</strong> is the app-facing contract. The app makes <strong>one aggregate call per screen</strong>; BEFE lands the call on <strong>Channel BE</strong>, which fans out to the downstream reads (<strong>FSC <code>family/get</code>, <code>member/get</code>, <code>device/status/fetch</code>, <code>history/fetch</code></strong> + UCM titles + Network active-services) and returns one merged response.</p>
+<p><strong>Three reads cover the Safety Circle:</strong></p>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>Screen</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET /home</code></td>
+<td>Home (04), Settings (11)</td>
+<td>Family + members (relation, role, responder) + <strong>signals</strong> + <strong>active services</strong> + subscription + recent history</td>
+</tr>
+<tr>
+<td><code>GET /members/{membershipId}</code></td>
+<td>Member page (05), Phone/network (13)</td>
+<td>Member services + full <strong>device status</strong> + check-ins + safety report</td>
+</tr>
+<tr>
+<td><code>GET /history</code></td>
+<td>Alerts &amp; history (12)</td>
+<td>Role-scoped alert/activity history</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>Base path:</strong> <code>/befe/fsc/v1</code></li>
+<li><strong>Identity:</strong> <code>familyId = circleId</code>, <code>msisdn = deviceId = subscriptionId</code>.</li>
+<li><strong>Envelope (all responses):</strong> <code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>, <code>traceId</code>.</li>
+</ul>
+<h2>2. Architecture</h2>
+<pre><code>App ──(Layer-1)──▶ BEFE / Guardian ──▶ Channel BE (orchestrator) ──▶ FSC (family/get, member/get, device/status/fetch, history/fetch)
+                                                                   ├─▶ UCM (relationship titles)
+                                                                   └─▶ Network (active-services, reachability)
+</code></pre>
+<p>Channel BE is <strong>stateless, consume-only</strong> (no DP persist); it holds the membership↔subscriptionId linkage and the service→feature map.</p>
+<hr>
+<h2>3. API 1 — <code>GET /home</code></h2>
+<p><strong>Purpose:</strong> the Home/Family screen in one call.
+<strong>Query params:</strong> <code>familyId</code> (required), <code>msisdn</code> (caller, for role scoping).</p>
+<p><strong>Fans out to:</strong> <code>family/get</code> + <code>member/get</code>(all) + <code>device/status/fetch</code>(familyId) + <code>history/fetch</code>(count/recent) + UCM titles + Network active-services.</p>
+<p><strong>Response — top level</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>familyId</code>, <code>familyName</code></td>
+<td>string</td>
+<td>circle identity</td>
+</tr>
+<tr>
+<td><code>circleStatus</code></td>
+<td>enum</td>
+<td>Active / Expiring / Paused / Closing</td>
+</tr>
+<tr>
+<td><code>subscription</code></td>
+<td>object</td>
+<td>status, planId, dates, banners</td>
+</tr>
+<tr>
+<td><code>me</code></td>
+<td>MemberCard</td>
+<td>the caller's own card</td>
+</tr>
+<tr>
+<td><code>members[]</code></td>
+<td>MemberCard</td>
+<td>other members</td>
+</tr>
+<tr>
+<td><code>responders[]</code></td>
+<td>string[]</td>
+<td>responder MSISDNs</td>
+</tr>
+<tr>
+<td><code>activeAlertsCount</code></td>
+<td>int</td>
+<td>badge on Alerts &amp; history</td>
+</tr>
+<tr>
+<td><code>recentHistory[]</code></td>
+<td>HistoryItem</td>
+<td>last few events</td>
+</tr>
+</tbody></table>
+<p><strong>MemberCard</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>membershipId</code>, <code>msisdn</code>, <code>displayName</code></td>
+<td>string</td>
+<td>FSC member</td>
+</tr>
+<tr>
+<td><code>relationship</code></td>
+<td>string</td>
+<td><strong>UCM</strong> (Mom/Dad)</td>
+</tr>
+<tr>
+<td><code>airtelCustomer</code></td>
+<td>int</td>
+<td>0 Airtel else 1</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>enum</td>
+<td>ADMIN / CO_ADMIN / SUB_ADMIN / SPONSER / MEMBER</td>
+</tr>
+<tr>
+<td><code>isResponder</code></td>
+<td>bool</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>membershipStatus</code></td>
+<td>enum</td>
+<td>Active / InvitePending / Paused / Inactive</td>
+</tr>
+<tr>
+<td><code>signals</code></td>
+<td>Signals</td>
+<td>FSC device/status + Network</td>
+</tr>
+<tr>
+<td><code>activeServices[]</code></td>
+<td>ServiceStatus</td>
+<td>Network — available/working per service</td>
+</tr>
+<tr>
+<td><code>latestCheckInSummary</code></td>
+<td>string</td>
+<td>FSC check-in</td>
+</tr>
+<tr>
+<td><code>activeAlert</code></td>
+<td>AlertSummary</td>
+<td>highest-priority</td>
+</tr>
+<tr>
+<td><code>featuresBrokenHint</code></td>
+<td>string</td>
+<td>e.g. "Location off, SOS won't share location"</td>
+</tr>
+</tbody></table>
+<p><strong>Example</strong> — see swagger "Example Value" or §6.1 below.</p>
+<hr>
+<h2>4. API 2 — <code>GET /members/{membershipId}</code></h2>
+<p><strong>Purpose:</strong> member detail page in one call.
+<strong>Path:</strong> <code>membershipId</code>. <strong>Query:</strong> <code>familyId</code> (required).</p>
+<p><strong>Fans out to:</strong> <code>member/get</code>(one) + <code>device/status/fetch</code>(msisdn) + <code>trigger/checkin/status/check</code> (+ Whalebone status if advanced).</p>
+<p><strong>Response</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>member</code></td>
+<td>MemberCard</td>
+<td>identity + signals</td>
+</tr>
+<tr>
+<td><code>services[]</code></td>
+<td>ServiceStatus</td>
+<td>per-service availability/health</td>
+</tr>
+<tr>
+<td><code>deviceDetail</code></td>
+<td>DeviceDetail</td>
+<td>full device status (battery, ringer, phoneOff, reachable, signal, SIM, checkinWorking, sosWorking, location)</td>
+</tr>
+<tr>
+<td><code>latestCheckIn</code>, <code>checkInHistory[]</code></td>
+<td>CheckInEntry</td>
+<td>FSC check-in</td>
+</tr>
+<tr>
+<td><code>activeAlert</code></td>
+<td>AlertSummary</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>safetyReportUrl</code></td>
+<td>string</td>
+<td>3-month Safety Report deep link</td>
+</tr>
+<tr>
+<td><code>deviceSafety</code></td>
+<td>object</td>
+<td>status + protections (if advanced; Whalebone)</td>
+</tr>
+<tr>
+<td><code>parental</code></td>
+<td>object</td>
+<td>activated + screen-time (if advanced)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. API 3 — <code>GET /history</code></h2>
+<p><strong>Purpose:</strong> alerts &amp; activity history.
+<strong>Query:</strong> <code>familyId</code> (required), <code>msisdn</code>, <code>eventType</code> (CHECK_IN/SOS/FRAUD/ALARM/DEVICE_STATUS), <code>scope</code> (active/history/all), <code>role</code>, <code>fromDate</code>, <code>toDate</code>.</p>
+<p><strong>Fans out to:</strong> <code>history/fetch</code> (+ UCM titles). <strong>Role-scoped:</strong> fraud &amp; low-battery visible to responders only.</p>
+<p><strong>Response:</strong> <code>historyInfos[]</code> of <code>HistoryItem { eventId, eventType, eventTimestamp, memberMsisdn, displayName, status, message, additionalData }</code>.</p>
+<hr>
+<h2>6. Example responses</h2>
+<h3>6.1 <code>GET /home</code></h3>
+<pre><code class="language-json">{ "familyId":"FAM1024","circleStatus":"Active",
+  "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
+    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true},
+    "activeServices":[{"service":"SOS","working":true,"status":"WORKING"}] },
+  "members":[
+    {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
+     "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"},
+     "activeServices":[{"service":"DEVICE_SAFETY","working":true,"status":"WORKING"}],
+     "latestCheckInSummary":"Paused until phone is back on"},
+    {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
+     "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"},
+     "activeServices":[{"service":"SOS","available":false,"working":false,"status":"MISSING_PERMISSION","missingPermission":"LOCATION"}],
+     "featuresBrokenHint":"Location off, SOS won't share location"}],
+  "responders":["919812300001","919812300002"],"activeAlertsCount":1,
+  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3a" }
+</code></pre>
+<h3>6.2 <code>GET /members/M003</code> (Dad offline)</h3>
+<pre><code class="language-json">{ "member":{"membershipId":"M003","displayName":"Dad","role":"MEMBER",
+    "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6}},
+  "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
+  "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
+    "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
+    "appInstalled":true,"lastOnNetworkAt":"2026-11-25T18:40:00Z"},
+  "deviceSafety":{"status":"ON","protections":["Dangerous websites","Scam links","Ads"]},
+  "safetyReportUrl":"https://airtel.in/safety-report/919812300003",
+  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3b" }
+</code></pre>
+<h3>6.3 <code>GET /history</code></h3>
+<pre><code class="language-json">{ "historyInfos":[
+   {"eventId":"H101","eventType":"CHECK_IN","memberMsisdn":"919812300002","displayName":"Mom","status":"Received","message":"Mom replied 'I'm fine' to the 9:00 am check-in","eventTimestamp":"2026-11-26T09:04:00Z"},
+   {"eventId":"H099","eventType":"FRAUD","displayName":"Mom","status":"Warned","message":"Mom got a spam call — you sent her a warning","eventTimestamp":"2026-11-25T13:42:00Z"}],
+  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3c" }
+</code></pre>
+<hr>
+<h2>7. Enumerations</h2>
+<table>
+<thead>
+<tr>
+<th>Enum</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>circleStatus</code></td>
+<td>Active, Expiring, Paused, Closing</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>ADMIN, CO_ADMIN, SUB_ADMIN, SPONSER, MEMBER</td>
+</tr>
+<tr>
+<td><code>membershipStatus</code></td>
+<td>Active, InvitePending, Paused, Inactive</td>
+</tr>
+<tr>
+<td><code>service</code></td>
+<td>CHECKIN, SOS, FRAUD_SPAM, REACHABILITY, SAFE_TRIP, DEVICE_SAFETY, PARENTAL_CONTROLS</td>
+</tr>
+<tr>
+<td><code>ServiceStatus.status</code></td>
+<td>WORKING, NOT_WORKING, MISSING_PERMISSION, NOT_SUBSCRIBED, NOT_AVAILABLE</td>
+</tr>
+<tr>
+<td><code>reachabilityReason</code></td>
+<td>REACHABLE, SWITCHED_OFF, NO_COVERAGE, SWITCHED_OFF_OR_FLIGHT, BATTERY_DEAD, INACTIVE_NUMBER</td>
+</tr>
+<tr>
+<td><code>ringerMode</code></td>
+<td>NORMAL, VIBRATE, SILENT</td>
+</tr>
+<tr>
+<td><code>simStatus</code></td>
+<td>ACTIVE, INACTIVE, RECHARGE_LAPSED, NEW_OWNER, PORTED_OUT</td>
+</tr>
+<tr>
+<td><code>alertType</code></td>
+<td>SOS, CHECKIN, CHECKIN_NEED_HELP, FRAUD_SPAM, LOW_BATTERY, BACK_ONLINE, GEOFENCE, DEVICE_SAFETY, CIRCLE_EVENT, PARENTAL_REQUEST</td>
+</tr>
+<tr>
+<td><code>eventType</code> (history)</td>
+<td>CHECK_IN, SOS, FRAUD, ALARM, DEVICE_STATUS</td>
+</tr>
+</tbody></table>
+<h2>8. Error codes (envelope)</h2>
+<table>
+<thead>
+<tr>
+<th>responseCode</th>
+<th>HTTP</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>0</code></td>
+<td>200</td>
+<td>Success</td>
+</tr>
+<tr>
+<td><code>SH-40001</code></td>
+<td>400</td>
+<td>Missing/invalid <code>familyId</code></td>
+</tr>
+<tr>
+<td><code>SH-40301</code></td>
+<td>403</td>
+<td>Caller not a member of the circle (BOLA)</td>
+</tr>
+<tr>
+<td><code>SH-40401</code></td>
+<td>404</td>
+<td>Family / member not found</td>
+</tr>
+<tr>
+<td><code>SH-50302</code></td>
+<td>502</td>
+<td>Downstream (FSC/UCM/Network) failure</td>
+</tr>
+</tbody></table>
+<h2>9. Non-functional</h2>
+<ul>
+<li><strong>Caching:</strong> <code>/home</code> is a heavy fan-out — cache per family ~1–2 min; signals are hourly-cadence, SOS/live read fresh.</li>
+<li><strong>Role scoping:</strong> pass caller <code>msisdn</code>/<code>role</code>; fraud &amp; low-battery are responder-only in <code>/history</code>.</li>
+<li><strong>Non-Airtel members:</strong> network signals absent → <code>Signals.available=false</code>; app shows the fixed "unavailable features" message.</li>
+<li><strong>Tracing:</strong> <code>X-Request-ID</code> propagated App → BEFE → Channel BE → downstream; returned as <code>traceId</code>.</li>
+</ul>
+<h2>10. Downstream mapping (quick reference)</h2>
+<table>
+<thead>
+<tr>
+<th>BEFE API</th>
+<th>FSC</th>
+<th>UCM</th>
+<th>Network/Whalebone</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/home</code></td>
+<td>family/get, member/get, device/status/fetch, history/fetch</td>
+<td>titles</td>
+<td>active-services; Whalebone DS status</td>
+</tr>
+<tr>
+<td><code>/members/{id}</code></td>
+<td>member/get, device/status/fetch, trigger/checkin/status/check</td>
+<td>title</td>
+<td>Whalebone DS/parental (if advanced)</td>
+</tr>
+<tr>
+<td><code>/history</code></td>
+<td>history/fetch</td>
+<td>titles</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h2>11. Change log</h2>
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Version</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>26 Nov 2026</td>
+<td>1.0</td>
+<td>Initial Layer-1 spec: <code>/home</code>, <code>/members/{id}</code>, <code>/history</code> with aggregate DTOs + examples</td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>Attachments: <code>befe-layer1-swagger.html</code> (Swagger UI, Try-it-out), <code>befe-layer1-swagger.json</code> (import to Postman). This page is the source of truth for the App ↔ BEFE contract.</em></p>
+</article></div></body></html>

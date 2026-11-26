@@ -62,6 +62,211 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/HomeResponse"
+            },
+            "examples": {
+              "application/json": {
+                "familyId": "FAM1024",
+                "familyName": "Vaibhav's Safety Circle",
+                "circleStatus": "Active",
+                "subscription": {
+                  "status": "Active",
+                  "planId": "SC_PREPAID_999",
+                  "startDate": "2026-10-12",
+                  "endDate": "2027-10-12",
+                  "banners": []
+                },
+                "me": {
+                  "membershipId": "M001",
+                  "msisdn": "919812300001",
+                  "displayName": "Vaibhav",
+                  "relationship": "SELF",
+                  "airtelCustomer": 0,
+                  "role": "ADMIN",
+                  "isResponder": true,
+                  "membershipStatus": "Active",
+                  "signals": {
+                    "reachabilityReason": "REACHABLE",
+                    "batteryPercent": 82,
+                    "charging": false,
+                    "ringerMode": "SILENT",
+                    "networkType": "4G",
+                    "networkStrength": "STRONG",
+                    "lastOnNetworkAt": "2026-11-26T09:41:00Z",
+                    "lastUpdatedOn": "2026-11-26T09:41:00Z",
+                    "available": true
+                  },
+                  "activeServices": [
+                    {
+                      "service": "SOS",
+                      "available": true,
+                      "working": true,
+                      "status": "WORKING"
+                    },
+                    {
+                      "service": "CHECKIN",
+                      "available": true,
+                      "working": true,
+                      "status": "WORKING"
+                    },
+                    {
+                      "service": "FRAUD_SPAM",
+                      "available": true,
+                      "working": true,
+                      "status": "WORKING"
+                    }
+                  ],
+                  "latestCheckInSummary": null,
+                  "activeAlert": null,
+                  "featuresBrokenHint": null
+                },
+                "members": [
+                  {
+                    "membershipId": "M002",
+                    "msisdn": "919812300002",
+                    "displayName": "Mom",
+                    "relationship": "Mother",
+                    "airtelCustomer": 0,
+                    "role": "CO_ADMIN",
+                    "isResponder": true,
+                    "membershipStatus": "Active",
+                    "signals": {
+                      "reachabilityReason": "REACHABLE",
+                      "batteryPercent": 64,
+                      "charging": false,
+                      "ringerMode": "NORMAL",
+                      "networkType": "4G",
+                      "networkStrength": "MODERATE",
+                      "lastOnNetworkAt": "2026-11-26T09:37:00Z",
+                      "lastUpdatedOn": "2026-11-26T09:37:00Z",
+                      "available": true
+                    },
+                    "activeServices": [
+                      {
+                        "service": "FRAUD_SPAM",
+                        "available": true,
+                        "working": true,
+                        "status": "WORKING"
+                      },
+                      {
+                        "service": "SOS",
+                        "available": true,
+                        "working": true,
+                        "status": "WORKING"
+                      }
+                    ],
+                    "latestCheckInSummary": "Replied 'I'm fine' at 9:04 am",
+                    "activeAlert": null,
+                    "featuresBrokenHint": null
+                  },
+                  {
+                    "membershipId": "M003",
+                    "msisdn": "919812300003",
+                    "displayName": "Dad",
+                    "relationship": "Father",
+                    "airtelCustomer": 0,
+                    "role": "MEMBER",
+                    "isResponder": false,
+                    "membershipStatus": "Active",
+                    "signals": {
+                      "reachabilityReason": "SWITCHED_OFF",
+                      "batteryPercent": null,
+                      "lastBatteryLevel": 6,
+                      "charging": false,
+                      "ringerMode": "NORMAL",
+                      "networkType": "NO_NETWORK",
+                      "networkStrength": "NONE",
+                      "lastOnNetworkAt": "2026-11-25T18:40:00Z",
+                      "lastUpdatedOn": "2026-11-25T18:40:00Z",
+                      "available": true
+                    },
+                    "activeServices": [
+                      {
+                        "service": "DEVICE_SAFETY",
+                        "available": true,
+                        "working": true,
+                        "status": "WORKING"
+                      }
+                    ],
+                    "latestCheckInSummary": "Paused until phone is back on",
+                    "activeAlert": {
+                      "alertId": "AL77",
+                      "alertType": "BACK_ONLINE",
+                      "status": "OPEN",
+                      "createdOn": "2026-11-25T18:40:00Z",
+                      "summary": "Phone was off — notify when back"
+                    },
+                    "featuresBrokenHint": null
+                  },
+                  {
+                    "membershipId": "M004",
+                    "msisdn": "919812300004",
+                    "displayName": "Riya",
+                    "relationship": "Daughter",
+                    "airtelCustomer": 1,
+                    "role": "MEMBER",
+                    "isResponder": false,
+                    "membershipStatus": "Active",
+                    "signals": {
+                      "reachabilityReason": "REACHABLE",
+                      "batteryPercent": 58,
+                      "charging": false,
+                      "ringerMode": "VIBRATE",
+                      "networkType": "WIFI",
+                      "networkStrength": "STRONG",
+                      "lastOnNetworkAt": "2026-11-26T09:39:00Z",
+                      "lastUpdatedOn": "2026-11-26T09:39:00Z",
+                      "available": true
+                    },
+                    "activeServices": [
+                      {
+                        "service": "PARENTAL_CONTROLS",
+                        "available": true,
+                        "working": true,
+                        "status": "WORKING"
+                      },
+                      {
+                        "service": "SOS",
+                        "available": false,
+                        "working": false,
+                        "status": "MISSING_PERMISSION",
+                        "missingPermission": "LOCATION"
+                      }
+                    ],
+                    "latestCheckInSummary": "Replied 'Yes, I've reached' at 8:03 am",
+                    "activeAlert": null,
+                    "featuresBrokenHint": "Location off, SOS won't share location"
+                  }
+                ],
+                "responders": [
+                  "919812300001",
+                  "919812300002"
+                ],
+                "activeAlertsCount": 1,
+                "recentHistory": [
+                  {
+                    "eventId": "H101",
+                    "eventType": "CHECK_IN",
+                    "eventTimestamp": "2026-11-26T09:04:00Z",
+                    "memberMsisdn": "919812300002",
+                    "displayName": "Mom",
+                    "status": "Received",
+                    "message": "Mom replied 'I'm fine' to the 9:00 am check-in"
+                  },
+                  {
+                    "eventId": "H100",
+                    "eventType": "DEVICE_STATUS",
+                    "eventTimestamp": "2026-11-25T18:40:00Z",
+                    "memberMsisdn": "919812300003",
+                    "displayName": "Dad",
+                    "status": "Active",
+                    "message": "Dad's phone was off — off for 4 hours, back on at 10:40 pm"
+                  }
+                ],
+                "responseCode": "0",
+                "responseMessage": "SUCCESS",
+                "transactionId": "txn-7f3a",
+                "traceId": "b70f89b1"
+              }
             }
           },
           "400": {
@@ -110,6 +315,114 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/MemberDetailResponse"
+            },
+            "examples": {
+              "application/json": {
+                "member": {
+                  "membershipId": "M003",
+                  "msisdn": "919812300003",
+                  "displayName": "Dad",
+                  "relationship": "Father",
+                  "airtelCustomer": 0,
+                  "role": "MEMBER",
+                  "isResponder": false,
+                  "membershipStatus": "Active",
+                  "signals": {
+                    "reachabilityReason": "SWITCHED_OFF",
+                    "lastBatteryLevel": 6,
+                    "ringerMode": "NORMAL",
+                    "networkType": "NO_NETWORK",
+                    "networkStrength": "NONE",
+                    "lastOnNetworkAt": "2026-11-25T18:40:00Z",
+                    "available": true
+                  },
+                  "latestCheckInSummary": "Paused until phone is back on",
+                  "activeAlert": null
+                },
+                "services": [
+                  {
+                    "service": "CHECKIN",
+                    "available": true,
+                    "working": true,
+                    "status": "WORKING"
+                  },
+                  {
+                    "service": "FRAUD_SPAM",
+                    "available": true,
+                    "working": true,
+                    "status": "WORKING"
+                  },
+                  {
+                    "service": "SOS",
+                    "available": true,
+                    "working": false,
+                    "status": "NOT_WORKING",
+                    "missingPermission": "LOCATION"
+                  },
+                  {
+                    "service": "DEVICE_SAFETY",
+                    "available": true,
+                    "working": true,
+                    "status": "WORKING"
+                  }
+                ],
+                "deviceDetail": {
+                  "batteryPercent": null,
+                  "lastBatteryLevel": 6,
+                  "charging": false,
+                  "ringerOn": true,
+                  "ringerMode": "NORMAL",
+                  "phoneOff": true,
+                  "reachable": false,
+                  "reachabilityReason": "SWITCHED_OFF",
+                  "networkType": "NO_NETWORK",
+                  "networkStrength": "NONE",
+                  "lockState": "UNKNOWN",
+                  "simStatus": "ACTIVE",
+                  "checkinWorking": false,
+                  "sosWorking": false,
+                  "appInstalled": true,
+                  "location": null,
+                  "lastSeen": "2026-11-25T18:40:00Z",
+                  "lastOnNetworkAt": "2026-11-25T18:40:00Z",
+                  "lastUpdatedOn": "2026-11-25T18:40:00Z",
+                  "available": true
+                },
+                "latestCheckIn": {
+                  "id": "CK55",
+                  "status": "Responded",
+                  "response": "I'm fine",
+                  "scheduleType": "Periodic",
+                  "lastUpdatedOn": "2026-11-25T09:04:00Z"
+                },
+                "checkInHistory": [
+                  {
+                    "id": "CK55",
+                    "status": "Responded",
+                    "response": "I'm fine",
+                    "scheduleType": "Periodic",
+                    "lastUpdatedOn": "2026-11-25T09:04:00Z"
+                  }
+                ],
+                "activeAlert": null,
+                "safetyReportUrl": "https://airtel.in/safety-report/919812300003",
+                "deviceSafety": {
+                  "status": "ON",
+                  "protections": [
+                    "Dangerous websites",
+                    "Scam links",
+                    "Ads"
+                  ]
+                },
+                "parental": {
+                  "activated": false,
+                  "screenTimeDailyMinutes": null
+                },
+                "responseCode": "0",
+                "responseMessage": "SUCCESS",
+                "transactionId": "txn-7f3b",
+                "traceId": "b70f89b1"
+              }
             }
           },
           "400": {
@@ -213,6 +526,52 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/HistoryResponse"
+            },
+            "examples": {
+              "application/json": {
+                "historyInfos": [
+                  {
+                    "eventId": "H101",
+                    "eventType": "CHECK_IN",
+                    "eventTimestamp": "2026-11-26T09:04:00Z",
+                    "memberMsisdn": "919812300002",
+                    "displayName": "Mom",
+                    "status": "Received",
+                    "message": "Mom replied 'I'm fine' to the 9:00 am check-in"
+                  },
+                  {
+                    "eventId": "H100",
+                    "eventType": "DEVICE_STATUS",
+                    "eventTimestamp": "2026-11-25T18:40:00Z",
+                    "memberMsisdn": "919812300003",
+                    "displayName": "Dad",
+                    "status": "Active",
+                    "message": "Dad's phone was off — off for 4 hours, back on at 10:40 pm"
+                  },
+                  {
+                    "eventId": "H099",
+                    "eventType": "FRAUD",
+                    "eventTimestamp": "2026-11-25T13:42:00Z",
+                    "memberMsisdn": "919812300002",
+                    "displayName": "Mom",
+                    "status": "Warned",
+                    "message": "Mom got a spam call — you sent her a warning"
+                  },
+                  {
+                    "eventId": "H098",
+                    "eventType": "DEVICE_STATUS",
+                    "eventTimestamp": "2026-10-16T06:12:00Z",
+                    "memberMsisdn": "919812300003",
+                    "displayName": "Dad",
+                    "status": "On",
+                    "message": "Device Safety is on for Dad — all protections on"
+                  }
+                ],
+                "responseCode": "0",
+                "responseMessage": "SUCCESS",
+                "transactionId": "txn-7f3c",
+                "traceId": "b70f89b1"
+              }
             }
           },
           "400": {
