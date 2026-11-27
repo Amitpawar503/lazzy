@@ -17,7 +17,10 @@ The **BEFE (Guardian) Layer-1** is the app-facing contract. The app makes **one 
 
 - **Base path:** `/befe/fsc/v1`
 - **Identity:** `familyId = circleId`, `msisdn = deviceId = subscriptionId`.
-- **Envelope (all responses):** `responseCode`, `responseMessage`, `transactionId`, `traceId`.
+- **Envelope (all responses):** `{ data, traceId, status, message, errors, statusCode }`.
+  - Success: `data` = payload, `status="SUCCESS"`, `errors=null`, `statusCode=200`.
+  - Error: `data=null`, `status="FAILURE"`, `errors=[{code,message,field}]`, `statusCode=4xx/5xx`.
+  - `errors[].code` (e.g. `SH-40001`) = application error code (namespace `SH` = Safety-Hub): a **stable id independent of HTTP status/wording**, for programmatic client handling, log/support correlation. `statusCode` = HTTP transport category; the app `code` = the precise business error; `field` = offending param.
 
 ## 2. Architecture
 
@@ -106,36 +109,39 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 
 ### 6.1 `GET /home`
 ```json
-{ "familyId":"FAM1024","circleStatus":"Active",
-  "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
-    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
-  "members":[
-    {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
-     "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"}},
-    {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
-     "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"}}],
-  "responders":["919812300001","919812300002"],"activeAlertsCount":1,
-  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3a" }
+{ "data": {
+    "familyId":"FAM1024","circleStatus":"Active",
+    "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
+      "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
+    "members":[
+      {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
+       "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"}},
+      {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
+       "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"}}],
+    "responders":["919812300001","919812300002"],"activeAlertsCount":1 },
+  "traceId":"dajkkl_12373","status":"SUCCESS","message":"Family home fetched successfully","errors":null,"statusCode":200 }
 ```
 
 ### 6.2 `GET /members/M003` (Dad offline)
 ```json
-{ "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active"},
-  "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
-  "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
-    "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
-    "appInstalled":true,"lastOnNetworkAt":"2026-11-25T18:40:00Z"},
-  "deviceSafety":{"status":"ON","protections":["Dangerous websites","Scam links","Ads"]},
-  "safetyReportUrl":"https://airtel.in/safety-report/919812300003",
-  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3b" }
+{ "data": {
+    "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active"},
+    "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
+    "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
+      "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
+      "appInstalled":true,"lastOnNetworkAt":"2026-11-25T18:40:00Z"},
+    "deviceSafety":{"status":"ON","protections":["Dangerous websites","Scam links","Ads"]},
+    "safetyReportUrl":"https://airtel.in/safety-report/919812300003" },
+  "traceId":"dajkkl_12374","status":"SUCCESS","message":"Member fetched successfully","errors":null,"statusCode":200 }
 ```
 
 ### 6.3 `GET /history`
 ```json
-{ "historyInfos":[
-   {"eventId":"H101","eventType":"CHECK_IN","memberMsisdn":"919812300002","displayName":"Mom","status":"Received","message":"Mom replied 'I'm fine' to the 9:00 am check-in","eventTimestamp":"2026-11-26T09:04:00Z"},
-   {"eventId":"H099","eventType":"FRAUD","displayName":"Mom","status":"Warned","message":"Mom got a spam call — you sent her a warning","eventTimestamp":"2026-11-25T13:42:00Z"}],
-  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3c" }
+{ "data": {
+    "historyInfos":[
+      {"eventId":"H101","eventType":"CHECK_IN","memberMsisdn":"919812300002","displayName":"Mom","status":"Received","message":"Mom replied 'I'm fine' to the 9:00 am check-in","eventTimestamp":"2026-11-26T09:04:00Z"},
+      {"eventId":"H099","eventType":"FRAUD","displayName":"Mom","status":"Warned","message":"Mom got a spam call — you sent her a warning","eventTimestamp":"2026-11-25T13:42:00Z"}] },
+  "traceId":"dajkkl_12375","status":"SUCCESS","message":"History fetched successfully","errors":null,"statusCode":200 }
 ```
 
 ---
@@ -155,15 +161,28 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 | `alertType` | SOS, CHECKIN, CHECKIN_NEED_HELP, FRAUD_SPAM, LOW_BATTERY, BACK_ONLINE, GEOFENCE, DEVICE_SAFETY, CIRCLE_EVENT, PARENTAL_REQUEST |
 | `eventType` (history) | CHECK_IN, SOS, FRAUD, ALARM, DEVICE_STATUS |
 
-## 8. Error codes (envelope)
+## 8. Error envelope & codes
 
-| responseCode | HTTP | Meaning |
-|---|---|---|
-| `0` | 200 | Success |
-| `SH-40001` | 400 | Missing/invalid `familyId` |
-| `SH-40301` | 403 | Caller not a member of the circle (BOLA) |
-| `SH-40401` | 404 | Family / member not found |
-| `SH-50302` | 502 | Downstream (FSC/UCM/Network) failure |
+Error response shape:
+```json
+{ "data": null, "traceId": "b70f89b1", "status": "FAILURE",
+  "message": "Query parameter 'familyId' is required",
+  "errors": [ { "code": "SH-40001", "message": "Query parameter 'familyId' is required", "field": "familyId" } ],
+  "statusCode": 400 }
+```
+
+| app `code` | `statusCode` | type | Meaning |
+|---|---|---|---|
+| `SH-40001` | 400 | VALIDATION | Missing/invalid `familyId` / param |
+| `SH-40101` | 401 | AUTH | Missing/invalid token |
+| `SH-40301` | 403 | FORBIDDEN | Caller not a member of the circle (BOLA) |
+| `SH-40401` | 404 | RESOURCE_NOT_FOUND | Family / member not found |
+| `SH-42901` | 429 | RATE_LIMIT | Per-MSISDN rate limit — retry after backoff |
+| `SH-50000` | 500 | UNKNOWN | Unexpected orchestrator error |
+| `SH-50302` | 502 | DOWNSTREAM | FSC / UCM / Network / Whalebone failed |
+| `SH-50401` | 504 | DOWNSTREAM | Downstream timed out |
+
+**Why an app `code` in addition to `statusCode`?** `statusCode` is the HTTP transport category (many errors share 400/502); the app `code` (`SH-xxxxx`) is a **stable, precise business-error id** that doesn't change with HTTP status or message wording — used by the client to branch logic, and by support/ops to correlate logs via `traceId`. `field` names the offending parameter.
 
 ## 9. Non-functional
 

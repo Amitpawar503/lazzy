@@ -61,109 +61,112 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/HomeResponse"
+              "$ref": "#/definitions/HomeApiResponse"
             },
             "examples": {
               "application/json": {
-                "familyId": "FAM1024",
-                "familyName": "Vaibhav's Safety Circle",
-                "circleStatus": "Active",
-                "me": {
-                  "membershipId": "M001",
-                  "msisdn": "919812300001",
-                  "displayName": "Vaibhav",
-                  "relationship": "SELF",
-                  "airtelCustomer": 0,
-                  "role": "ADMIN",
-                  "isResponder": true,
-                  "membershipStatus": "Active",
-                  "signals": {
-                    "reachabilityReason": "REACHABLE",
-                    "batteryPercent": 82,
-                    "charging": false,
-                    "ringerMode": "SILENT",
-                    "networkType": "4G",
-                    "networkStrength": "STRONG",
-                    "lastOnNetworkAt": "2026-11-26T09:41:00Z",
-                    "lastUpdatedOn": "2026-11-26T09:41:00Z",
-                    "available": true
-                  }
-                },
-                "members": [
-                  {
-                    "membershipId": "M002",
-                    "msisdn": "919812300002",
-                    "displayName": "Mom",
-                    "relationship": "Mother",
+                "data": {
+                  "familyId": "FAM1024",
+                  "familyName": "Vaibhav's Safety Circle",
+                  "circleStatus": "Active",
+                  "me": {
+                    "membershipId": "M001",
+                    "msisdn": "919812300001",
+                    "displayName": "Vaibhav",
+                    "relationship": "SELF",
                     "airtelCustomer": 0,
-                    "role": "CO_ADMIN",
+                    "role": "ADMIN",
                     "isResponder": true,
                     "membershipStatus": "Active",
                     "signals": {
                       "reachabilityReason": "REACHABLE",
-                      "batteryPercent": 64,
+                      "batteryPercent": 82,
                       "charging": false,
-                      "ringerMode": "NORMAL",
+                      "ringerMode": "SILENT",
                       "networkType": "4G",
-                      "networkStrength": "MODERATE",
-                      "lastOnNetworkAt": "2026-11-26T09:37:00Z",
-                      "lastUpdatedOn": "2026-11-26T09:37:00Z",
-                      "available": true
-                    }
-                  },
-                  {
-                    "membershipId": "M003",
-                    "msisdn": "919812300003",
-                    "displayName": "Dad",
-                    "relationship": "Father",
-                    "airtelCustomer": 0,
-                    "role": "MEMBER",
-                    "isResponder": false,
-                    "membershipStatus": "Active",
-                    "signals": {
-                      "reachabilityReason": "SWITCHED_OFF",
-                      "batteryPercent": null,
-                      "lastBatteryLevel": 6,
-                      "charging": false,
-                      "ringerMode": "NORMAL",
-                      "networkType": "NO_NETWORK",
-                      "networkStrength": "NONE",
-                      "lastOnNetworkAt": "2026-11-25T18:40:00Z",
-                      "lastUpdatedOn": "2026-11-25T18:40:00Z",
-                      "available": true
-                    }
-                  },
-                  {
-                    "membershipId": "M004",
-                    "msisdn": "919812300004",
-                    "displayName": "Riya",
-                    "relationship": "Daughter",
-                    "airtelCustomer": 1,
-                    "role": "MEMBER",
-                    "isResponder": false,
-                    "membershipStatus": "Active",
-                    "signals": {
-                      "reachabilityReason": "REACHABLE",
-                      "batteryPercent": 58,
-                      "charging": false,
-                      "ringerMode": "VIBRATE",
-                      "networkType": "WIFI",
                       "networkStrength": "STRONG",
-                      "lastOnNetworkAt": "2026-11-26T09:39:00Z",
-                      "lastUpdatedOn": "2026-11-26T09:39:00Z",
+                      "lastOnNetworkAt": "2026-11-26T09:41:00Z",
+                      "lastUpdatedOn": "2026-11-26T09:41:00Z",
                       "available": true
                     }
-                  }
-                ],
-                "responders": [
-                  "919812300001",
-                  "919812300002"
-                ],
-                "activeAlertsCount": 1,
-                "responseCode": "0",
-                "responseMessage": "SUCCESS",
-                "transactionId": "txn-7f3a",
-                "traceId": "b70f89b1"
+                  },
+                  "members": [
+                    {
+                      "membershipId": "M002",
+                      "msisdn": "919812300002",
+                      "displayName": "Mom",
+                      "relationship": "Mother",
+                      "airtelCustomer": 0,
+                      "role": "CO_ADMIN",
+                      "isResponder": true,
+                      "membershipStatus": "Active",
+                      "signals": {
+                        "reachabilityReason": "REACHABLE",
+                        "batteryPercent": 64,
+                        "charging": false,
+                        "ringerMode": "NORMAL",
+                        "networkType": "4G",
+                        "networkStrength": "MODERATE",
+                        "lastOnNetworkAt": "2026-11-26T09:37:00Z",
+                        "lastUpdatedOn": "2026-11-26T09:37:00Z",
+                        "available": true
+                      }
+                    },
+                    {
+                      "membershipId": "M003",
+                      "msisdn": "919812300003",
+                      "displayName": "Dad",
+                      "relationship": "Father",
+                      "airtelCustomer": 0,
+                      "role": "MEMBER",
+                      "isResponder": false,
+                      "membershipStatus": "Active",
+                      "signals": {
+                        "reachabilityReason": "SWITCHED_OFF",
+                        "batteryPercent": null,
+                        "lastBatteryLevel": 6,
+                        "charging": false,
+                        "ringerMode": "NORMAL",
+                        "networkType": "NO_NETWORK",
+                        "networkStrength": "NONE",
+                        "lastOnNetworkAt": "2026-11-25T18:40:00Z",
+                        "lastUpdatedOn": "2026-11-25T18:40:00Z",
+                        "available": true
+                      }
+                    },
+                    {
+                      "membershipId": "M004",
+                      "msisdn": "919812300004",
+                      "displayName": "Riya",
+                      "relationship": "Daughter",
+                      "airtelCustomer": 1,
+                      "role": "MEMBER",
+                      "isResponder": false,
+                      "membershipStatus": "Active",
+                      "signals": {
+                        "reachabilityReason": "REACHABLE",
+                        "batteryPercent": 58,
+                        "charging": false,
+                        "ringerMode": "VIBRATE",
+                        "networkType": "WIFI",
+                        "networkStrength": "STRONG",
+                        "lastOnNetworkAt": "2026-11-26T09:39:00Z",
+                        "lastUpdatedOn": "2026-11-26T09:39:00Z",
+                        "available": true
+                      }
+                    }
+                  ],
+                  "responders": [
+                    "919812300001",
+                    "919812300002"
+                  ],
+                  "activeAlertsCount": 1
+                },
+                "traceId": "dajkkl_12373",
+                "status": "SUCCESS",
+                "message": "Family home fetched successfully",
+                "errors": null,
+                "statusCode": 200
               }
             }
           },
@@ -174,17 +177,18 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Query parameter 'familyId' is required",
-                "httpStatusCode": 400,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40001",
                     "message": "Query parameter 'familyId' is required",
-                    "type": "VALIDATION"
+                    "field": "familyId"
                   }
-                ]
+                ],
+                "statusCode": 400
               }
             }
           },
@@ -195,17 +199,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Missing or invalid authentication token",
-                "httpStatusCode": 401,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40101",
-                    "message": "Missing or invalid authentication token",
-                    "type": "AUTH"
+                    "message": "Missing or invalid authentication token"
                   }
-                ]
+                ],
+                "statusCode": 401
               }
             }
           },
@@ -216,17 +220,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Caller MSISDN is not a member of this circle",
-                "httpStatusCode": 403,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40301",
-                    "message": "Caller MSISDN is not a member of this circle",
-                    "type": "FORBIDDEN"
+                    "message": "Caller MSISDN is not a member of this circle"
                   }
-                ]
+                ],
+                "statusCode": 403
               }
             }
           },
@@ -237,17 +241,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Family not found for the given familyId",
-                "httpStatusCode": 404,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40401",
-                    "message": "Family not found for the given familyId",
-                    "type": "RESOURCE_NOT_FOUND"
+                    "message": "Family not found for the given familyId"
                   }
-                ]
+                ],
+                "statusCode": 404
               }
             }
           },
@@ -258,17 +262,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
-                "httpStatusCode": 429,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-42901",
-                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
-                    "type": "RATE_LIMIT"
+                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff"
                   }
-                ]
+                ],
+                "statusCode": 429
               }
             }
           },
@@ -279,17 +283,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Unexpected error occurred",
-                "httpStatusCode": 500,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50000",
-                    "message": "Unexpected error occurred",
-                    "type": "UNKNOWN"
+                    "message": "Unexpected error occurred"
                   }
-                ]
+                ],
+                "statusCode": 500
               }
             }
           },
@@ -300,17 +304,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
-                "httpStatusCode": 502,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50302",
-                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
-                    "type": "DOWNSTREAM"
+                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed"
                   }
-                ]
+                ],
+                "statusCode": 502
               }
             }
           },
@@ -321,17 +325,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Downstream service timed out",
-                "httpStatusCode": 504,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50401",
-                    "message": "Downstream service timed out",
-                    "type": "DOWNSTREAM"
+                    "message": "Downstream service timed out"
                   }
-                ]
+                ],
+                "statusCode": 504
               }
             }
           }
@@ -368,103 +372,106 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/MemberDetailResponse"
+              "$ref": "#/definitions/MemberApiResponse"
             },
             "examples": {
               "application/json": {
-                "member": {
-                  "membershipId": "M003",
-                  "msisdn": "919812300003",
-                  "displayName": "Dad",
-                  "relationship": "Father",
-                  "airtelCustomer": 0,
-                  "role": "MEMBER",
-                  "isResponder": false,
-                  "membershipStatus": "Active"
-                },
-                "services": [
-                  {
-                    "service": "CHECKIN",
-                    "available": true,
-                    "working": true,
-                    "status": "WORKING"
+                "data": {
+                  "member": {
+                    "membershipId": "M003",
+                    "msisdn": "919812300003",
+                    "displayName": "Dad",
+                    "relationship": "Father",
+                    "airtelCustomer": 0,
+                    "role": "MEMBER",
+                    "isResponder": false,
+                    "membershipStatus": "Active"
                   },
-                  {
-                    "service": "FRAUD_SPAM",
-                    "available": true,
-                    "working": true,
-                    "status": "WORKING"
+                  "services": [
+                    {
+                      "service": "CHECKIN",
+                      "available": true,
+                      "working": true,
+                      "status": "WORKING"
+                    },
+                    {
+                      "service": "FRAUD_SPAM",
+                      "available": true,
+                      "working": true,
+                      "status": "WORKING"
+                    },
+                    {
+                      "service": "SOS",
+                      "available": true,
+                      "working": false,
+                      "status": "NOT_WORKING",
+                      "missingPermission": "LOCATION"
+                    },
+                    {
+                      "service": "DEVICE_SAFETY",
+                      "available": true,
+                      "working": true,
+                      "status": "WORKING"
+                    }
+                  ],
+                  "deviceDetail": {
+                    "batteryPercent": null,
+                    "lastBatteryLevel": 6,
+                    "charging": false,
+                    "ringerOn": true,
+                    "ringerMode": "NORMAL",
+                    "phoneOff": true,
+                    "reachable": false,
+                    "reachabilityReason": "SWITCHED_OFF",
+                    "networkType": "NO_NETWORK",
+                    "networkStrength": "NONE",
+                    "lockState": "UNKNOWN",
+                    "simStatus": "ACTIVE",
+                    "checkinWorking": false,
+                    "sosWorking": false,
+                    "appInstalled": true,
+                    "location": null,
+                    "lastSeen": "2026-11-25T18:40:00Z",
+                    "lastOnNetworkAt": "2026-11-25T18:40:00Z",
+                    "lastUpdatedOn": "2026-11-25T18:40:00Z",
+                    "available": true
                   },
-                  {
-                    "service": "SOS",
-                    "available": true,
-                    "working": false,
-                    "status": "NOT_WORKING",
-                    "missingPermission": "LOCATION"
-                  },
-                  {
-                    "service": "DEVICE_SAFETY",
-                    "available": true,
-                    "working": true,
-                    "status": "WORKING"
-                  }
-                ],
-                "deviceDetail": {
-                  "batteryPercent": null,
-                  "lastBatteryLevel": 6,
-                  "charging": false,
-                  "ringerOn": true,
-                  "ringerMode": "NORMAL",
-                  "phoneOff": true,
-                  "reachable": false,
-                  "reachabilityReason": "SWITCHED_OFF",
-                  "networkType": "NO_NETWORK",
-                  "networkStrength": "NONE",
-                  "lockState": "UNKNOWN",
-                  "simStatus": "ACTIVE",
-                  "checkinWorking": false,
-                  "sosWorking": false,
-                  "appInstalled": true,
-                  "location": null,
-                  "lastSeen": "2026-11-25T18:40:00Z",
-                  "lastOnNetworkAt": "2026-11-25T18:40:00Z",
-                  "lastUpdatedOn": "2026-11-25T18:40:00Z",
-                  "available": true
-                },
-                "latestCheckIn": {
-                  "id": "CK55",
-                  "status": "Responded",
-                  "response": "I'm fine",
-                  "scheduleType": "Periodic",
-                  "lastUpdatedOn": "2026-11-25T09:04:00Z"
-                },
-                "checkInHistory": [
-                  {
+                  "latestCheckIn": {
                     "id": "CK55",
                     "status": "Responded",
                     "response": "I'm fine",
                     "scheduleType": "Periodic",
                     "lastUpdatedOn": "2026-11-25T09:04:00Z"
+                  },
+                  "checkInHistory": [
+                    {
+                      "id": "CK55",
+                      "status": "Responded",
+                      "response": "I'm fine",
+                      "scheduleType": "Periodic",
+                      "lastUpdatedOn": "2026-11-25T09:04:00Z"
+                    }
+                  ],
+                  "activeAlert": null,
+                  "safetyReportUrl": "https://airtel.in/safety-report/919812300003",
+                  "deviceSafety": {
+                    "status": "ON",
+                    "protections": [
+                      "Dangerous websites",
+                      "Scam links",
+                      "Ads"
+                    ]
+                  },
+                  "parental": {
+                    "activated": false,
+                    "screenTimeDailyMinutes": null
                   }
-                ],
-                "activeAlert": null,
-                "safetyReportUrl": "https://airtel.in/safety-report/919812300003",
-                "deviceSafety": {
-                  "status": "ON",
-                  "protections": [
-                    "Dangerous websites",
-                    "Scam links",
-                    "Ads"
-                  ]
                 },
-                "parental": {
-                  "activated": false,
-                  "screenTimeDailyMinutes": null
-                },
-                "responseCode": "0",
-                "responseMessage": "SUCCESS",
-                "transactionId": "txn-7f3b",
-                "traceId": "b70f89b1"
+                "traceId": "dajkkl_12373",
+                "status": "SUCCESS",
+                "message": "Member fetched successfully",
+                "errors": null,
+                "statusCode": 200
               }
             }
           },
@@ -475,17 +482,18 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Query parameter 'familyId' is required / invalid membershipId",
-                "httpStatusCode": 400,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40001",
                     "message": "Query parameter 'familyId' is required / invalid membershipId",
-                    "type": "VALIDATION"
+                    "field": "familyId"
                   }
-                ]
+                ],
+                "statusCode": 400
               }
             }
           },
@@ -496,17 +504,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Missing or invalid authentication token",
-                "httpStatusCode": 401,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40101",
-                    "message": "Missing or invalid authentication token",
-                    "type": "AUTH"
+                    "message": "Missing or invalid authentication token"
                   }
-                ]
+                ],
+                "statusCode": 401
               }
             }
           },
@@ -517,17 +525,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Caller is not allowed to view this member",
-                "httpStatusCode": 403,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40301",
-                    "message": "Caller is not allowed to view this member",
-                    "type": "FORBIDDEN"
+                    "message": "Caller is not allowed to view this member"
                   }
-                ]
+                ],
+                "statusCode": 403
               }
             }
           },
@@ -538,17 +546,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Member or family not found",
-                "httpStatusCode": 404,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40401",
-                    "message": "Member or family not found",
-                    "type": "RESOURCE_NOT_FOUND"
+                    "message": "Member or family not found"
                   }
-                ]
+                ],
+                "statusCode": 404
               }
             }
           },
@@ -559,17 +567,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
-                "httpStatusCode": 429,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-42901",
-                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
-                    "type": "RATE_LIMIT"
+                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff"
                   }
-                ]
+                ],
+                "statusCode": 429
               }
             }
           },
@@ -580,17 +588,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Unexpected error occurred",
-                "httpStatusCode": 500,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50000",
-                    "message": "Unexpected error occurred",
-                    "type": "UNKNOWN"
+                    "message": "Unexpected error occurred"
                   }
-                ]
+                ],
+                "statusCode": 500
               }
             }
           },
@@ -601,17 +609,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
-                "httpStatusCode": 502,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50302",
-                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
-                    "type": "DOWNSTREAM"
+                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed"
                   }
-                ]
+                ],
+                "statusCode": 502
               }
             }
           },
@@ -622,17 +630,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Downstream service timed out",
-                "httpStatusCode": 504,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50401",
-                    "message": "Downstream service timed out",
-                    "type": "DOWNSTREAM"
+                    "message": "Downstream service timed out"
                   }
-                ]
+                ],
+                "statusCode": 504
               }
             }
           }
@@ -724,52 +732,55 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/HistoryResponse"
+              "$ref": "#/definitions/HistoryApiResponse"
             },
             "examples": {
               "application/json": {
-                "historyInfos": [
-                  {
-                    "eventId": "H101",
-                    "eventType": "CHECK_IN",
-                    "eventTimestamp": "2026-11-26T09:04:00Z",
-                    "memberMsisdn": "919812300002",
-                    "displayName": "Mom",
-                    "status": "Received",
-                    "message": "Mom replied 'I'm fine' to the 9:00 am check-in"
-                  },
-                  {
-                    "eventId": "H100",
-                    "eventType": "DEVICE_STATUS",
-                    "eventTimestamp": "2026-11-25T18:40:00Z",
-                    "memberMsisdn": "919812300003",
-                    "displayName": "Dad",
-                    "status": "Active",
-                    "message": "Dad's phone was off — off for 4 hours, back on at 10:40 pm"
-                  },
-                  {
-                    "eventId": "H099",
-                    "eventType": "FRAUD",
-                    "eventTimestamp": "2026-11-25T13:42:00Z",
-                    "memberMsisdn": "919812300002",
-                    "displayName": "Mom",
-                    "status": "Warned",
-                    "message": "Mom got a spam call — you sent her a warning"
-                  },
-                  {
-                    "eventId": "H098",
-                    "eventType": "DEVICE_STATUS",
-                    "eventTimestamp": "2026-10-16T06:12:00Z",
-                    "memberMsisdn": "919812300003",
-                    "displayName": "Dad",
-                    "status": "On",
-                    "message": "Device Safety is on for Dad — all protections on"
-                  }
-                ],
-                "responseCode": "0",
-                "responseMessage": "SUCCESS",
-                "transactionId": "txn-7f3c",
-                "traceId": "b70f89b1"
+                "data": {
+                  "historyInfos": [
+                    {
+                      "eventId": "H101",
+                      "eventType": "CHECK_IN",
+                      "eventTimestamp": "2026-11-26T09:04:00Z",
+                      "memberMsisdn": "919812300002",
+                      "displayName": "Mom",
+                      "status": "Received",
+                      "message": "Mom replied 'I'm fine' to the 9:00 am check-in"
+                    },
+                    {
+                      "eventId": "H100",
+                      "eventType": "DEVICE_STATUS",
+                      "eventTimestamp": "2026-11-25T18:40:00Z",
+                      "memberMsisdn": "919812300003",
+                      "displayName": "Dad",
+                      "status": "Active",
+                      "message": "Dad's phone was off — off for 4 hours, back on at 10:40 pm"
+                    },
+                    {
+                      "eventId": "H099",
+                      "eventType": "FRAUD",
+                      "eventTimestamp": "2026-11-25T13:42:00Z",
+                      "memberMsisdn": "919812300002",
+                      "displayName": "Mom",
+                      "status": "Warned",
+                      "message": "Mom got a spam call — you sent her a warning"
+                    },
+                    {
+                      "eventId": "H098",
+                      "eventType": "DEVICE_STATUS",
+                      "eventTimestamp": "2026-10-16T06:12:00Z",
+                      "memberMsisdn": "919812300003",
+                      "displayName": "Dad",
+                      "status": "On",
+                      "message": "Device Safety is on for Dad — all protections on"
+                    }
+                  ]
+                },
+                "traceId": "dajkkl_12373",
+                "status": "SUCCESS",
+                "message": "History fetched successfully",
+                "errors": null,
+                "statusCode": 200
               }
             }
           },
@@ -780,17 +791,18 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Query parameter 'familyId' is required / invalid date range",
-                "httpStatusCode": 400,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40001",
                     "message": "Query parameter 'familyId' is required / invalid date range",
-                    "type": "VALIDATION"
+                    "field": "familyId"
                   }
-                ]
+                ],
+                "statusCode": 400
               }
             }
           },
@@ -801,17 +813,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Missing or invalid authentication token",
-                "httpStatusCode": 401,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40101",
-                    "message": "Missing or invalid authentication token",
-                    "type": "AUTH"
+                    "message": "Missing or invalid authentication token"
                   }
-                ]
+                ],
+                "statusCode": 401
               }
             }
           },
@@ -822,17 +834,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Caller not permitted for this history scope (responder-only types)",
-                "httpStatusCode": 403,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40301",
-                    "message": "Caller not permitted for this history scope (responder-only types)",
-                    "type": "FORBIDDEN"
+                    "message": "Caller not permitted for this history scope (responder-only types)"
                   }
-                ]
+                ],
+                "statusCode": 403
               }
             }
           },
@@ -843,17 +855,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Family not found",
-                "httpStatusCode": 404,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-40401",
-                    "message": "Family not found",
-                    "type": "RESOURCE_NOT_FOUND"
+                    "message": "Family not found"
                   }
-                ]
+                ],
+                "statusCode": 404
               }
             }
           },
@@ -864,17 +876,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
-                "httpStatusCode": 429,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-42901",
-                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff",
-                    "type": "RATE_LIMIT"
+                    "message": "Too many requests — per-MSISDN rate limit exceeded; retry after backoff"
                   }
-                ]
+                ],
+                "statusCode": 429
               }
             }
           },
@@ -885,17 +897,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Unexpected error occurred",
-                "httpStatusCode": 500,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50000",
-                    "message": "Unexpected error occurred",
-                    "type": "UNKNOWN"
+                    "message": "Unexpected error occurred"
                   }
-                ]
+                ],
+                "statusCode": 500
               }
             }
           },
@@ -906,17 +918,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
-                "httpStatusCode": 502,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50302",
-                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed",
-                    "type": "DOWNSTREAM"
+                    "message": "Downstream service (FSC / UCM / Network / Whalebone) failed"
                   }
-                ]
+                ],
+                "statusCode": 502
               }
             }
           },
@@ -927,17 +939,17 @@
             },
             "examples": {
               "application/json": {
+                "data": null,
+                "traceId": "b70f89b1",
                 "status": "FAILURE",
                 "message": "Downstream service timed out",
-                "httpStatusCode": 504,
-                "traceId": "b70f89b1",
                 "errors": [
                   {
                     "code": "SH-50401",
-                    "message": "Downstream service timed out",
-                    "type": "DOWNSTREAM"
+                    "message": "Downstream service timed out"
                   }
-                ]
+                ],
+                "statusCode": 504
               }
             }
           }
@@ -1236,32 +1248,13 @@
         "activeAlertsCount": {
           "type": "integer",
           "format": "int32"
-        },
-        "responseCode": {
-          "type": "string",
-          "description": "Response code"
-        },
-        "responseMessage": {
-          "type": "string",
-          "description": "Response message"
-        },
-        "transactionId": {
-          "type": "string",
-          "description": "Txn id"
-        },
-        "traceId": {
-          "type": "string",
-          "description": "Trace id"
         }
       },
       "required": [
         "familyId",
         "circleStatus",
         "me",
-        "members",
-        "responseCode",
-        "responseMessage",
-        "transactionId"
+        "members"
       ]
     },
     "DeviceDetail": {
@@ -1448,29 +1441,10 @@
               "format": "int32"
             }
           }
-        },
-        "responseCode": {
-          "type": "string",
-          "description": "Response code"
-        },
-        "responseMessage": {
-          "type": "string",
-          "description": "Response message"
-        },
-        "transactionId": {
-          "type": "string",
-          "description": "Txn id"
-        },
-        "traceId": {
-          "type": "string",
-          "description": "Trace id"
         }
       },
       "required": [
-        "member",
-        "responseCode",
-        "responseMessage",
-        "transactionId"
+        "member"
       ]
     },
     "HistoryResponse": {
@@ -1483,68 +1457,52 @@
           "items": {
             "$ref": "#/definitions/HistoryItem"
           }
-        },
-        "responseCode": {
-          "type": "string",
-          "description": "Response code"
-        },
-        "responseMessage": {
-          "type": "string",
-          "description": "Response message"
-        },
-        "transactionId": {
-          "type": "string",
-          "description": "Txn id"
-        },
-        "traceId": {
-          "type": "string",
-          "description": "Trace id"
         }
       },
-      "required": [
-        "responseCode",
-        "responseMessage",
-        "transactionId"
-      ]
+      "required": []
     },
     "ApiError": {
       "type": "object",
       "title": "ApiError",
+      "description": "One error detail",
       "properties": {
         "code": {
           "type": "string",
-          "description": "App error code e.g. SH-40001"
+          "description": "Application error code (namespace SH = Safety-Hub). Stable id independent of HTTP status/message — for client handling, logs and support correlation. e.g. SH-40001"
         },
         "message": {
-          "type": "string"
-        },
-        "type": {
           "type": "string",
-          "description": "VALIDATION / AUTH / FORBIDDEN / RESOURCE_NOT_FOUND / RATE_LIMIT / DOWNSTREAM / UNKNOWN"
+          "description": "Human-readable error"
+        },
+        "field": {
+          "type": "string",
+          "description": "Offending field/param, if applicable (e.g. familyId)"
         }
       },
       "required": [
         "code",
-        "type"
+        "message"
       ]
     },
     "ErrorResponse": {
       "type": "object",
       "title": "ErrorResponse",
-      "description": "Standard error envelope",
+      "description": "Standard error envelope (data = null)",
       "properties": {
-        "status": {
-          "type": "string",
-          "example": "FAILURE"
-        },
-        "message": {
-          "type": "string"
-        },
-        "httpStatusCode": {
-          "type": "integer",
-          "format": "int32"
+        "data": {
+          "type": "object",
+          "description": "null on error"
         },
         "traceId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "FAILURE"
+          ]
+        },
+        "message": {
           "type": "string"
         },
         "errors": {
@@ -1552,11 +1510,16 @@
           "items": {
             "$ref": "#/definitions/ApiError"
           }
+        },
+        "statusCode": {
+          "type": "integer",
+          "format": "int32"
         }
       },
       "required": [
         "status",
-        "httpStatusCode"
+        "statusCode",
+        "errors"
       ]
     },
     "MemberInfo": {
@@ -1608,6 +1571,129 @@
       "required": [
         "membershipId",
         "msisdn"
+      ]
+    },
+    "HomeApiResponse": {
+      "type": "object",
+      "title": "HomeApiResponse",
+      "description": "Standard response envelope",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/HomeResponse"
+        },
+        "traceId": {
+          "type": "string",
+          "description": "End-to-end trace id (X-Request-ID)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCESS",
+            "FAILURE"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "e.g. 'Family home fetched successfully'"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ApiError"
+          },
+          "description": "null on success"
+        },
+        "statusCode": {
+          "type": "integer",
+          "format": "int32",
+          "description": "HTTP status code, e.g. 200"
+        }
+      },
+      "required": [
+        "status",
+        "statusCode"
+      ]
+    },
+    "MemberApiResponse": {
+      "type": "object",
+      "title": "MemberApiResponse",
+      "description": "Standard response envelope",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/MemberDetailResponse"
+        },
+        "traceId": {
+          "type": "string",
+          "description": "End-to-end trace id (X-Request-ID)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCESS",
+            "FAILURE"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "e.g. 'Member fetched successfully'"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ApiError"
+          },
+          "description": "null on success"
+        },
+        "statusCode": {
+          "type": "integer",
+          "format": "int32",
+          "description": "HTTP status code, e.g. 200"
+        }
+      },
+      "required": [
+        "status",
+        "statusCode"
+      ]
+    },
+    "HistoryApiResponse": {
+      "type": "object",
+      "title": "HistoryApiResponse",
+      "description": "Standard response envelope",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/HistoryResponse"
+        },
+        "traceId": {
+          "type": "string",
+          "description": "End-to-end trace id (X-Request-ID)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SUCCESS",
+            "FAILURE"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "e.g. 'History fetched successfully'"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ApiError"
+          },
+          "description": "null on success"
+        },
+        "statusCode": {
+          "type": "integer",
+          "format": "int32",
+          "description": "HTTP status code, e.g. 200"
+        }
+      },
+      "required": [
+        "status",
+        "statusCode"
       ]
     }
   }

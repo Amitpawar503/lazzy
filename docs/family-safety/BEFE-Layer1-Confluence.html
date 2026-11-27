@@ -52,7 +52,12 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <ul>
 <li><strong>Base path:</strong> <code>/befe/fsc/v1</code></li>
 <li><strong>Identity:</strong> <code>familyId = circleId</code>, <code>msisdn = deviceId = subscriptionId</code>.</li>
-<li><strong>Envelope (all responses):</strong> <code>responseCode</code>, <code>responseMessage</code>, <code>transactionId</code>, <code>traceId</code>.</li>
+<li><strong>Envelope (all responses):</strong> <code>{ data, traceId, status, message, errors, statusCode }</code>.<ul>
+<li>Success: <code>data</code> = payload, <code>status="SUCCESS"</code>, <code>errors=null</code>, <code>statusCode=200</code>.</li>
+<li>Error: <code>data=null</code>, <code>status="FAILURE"</code>, <code>errors=[{code,message,field}]</code>, <code>statusCode=4xx/5xx</code>.</li>
+<li><code>errors[].code</code> (e.g. <code>SH-40001</code>) = application error code (namespace <code>SH</code> = Safety-Hub): a <strong>stable id independent of HTTP status/wording</strong>, for programmatic client handling, log/support correlation. <code>statusCode</code> = HTTP transport category; the app <code>code</code> = the precise business error; <code>field</code> = offending param.</li>
+</ul>
+</li>
 </ul>
 <h2>2. Architecture</h2>
 <pre><code>App ──(Layer-1)──▶ BEFE / Guardian ──▶ Channel BE (orchestrator) ──▶ FSC (family/get, member/get, device/status/fetch, history/fetch)
@@ -221,32 +226,35 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <hr>
 <h2>6. Example responses</h2>
 <h3>6.1 <code>GET /home</code></h3>
-<pre><code class="language-json">{ "familyId":"FAM1024","circleStatus":"Active",
-  "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
-    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
-  "members":[
-    {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
-     "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"}},
-    {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
-     "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"}}],
-  "responders":["919812300001","919812300002"],"activeAlertsCount":1,
-  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3a" }
+<pre><code class="language-json">{ "data": {
+    "familyId":"FAM1024","circleStatus":"Active",
+    "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
+      "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
+    "members":[
+      {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
+       "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"}},
+      {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
+       "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"}}],
+    "responders":["919812300001","919812300002"],"activeAlertsCount":1 },
+  "traceId":"dajkkl_12373","status":"SUCCESS","message":"Family home fetched successfully","errors":null,"statusCode":200 }
 </code></pre>
 <h3>6.2 <code>GET /members/M003</code> (Dad offline)</h3>
-<pre><code class="language-json">{ "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active"},
-  "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
-  "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
-    "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
-    "appInstalled":true,"lastOnNetworkAt":"2026-11-25T18:40:00Z"},
-  "deviceSafety":{"status":"ON","protections":["Dangerous websites","Scam links","Ads"]},
-  "safetyReportUrl":"https://airtel.in/safety-report/919812300003",
-  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3b" }
+<pre><code class="language-json">{ "data": {
+    "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active"},
+    "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
+    "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
+      "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
+      "appInstalled":true,"lastOnNetworkAt":"2026-11-25T18:40:00Z"},
+    "deviceSafety":{"status":"ON","protections":["Dangerous websites","Scam links","Ads"]},
+    "safetyReportUrl":"https://airtel.in/safety-report/919812300003" },
+  "traceId":"dajkkl_12374","status":"SUCCESS","message":"Member fetched successfully","errors":null,"statusCode":200 }
 </code></pre>
 <h3>6.3 <code>GET /history</code></h3>
-<pre><code class="language-json">{ "historyInfos":[
-   {"eventId":"H101","eventType":"CHECK_IN","memberMsisdn":"919812300002","displayName":"Mom","status":"Received","message":"Mom replied 'I'm fine' to the 9:00 am check-in","eventTimestamp":"2026-11-26T09:04:00Z"},
-   {"eventId":"H099","eventType":"FRAUD","displayName":"Mom","status":"Warned","message":"Mom got a spam call — you sent her a warning","eventTimestamp":"2026-11-25T13:42:00Z"}],
-  "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3c" }
+<pre><code class="language-json">{ "data": {
+    "historyInfos":[
+      {"eventId":"H101","eventType":"CHECK_IN","memberMsisdn":"919812300002","displayName":"Mom","status":"Received","message":"Mom replied 'I'm fine' to the 9:00 am check-in","eventTimestamp":"2026-11-26T09:04:00Z"},
+      {"eventId":"H099","eventType":"FRAUD","displayName":"Mom","status":"Warned","message":"Mom got a spam call — you sent her a warning","eventTimestamp":"2026-11-25T13:42:00Z"}] },
+  "traceId":"dajkkl_12375","status":"SUCCESS","message":"History fetched successfully","errors":null,"statusCode":200 }
 </code></pre>
 <hr>
 <h2>7. Enumerations</h2>
@@ -298,41 +306,72 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td>CHECK_IN, SOS, FRAUD, ALARM, DEVICE_STATUS</td>
 </tr>
 </tbody></table>
-<h2>8. Error codes (envelope)</h2>
+<h2>8. Error envelope &amp; codes</h2>
+<p>Error response shape:</p>
+<pre><code class="language-json">{ "data": null, "traceId": "b70f89b1", "status": "FAILURE",
+  "message": "Query parameter 'familyId' is required",
+  "errors": [ { "code": "SH-40001", "message": "Query parameter 'familyId' is required", "field": "familyId" } ],
+  "statusCode": 400 }
+</code></pre>
 <table>
 <thead>
 <tr>
-<th>responseCode</th>
-<th>HTTP</th>
+<th>app <code>code</code></th>
+<th><code>statusCode</code></th>
+<th>type</th>
 <th>Meaning</th>
 </tr>
 </thead>
 <tbody><tr>
-<td><code>0</code></td>
-<td>200</td>
-<td>Success</td>
-</tr>
-<tr>
 <td><code>SH-40001</code></td>
 <td>400</td>
-<td>Missing/invalid <code>familyId</code></td>
+<td>VALIDATION</td>
+<td>Missing/invalid <code>familyId</code> / param</td>
+</tr>
+<tr>
+<td><code>SH-40101</code></td>
+<td>401</td>
+<td>AUTH</td>
+<td>Missing/invalid token</td>
 </tr>
 <tr>
 <td><code>SH-40301</code></td>
 <td>403</td>
+<td>FORBIDDEN</td>
 <td>Caller not a member of the circle (BOLA)</td>
 </tr>
 <tr>
 <td><code>SH-40401</code></td>
 <td>404</td>
+<td>RESOURCE_NOT_FOUND</td>
 <td>Family / member not found</td>
+</tr>
+<tr>
+<td><code>SH-42901</code></td>
+<td>429</td>
+<td>RATE_LIMIT</td>
+<td>Per-MSISDN rate limit — retry after backoff</td>
+</tr>
+<tr>
+<td><code>SH-50000</code></td>
+<td>500</td>
+<td>UNKNOWN</td>
+<td>Unexpected orchestrator error</td>
 </tr>
 <tr>
 <td><code>SH-50302</code></td>
 <td>502</td>
-<td>Downstream (FSC/UCM/Network) failure</td>
+<td>DOWNSTREAM</td>
+<td>FSC / UCM / Network / Whalebone failed</td>
+</tr>
+<tr>
+<td><code>SH-50401</code></td>
+<td>504</td>
+<td>DOWNSTREAM</td>
+<td>Downstream timed out</td>
 </tr>
 </tbody></table>
+<p><strong>Why an app <code>code</code> in addition to <code>statusCode</code>?</strong> <code>statusCode</code> is the HTTP transport category (many errors share 400/502); the app <code>code</code> (<code>SH-xxxxx</code>) is a <strong>stable, precise business-error id</strong> that doesn't change with HTTP status or message wording — used by the client to branch logic, and by support/ops to correlate logs via <code>traceId</code>. <code>field</code> names the offending parameter.</p>
 <h2>9. Non-functional</h2>
 <ul>
 <li><strong>Caching:</strong> <code>/home</code> is a heavy fan-out — cache per family ~1–2 min; signals are hourly-cadence, SOS/live read fresh.</li>
