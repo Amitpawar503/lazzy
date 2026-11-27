@@ -87,10 +87,7 @@
                     "lastOnNetworkAt": "2026-11-26T09:41:00Z",
                     "lastUpdatedOn": "2026-11-26T09:41:00Z",
                     "available": true
-                  },
-                  "latestCheckInSummary": null,
-                  "activeAlert": null,
-                  "featuresBrokenHint": null
+                  }
                 },
                 "members": [
                   {
@@ -112,10 +109,7 @@
                       "lastOnNetworkAt": "2026-11-26T09:37:00Z",
                       "lastUpdatedOn": "2026-11-26T09:37:00Z",
                       "available": true
-                    },
-                    "latestCheckInSummary": "Replied 'I'm fine' at 9:04 am",
-                    "activeAlert": null,
-                    "featuresBrokenHint": null
+                    }
                   },
                   {
                     "membershipId": "M003",
@@ -137,16 +131,7 @@
                       "lastOnNetworkAt": "2026-11-25T18:40:00Z",
                       "lastUpdatedOn": "2026-11-25T18:40:00Z",
                       "available": true
-                    },
-                    "latestCheckInSummary": "Paused until phone is back on",
-                    "activeAlert": {
-                      "alertId": "AL77",
-                      "alertType": "BACK_ONLINE",
-                      "status": "OPEN",
-                      "createdOn": "2026-11-25T18:40:00Z",
-                      "summary": "Phone was off — notify when back"
-                    },
-                    "featuresBrokenHint": null
+                    }
                   },
                   {
                     "membershipId": "M004",
@@ -167,10 +152,7 @@
                       "lastOnNetworkAt": "2026-11-26T09:39:00Z",
                       "lastUpdatedOn": "2026-11-26T09:39:00Z",
                       "available": true
-                    },
-                    "latestCheckInSummary": "Replied 'Yes, I've reached' at 8:03 am",
-                    "activeAlert": null,
-                    "featuresBrokenHint": "Location off, SOS won't share location"
+                    }
                   }
                 ],
                 "responders": [
@@ -398,9 +380,7 @@
                   "airtelCustomer": 0,
                   "role": "MEMBER",
                   "isResponder": false,
-                  "membershipStatus": "Active",
-                  "latestCheckInSummary": "Paused until phone is back on",
-                  "activeAlert": null
+                  "membershipStatus": "Active"
                 },
                 "services": [
                   {
@@ -1168,17 +1148,6 @@
         },
         "signals": {
           "$ref": "#/definitions/Signals"
-        },
-        "latestCheckInSummary": {
-          "type": "string",
-          "description": "e.g. 'Replied I'm fine at 9:04'"
-        },
-        "activeAlert": {
-          "$ref": "#/definitions/AlertSummary"
-        },
-        "featuresBrokenHint": {
-          "type": "string",
-          "description": "e.g. 'Location off, SOS wont share location'"
         }
       },
       "required": [
@@ -1634,17 +1603,6 @@
             "Paused",
             "Inactive"
           ]
-        },
-        "latestCheckInSummary": {
-          "type": "string",
-          "description": "e.g. 'Replied I'm fine at 9:04'"
-        },
-        "activeAlert": {
-          "$ref": "#/definitions/AlertSummary"
-        },
-        "featuresBrokenHint": {
-          "type": "string",
-          "description": "e.g. 'Location off, SOS wont share location'"
         }
       },
       "required": [

@@ -62,9 +62,8 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 | `isResponder` | bool | — |
 | `membershipStatus` | enum | Active / InvitePending / Paused / Inactive |
 | `signals` | Signals | FSC device/status + Network |
-| `latestCheckInSummary` | string | FSC check-in |
-| `activeAlert` | AlertSummary | highest-priority |
-| `featuresBrokenHint` | string | e.g. "Location off, SOS won't share location" |
+
+> **Note:** `latestCheckInSummary`, `activeAlert` and `featuresBrokenHint` are **not** on the `/home` member card — check-in and alert detail come from `/members/{id}` and `/history`.
 
 **Example** — see swagger "Example Value" or §6.1 below.
 
@@ -112,18 +111,16 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
     "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
   "members":[
     {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
-     "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"},
-     "latestCheckInSummary":"Paused until phone is back on"},
+     "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"}},
     {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
-     "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"},
-     "featuresBrokenHint":"Location off, SOS won't share location"}],
+     "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"}}],
   "responders":["919812300001","919812300002"],"activeAlertsCount":1,
   "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3a" }
 ```
 
 ### 6.2 `GET /members/M003` (Dad offline)
 ```json
-{ "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active","latestCheckInSummary":"Paused until phone is back on"},
+{ "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active"},
   "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
   "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
     "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
