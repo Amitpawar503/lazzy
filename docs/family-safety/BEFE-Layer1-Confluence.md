@@ -44,12 +44,12 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 |---|---|---|
 | `familyId`, `familyName` | string | circle identity |
 | `circleStatus` | enum | Active / Expiring / Paused / Closing |
-| `subscription` | object | status, planId, dates, banners |
 | `me` | MemberCard | the caller's own card |
 | `members[]` | MemberCard | other members |
 | `responders[]` | string[] | responder MSISDNs |
 | `activeAlertsCount` | int | badge on Alerts & history |
-| `recentHistory[]` | HistoryItem | last few events |
+
+> **Note:** `subscription`, `recentHistory` (history) and per-member `activeServices` are **not** on `/home` — history comes from `/history`, services from `/members/{id}`.
 
 **MemberCard**
 
@@ -62,7 +62,6 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 | `isResponder` | bool | — |
 | `membershipStatus` | enum | Active / InvitePending / Paused / Inactive |
 | `signals` | Signals | FSC device/status + Network |
-| `activeServices[]` | ServiceStatus | Network — available/working per service |
 | `latestCheckInSummary` | string | FSC check-in |
 | `activeAlert` | AlertSummary | highest-priority |
 | `featuresBrokenHint` | string | e.g. "Location off, SOS won't share location" |
@@ -82,9 +81,9 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 
 | Field | Type | Notes |
 |---|---|---|
-| `member` | MemberCard | identity + signals |
+| `member` | MemberInfo | **identity only** (relation, role, status) — **no signals** |
+| `deviceDetail` | DeviceDetail | **external** device + signal data (battery, ringer, phoneOff, reachable, signal, SIM, checkinWorking, sosWorking, location). Signals live here only — not duplicated inside `member`. |
 | `services[]` | ServiceStatus | per-service availability/health |
-| `deviceDetail` | DeviceDetail | full device status (battery, ringer, phoneOff, reachable, signal, SIM, checkinWorking, sosWorking, location) |
 | `latestCheckIn`, `checkInHistory[]` | CheckInEntry | FSC check-in |
 | `activeAlert` | AlertSummary | — |
 | `safetyReportUrl` | string | 3-month Safety Report deep link |
@@ -110,16 +109,13 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 ```json
 { "familyId":"FAM1024","circleStatus":"Active",
   "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
-    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true},
-    "activeServices":[{"service":"SOS","working":true,"status":"WORKING"}] },
+    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
   "members":[
     {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
      "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"},
-     "activeServices":[{"service":"DEVICE_SAFETY","working":true,"status":"WORKING"}],
      "latestCheckInSummary":"Paused until phone is back on"},
     {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
      "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"},
-     "activeServices":[{"service":"SOS","available":false,"working":false,"status":"MISSING_PERMISSION","missingPermission":"LOCATION"}],
      "featuresBrokenHint":"Location off, SOS won't share location"}],
   "responders":["919812300001","919812300002"],"activeAlertsCount":1,
   "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3a" }
@@ -127,8 +123,7 @@ Channel BE is **stateless, consume-only** (no DP persist); it holds the membersh
 
 ### 6.2 `GET /members/M003` (Dad offline)
 ```json
-{ "member":{"membershipId":"M003","displayName":"Dad","role":"MEMBER",
-    "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6}},
+{ "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active","latestCheckInSummary":"Paused until phone is back on"},
   "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
   "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
     "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,

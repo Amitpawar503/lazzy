@@ -68,13 +68,6 @@
                 "familyId": "FAM1024",
                 "familyName": "Vaibhav's Safety Circle",
                 "circleStatus": "Active",
-                "subscription": {
-                  "status": "Active",
-                  "planId": "SC_PREPAID_999",
-                  "startDate": "2026-10-12",
-                  "endDate": "2027-10-12",
-                  "banners": []
-                },
                 "me": {
                   "membershipId": "M001",
                   "msisdn": "919812300001",
@@ -95,26 +88,6 @@
                     "lastUpdatedOn": "2026-11-26T09:41:00Z",
                     "available": true
                   },
-                  "activeServices": [
-                    {
-                      "service": "SOS",
-                      "available": true,
-                      "working": true,
-                      "status": "WORKING"
-                    },
-                    {
-                      "service": "CHECKIN",
-                      "available": true,
-                      "working": true,
-                      "status": "WORKING"
-                    },
-                    {
-                      "service": "FRAUD_SPAM",
-                      "available": true,
-                      "working": true,
-                      "status": "WORKING"
-                    }
-                  ],
                   "latestCheckInSummary": null,
                   "activeAlert": null,
                   "featuresBrokenHint": null
@@ -140,20 +113,6 @@
                       "lastUpdatedOn": "2026-11-26T09:37:00Z",
                       "available": true
                     },
-                    "activeServices": [
-                      {
-                        "service": "FRAUD_SPAM",
-                        "available": true,
-                        "working": true,
-                        "status": "WORKING"
-                      },
-                      {
-                        "service": "SOS",
-                        "available": true,
-                        "working": true,
-                        "status": "WORKING"
-                      }
-                    ],
                     "latestCheckInSummary": "Replied 'I'm fine' at 9:04 am",
                     "activeAlert": null,
                     "featuresBrokenHint": null
@@ -179,14 +138,6 @@
                       "lastUpdatedOn": "2026-11-25T18:40:00Z",
                       "available": true
                     },
-                    "activeServices": [
-                      {
-                        "service": "DEVICE_SAFETY",
-                        "available": true,
-                        "working": true,
-                        "status": "WORKING"
-                      }
-                    ],
                     "latestCheckInSummary": "Paused until phone is back on",
                     "activeAlert": {
                       "alertId": "AL77",
@@ -217,21 +168,6 @@
                       "lastUpdatedOn": "2026-11-26T09:39:00Z",
                       "available": true
                     },
-                    "activeServices": [
-                      {
-                        "service": "PARENTAL_CONTROLS",
-                        "available": true,
-                        "working": true,
-                        "status": "WORKING"
-                      },
-                      {
-                        "service": "SOS",
-                        "available": false,
-                        "working": false,
-                        "status": "MISSING_PERMISSION",
-                        "missingPermission": "LOCATION"
-                      }
-                    ],
                     "latestCheckInSummary": "Replied 'Yes, I've reached' at 8:03 am",
                     "activeAlert": null,
                     "featuresBrokenHint": "Location off, SOS won't share location"
@@ -242,26 +178,6 @@
                   "919812300002"
                 ],
                 "activeAlertsCount": 1,
-                "recentHistory": [
-                  {
-                    "eventId": "H101",
-                    "eventType": "CHECK_IN",
-                    "eventTimestamp": "2026-11-26T09:04:00Z",
-                    "memberMsisdn": "919812300002",
-                    "displayName": "Mom",
-                    "status": "Received",
-                    "message": "Mom replied 'I'm fine' to the 9:00 am check-in"
-                  },
-                  {
-                    "eventId": "H100",
-                    "eventType": "DEVICE_STATUS",
-                    "eventTimestamp": "2026-11-25T18:40:00Z",
-                    "memberMsisdn": "919812300003",
-                    "displayName": "Dad",
-                    "status": "Active",
-                    "message": "Dad's phone was off — off for 4 hours, back on at 10:40 pm"
-                  }
-                ],
                 "responseCode": "0",
                 "responseMessage": "SUCCESS",
                 "transactionId": "txn-7f3a",
@@ -483,15 +399,6 @@
                   "role": "MEMBER",
                   "isResponder": false,
                   "membershipStatus": "Active",
-                  "signals": {
-                    "reachabilityReason": "SWITCHED_OFF",
-                    "lastBatteryLevel": 6,
-                    "ringerMode": "NORMAL",
-                    "networkType": "NO_NETWORK",
-                    "networkStrength": "NONE",
-                    "lastOnNetworkAt": "2026-11-25T18:40:00Z",
-                    "available": true
-                  },
                   "latestCheckInSummary": "Paused until phone is back on",
                   "activeAlert": null
                 },
@@ -1262,12 +1169,6 @@
         "signals": {
           "$ref": "#/definitions/Signals"
         },
-        "activeServices": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/ServiceStatus"
-          }
-        },
         "latestCheckInSummary": {
           "type": "string",
           "description": "e.g. 'Replied I'm fine at 9:04'"
@@ -1284,39 +1185,6 @@
         "membershipId",
         "msisdn"
       ]
-    },
-    "Subscription": {
-      "type": "object",
-      "title": "Subscription",
-      "description": "",
-      "properties": {
-        "status": {
-          "type": "string",
-          "enum": [
-            "Active",
-            "Trial",
-            "Expiring",
-            "Paused",
-            "Closing",
-            "None"
-          ]
-        },
-        "planId": {
-          "type": "string"
-        },
-        "startDate": {
-          "type": "string",
-          "format": "date"
-        },
-        "endDate": {
-          "type": "string",
-          "format": "date"
-        },
-        "banners": {
-          "type": "array",
-          "items": "string"
-        }
-      }
     },
     "HistoryItem": {
       "type": "object",
@@ -1383,9 +1251,6 @@
             "Closing"
           ]
         },
-        "subscription": {
-          "$ref": "#/definitions/Subscription"
-        },
         "me": {
           "$ref": "#/definitions/MemberCard"
         },
@@ -1402,12 +1267,6 @@
         "activeAlertsCount": {
           "type": "integer",
           "format": "int32"
-        },
-        "recentHistory": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/HistoryItem"
-          }
         },
         "responseCode": {
           "type": "string",
@@ -1560,10 +1419,10 @@
     "MemberDetailResponse": {
       "type": "object",
       "title": "MemberDetailResponse",
-      "description": "Member detail — FSC member/get (services) + device/status/fetch (deviceDetail) + check-in status",
+      "description": "Member detail — member (identity) + external deviceDetail (device+signals) + services + check-ins",
       "properties": {
         "member": {
-          "$ref": "#/definitions/MemberCard"
+          "$ref": "#/definitions/MemberInfo"
         },
         "services": {
           "type": "array",
@@ -1729,6 +1588,68 @@
       "required": [
         "status",
         "httpStatusCode"
+      ]
+    },
+    "MemberInfo": {
+      "type": "object",
+      "title": "MemberInfo",
+      "description": "Member identity + relation + role + status (no signals; see external deviceDetail)",
+      "properties": {
+        "membershipId": {
+          "type": "string"
+        },
+        "msisdn": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "relationship": {
+          "type": "string",
+          "description": "Mom/Dad/... (UCM)"
+        },
+        "airtelCustomer": {
+          "type": "integer",
+          "format": "int32",
+          "description": "0 Airtel else 1"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "CO_ADMIN",
+            "SUB_ADMIN",
+            "SPONSER",
+            "MEMBER"
+          ]
+        },
+        "isResponder": {
+          "type": "boolean"
+        },
+        "membershipStatus": {
+          "type": "string",
+          "enum": [
+            "Active",
+            "InvitePending",
+            "Paused",
+            "Inactive"
+          ]
+        },
+        "latestCheckInSummary": {
+          "type": "string",
+          "description": "e.g. 'Replied I'm fine at 9:04'"
+        },
+        "activeAlert": {
+          "$ref": "#/definitions/AlertSummary"
+        },
+        "featuresBrokenHint": {
+          "type": "string",
+          "description": "e.g. 'Location off, SOS wont share location'"
+        }
+      },
+      "required": [
+        "membershipId",
+        "msisdn"
       ]
     }
   }

@@ -85,11 +85,6 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td>Active / Expiring / Paused / Closing</td>
 </tr>
 <tr>
-<td><code>subscription</code></td>
-<td>object</td>
-<td>status, planId, dates, banners</td>
-</tr>
-<tr>
 <td><code>me</code></td>
 <td>MemberCard</td>
 <td>the caller's own card</td>
@@ -109,12 +104,10 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td>int</td>
 <td>badge on Alerts &amp; history</td>
 </tr>
-<tr>
-<td><code>recentHistory[]</code></td>
-<td>HistoryItem</td>
-<td>last few events</td>
-</tr>
 </tbody></table>
+<blockquote>
+<p><strong>Note:</strong> <code>subscription</code>, <code>recentHistory</code> (history) and per-member <code>activeServices</code> are <strong>not</strong> on <code>/home</code> — history comes from <code>/history</code>, services from <code>/members/{id}</code>.</p>
+</blockquote>
 <p><strong>MemberCard</strong></p>
 <table>
 <thead>
@@ -160,11 +153,6 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <td>FSC device/status + Network</td>
 </tr>
 <tr>
-<td><code>activeServices[]</code></td>
-<td>ServiceStatus</td>
-<td>Network — available/working per service</td>
-</tr>
-<tr>
 <td><code>latestCheckInSummary</code></td>
 <td>string</td>
 <td>FSC check-in</td>
@@ -197,18 +185,18 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 </thead>
 <tbody><tr>
 <td><code>member</code></td>
-<td>MemberCard</td>
-<td>identity + signals</td>
+<td>MemberInfo</td>
+<td><strong>identity only</strong> (relation, role, status) — <strong>no signals</strong></td>
+</tr>
+<tr>
+<td><code>deviceDetail</code></td>
+<td>DeviceDetail</td>
+<td><strong>external</strong> device + signal data (battery, ringer, phoneOff, reachable, signal, SIM, checkinWorking, sosWorking, location). Signals live here only — not duplicated inside <code>member</code>.</td>
 </tr>
 <tr>
 <td><code>services[]</code></td>
 <td>ServiceStatus</td>
 <td>per-service availability/health</td>
-</tr>
-<tr>
-<td><code>deviceDetail</code></td>
-<td>DeviceDetail</td>
-<td>full device status (battery, ringer, phoneOff, reachable, signal, SIM, checkinWorking, sosWorking, location)</td>
 </tr>
 <tr>
 <td><code>latestCheckIn</code>, <code>checkInHistory[]</code></td>
@@ -247,23 +235,19 @@ hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 <h3>6.1 <code>GET /home</code></h3>
 <pre><code class="language-json">{ "familyId":"FAM1024","circleStatus":"Active",
   "me":{ "membershipId":"M001","displayName":"Vaibhav","role":"ADMIN","isResponder":true,
-    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true},
-    "activeServices":[{"service":"SOS","working":true,"status":"WORKING"}] },
+    "signals":{"reachabilityReason":"REACHABLE","batteryPercent":82,"ringerMode":"SILENT","networkStrength":"STRONG","available":true} },
   "members":[
     {"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER",
      "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6,"networkStrength":"NONE","lastOnNetworkAt":"2026-11-25T18:40:00Z"},
-     "activeServices":[{"service":"DEVICE_SAFETY","working":true,"status":"WORKING"}],
      "latestCheckInSummary":"Paused until phone is back on"},
     {"membershipId":"M004","displayName":"Riya","relationship":"Daughter","role":"MEMBER",
      "signals":{"reachabilityReason":"REACHABLE","batteryPercent":58,"ringerMode":"VIBRATE"},
-     "activeServices":[{"service":"SOS","available":false,"working":false,"status":"MISSING_PERMISSION","missingPermission":"LOCATION"}],
      "featuresBrokenHint":"Location off, SOS won't share location"}],
   "responders":["919812300001","919812300002"],"activeAlertsCount":1,
   "responseCode":"0","responseMessage":"SUCCESS","transactionId":"txn-7f3a" }
 </code></pre>
 <h3>6.2 <code>GET /members/M003</code> (Dad offline)</h3>
-<pre><code class="language-json">{ "member":{"membershipId":"M003","displayName":"Dad","role":"MEMBER",
-    "signals":{"reachabilityReason":"SWITCHED_OFF","lastBatteryLevel":6}},
+<pre><code class="language-json">{ "member":{"membershipId":"M003","displayName":"Dad","relationship":"Father","role":"MEMBER","membershipStatus":"Active","latestCheckInSummary":"Paused until phone is back on"},
   "services":[{"service":"SOS","working":false,"status":"NOT_WORKING","missingPermission":"LOCATION"}],
   "deviceDetail":{"lastBatteryLevel":6,"phoneOff":true,"reachable":false,"reachabilityReason":"SWITCHED_OFF",
     "ringerMode":"NORMAL","networkStrength":"NONE","simStatus":"ACTIVE","checkinWorking":false,"sosWorking":false,
